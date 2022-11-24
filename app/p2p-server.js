@@ -1,124 +1,104 @@
 const Websocket = require('ws');
-const P2P_PORT = process.env.P2P_PORT || 5001;
+
+const P2P_PORT = process.env.P2P_PORT || 5000;
 const peers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 const MESSAGE_TYPES = {
   chain: 'CHAIN',
-  cointransaction: 'COINTRANSACTION',
-  clear_payment_transactions: 'CLEAR_Payment_TRANSACTIONS',
-  clear_meta_transactions: 'CLEAR_META_TRANSACTIONS',
-  clear_Comp_transactions: 'CLEAR_COMP_TRANSACTIONS',
-  clear_Integration_transactions: 'CLEAR_Integration_TRANSACTIONS',
-  metaDataTransaction: 'METADATATRANSACTION',};
+  transaction: 'TRANSACTION',
+  clear_transactions: 'CLEAR_TRANSACTIONS',
+  metadata: 'METADATA'
+};
+
 class P2pServer {
   constructor(blockchain, transactionPool) {
     this.blockchain = blockchain;
     this.transactionPool = transactionPool;
-    this.sockets = [];}
+    this.sockets = [];
+  }
+
   listen() {
     const server = new Websocket.Server({ port: P2P_PORT });
     server.on('connection', socket => this.connectSocket(socket));
+
     this.connectToPeers();
-    console.log(`Listening for peer-to-peer connections on: ${P2P_PORT}`);}
-  connectToPeers() { 
+
+    console.log(`Listening for peer-to-peer connections on: ${P2P_PORT}`);
+  }
+
+  connectToPeers() {
     peers.forEach(peer => {
       const socket = new Websocket(peer);
-      socket.on('open', () => this.connectSocket(socket)); });}  
+
+      socket.on('open', () => this.connectSocket(socket));
+    });
+  }
+
   connectSocket(socket) {
     this.sockets.push(socket);
     console.log('Socket connected');
+
     this.messageHandler(socket);
-    this.sendChain(socket);}
-  messageHandler(socket) { 
+
+    this.sendChain(socket);
+  }
+
+  messageHandler(socket) {
     socket.on('message', message => {
       const data = JSON.parse(message);
       switch(data.type) {
         case MESSAGE_TYPES.chain:
           this.blockchain.replaceChain(data.chain);
           break;
-        case MESSAGE_TYPES.paymenttransaction:
-          this.transactionPool.updateOrAddPaymentTransaction(
-          data.Paymenttransaction);
+        case MESSAGE_TYPES.transaction:
+          this.transactionPool.updateOrAddTransaction(data.transaction);
           break;
-        case MESSAGE_TYPES.metaDataTransaction:
-            this.transactionPool.updateOrAddMetaDataTransaction(
-            data.metaDataTransaction);
-            break;
-        case MESSAGE_TYPES.CompTransaction:
-            this.transactionPool.updateOrAddCompTransaction(
-            data.CompTransaction);
-            break;
-        case MESSAGE_TYPES.IntegrationTransaction:
-            this.transactionPool.updateOrAddIntegrationTransaction(
-            data.IntegrationTransaction);
-            break;
-        case MESSAGE_TYPES.clear_Payment_transactions:
-          this.transactionPool.clearPayment(this.blockchain.chain[this.
-          blockchain.chain.length-1].data[0].length-1);
+        case MESSAGE_TYPES.metadata:
+          this.transactionPool.updateOrAddMetadata(data.metadata);
           break;
-        case MESSAGE_TYPES.clear_meta_transactions:
-          this.transactionPool.clearMeta(this.blockchain.chain[this.
-          blockchain.chain.length-1].data[1].length);
+        case MESSAGE_TYPES.clear_transactions:
+          this.transactionPool.clear();
           break;
-        case MESSAGE_TYPES.clear_comp_transactions:
-          this.transactionPool.clearMeta(this.blockchain.chain[this.
-          blockchain.chain.length-1].data[1].length);
-          break;
-         case MESSAGE_TYPES.clear_intgration_transactions:
-          this.transactionPool.clearMeta(this.blockchain.chain[this.
-          blockchain.chain.length-1].data[1].length);
-          break;}});}
+      }
+    });
+  }
+
   sendChain(socket) {
     socket.send(JSON.stringify({
       type: MESSAGE_TYPES.chain,
-      chain: this.blockchain.chain}));}
-  ClearedPayments (socket){
+      chain: this.blockchain.chain
+    }));
+  }
+
+  sendTransaction(socket, transaction) {
     socket.send(JSON.stringify({
-      type: MESSAGE_TYPES.clear_payment_transactions,})); }
-  ClearedMeta (socket){
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPES.clear_meta_transactions,}));}
-  ClearedComp (socket){
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPES.clear_comp_transactions,}));}
-  ClearedIntegration (socket){
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPES.clear_integration_transactions,}));}
-  sendPaymentTransaction(socket, paymenttransaction) {
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPES.paymenttransaction,
-      paymenttransaction}));}
-  sendMetaDataTransaction(socket, metaDataTransaction) {
+      type: MESSAGE_TYPES.transaction,
+      transaction
+    }));
+  }
+  
+  sendMetadata(socket, metadata) {
     socket.send(JSON.stringify({ 
-      type: MESSAGE_TYPES.metaDataTransaction,
-      metaDataTransaction}));}
-  sendIntegrationTransaction(socket, integrationTransaction) {
-    socket.send(JSON.stringify({ 
-      type: MESSAGE_TYPES.integrationTransaction,
-      integrationTransaction}));}
-  sendCompTransaction(socket, compTransaction) {
-    socket.send(JSON.stringify({ 
-      type: MESSAGE_TYPES.compTransaction,
-      compTransaction}));}
+      type: MESSAGE_TYPES.metadata,
+      metadata
+    }));
+  }
   syncChains() {
-    this.sockets.forEach(socket => this.sendChain(socket));}
-  broadcastPaymentTransaction(paymenttransaction) {
-    this.sockets.forEach(socket => this.sendPaymentTransaction(socket, 
-    paymenttransaction));}
-  broadcastMetaDataTransaction(metaDataTransaction) {
-    this.sockets.forEach(socket => this.sendMetaDataTransaction(socket, 
-    metaDataTransaction));}
-  broadcastCompTransaction(compTransaction) {
-    this.sockets.forEach(socket => this.sendCompTransaction(socket, 
-    CompTransaction));}
-  broadcastIntegrationTransaction(integrationTransaction) {
-    this.sockets.forEach(socket => this.sendIntegrationTransaction(socket,
-    integrationTransaction));}
-  broadcastClearPaymentTransactions() {
-    this.sockets.forEach(socket => this.ClearedCoins(socket));}
-  broadcastClearMetadataTransactions() {
-    this.sockets.forEach(socket => this.ClearedMeta(socket));}
-  broadcastClearCompTransactions() {
-      this.sockets.forEach(socket => this.ClearedComp(socket));}
-  broadcastClearIntegrationTransactions() {
-    this.sockets.forEach(socket => this.ClearedIntegration(socket));}}
-module.exports = P2pServer ;
+    this.sockets.forEach(socket => this.sendChain(socket));
+  }
+
+  broadcastTransaction(transaction) {
+    this.sockets.forEach(socket => this.sendTransaction(socket, transaction));
+  }
+
+  broadcastMetadata(metadata) {
+    this.sockets.forEach(socket => this.sendMetadata(socket, metadata));
+  }
+
+  broadcastClearTransactions() {
+    this.sockets.forEach(socket => socket.send(JSON.stringify({
+      type: MESSAGE_TYPES.clear_transactions
+    })));
+  }
+}
+
+module.exports = P2pServer;

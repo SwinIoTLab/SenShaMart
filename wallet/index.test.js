@@ -7,7 +7,7 @@ describe('Wallet', () => {
   let wallet, tp, bc;
 
   beforeEach(() => {
-    wallet = new Wallet(); 
+    wallet = new Wallet();
     tp = new TransactionPool();
     bc = new Blockchain();
   });
@@ -18,16 +18,12 @@ describe('Wallet', () => {
     beforeEach(() => {
       sendAmount = 50;
       recipient = 'r4nd0m-4ddr355';
-      Geo = 20;
-      Std = 9014;
-      Name = 'temp';
-      MetaHash = '123abcd';
-      transaction = wallet.createCoinTransaction(recipient, sendAmount,Geo, Std, Name,MetaHash, bc, tp);
+      transaction = wallet.createTransaction(recipient, sendAmount, bc, tp);
     });
 
     describe('and doing the same transaction', () => {
       beforeEach(() => {
-        wallet.createCoinTransaction(recipient, sendAmount,Geo, Std, Name,MetaHash, bc, tp);
+        wallet.createTransaction(recipient, sendAmount, bc, tp);
       });
 
       it('doubles the `sendAmount` subtracted from the wallet balance', () => {
@@ -50,9 +46,9 @@ describe('Wallet', () => {
       addBalance = 100;
       repeatAdd = 3;
       for (let i=0; i<repeatAdd; i++) {
-        senderWallet.createCoinTransaction(wallet.publicKey, addBalance,Geo, Std, Name,MetaHash, bc, tp);
+        senderWallet.createTransaction(wallet.publicKey, addBalance, bc, tp);
       }
-      bc.addBlock(tp.paymenttransactions);
+      bc.addBlock(tp.transactions);
     });
 
     it('calculates the balance for blockchain transactions matching the recipient', () => {
@@ -70,15 +66,15 @@ describe('Wallet', () => {
         tp.clear();
         subtractBalance = 60;
         recipientBalance = wallet.calculateBalance(bc);
-        wallet.createCoinTransaction(senderWallet.publicKey, subtractBalance,20,9014,'temp','123abc', bc, tp);
-        bc.addBlock(tp.paymenttransactions);
+        wallet.createTransaction(senderWallet.publicKey, subtractBalance, bc, tp);
+        bc.addBlock(tp.transactions);
       });
 
       describe('and the sender sends another transaction to the recipient', () => {
         beforeEach(() => {
           tp.clear();
-          senderWallet.createCoinTransaction(wallet.publicKey, addBalance, 20,9014,'temp','123abc',bc, tp);
-          bc.addBlock(tp.paymenttransactions);
+          senderWallet.createTransaction(wallet.publicKey, addBalance, bc, tp);
+          bc.addBlock(tp.transactions);
         });
 
         it('calculate the recipient balance only using transactions since its most recent one', () => {

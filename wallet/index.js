@@ -1,8 +1,7 @@
 const ChainUtil = require('../chain-util');
-const CoinTransaction = require('./CoinTransaction');
+const Transaction = require('./transaction');
 const { INITIAL_BALANCE } = require('../config');
-const MetaDataTransaction = require('./MetaDataTransaction');
-const transactionPool = require('./transaction-pool');
+const Metadata = require('./metadata');
 
 class Wallet {
   constructor() {
@@ -21,49 +20,57 @@ class Wallet {
     return this.keyPair.sign(dataHash);
   }
 
-  createCoinTransaction(recipient, amount, blockchain, transactionPool) {
-   // this.balance = this.calculateBalance(blockchain);
+  createTransaction(recipient, amount, blockchain, transactionPool) {
+    this.balance = this.calculateBalance(blockchain);
 
-   if (amount > this.balance) {
-     console.log(`Amount: ${amount} exceceds current balance: ${this.balance}`);
-     return;
-   }
+    if (amount > this.balance) {
+      console.log(`Amount: ${amount} exceceds current balance: ${this.balance}`);
+      return;
+    }
 
-    let cointransaction = transactionPool.existingPaymentTransaction(this.publicKey);
+    let transaction = transactionPool.existingTransaction(this.publicKey);
 
+    if (transaction) {
+      transaction.update(this, recipient, amount);
+    } else { 
+      transaction = Transaction.newTransaction(this, recipient, amount);
+      transactionPool.updateOrAddTransaction(transaction);
+    }
 
-   if (cointransaction) {
-     cointransaction.update(this, recipient, amount); 
-   } else { //this should be the original one
-       //just for test i make the transaction not to update if the sender is the same 
-      cointransaction = CoinTransaction.newCoinTransaction(this, recipient, amount);
-      transactionPool.updateOrAddPaymentTransaction(cointransaction);
-     }
-
-    return cointransaction;
+    return transaction;
   }
-  createMetaDataTransaction(Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, PaymentPerMinute, Protocol, MessageAttributes, Interval,  FurtherDetails, SSNmetadata, transactionPool){
-  /* let metaData = metaDataPool.existingMetaData(this.publicKey);
 
-    if (metaData) {
-      metaData.update(this, Geo, Std, Name,MetaHash,file);
-    } else {*/
-   
-    const metaDataTransaction= MetaDataTransaction.newMetaDataTransaction(this, Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, PaymentPerMinute, Protocol, MessageAttributes,Interval, FurtherDetails, SSNmetadata);
-    transactionPool.updateOrAddMetaDataTransaction(metaDataTransaction);
-    //}
-    return metaDataTransaction; 
-  } 
-
+  createMetadata(Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, OrgOwner, DepOwner,
+    PrsnOwner, PaymentPerKbyte, PaymentPerMinute, Protocol, MessageAttributes, Interval,  
+    FurtherDetails, SSNmetadata, transactionPool){
+     //let metadata = transactionPool.existingMetadata(this.publicKey);
+  
+      // if (metaData) {
+      //   metadata.update(this, Geo, Std, Name,MetaHash,file);
+      // } else {*/
+     
+      let metadata= Metadata.newMetadata(this, Name,Geo ,IP_URL , Topic_Token, Permission, 
+        RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, PaymentPerMinute, 
+        Protocol, MessageAttributes,Interval, FurtherDetails, SSNmetadata);
+      transactionPool.AddMetadata(metadata);
+ 
+      //}
+      return metadata; 
+    }
+  
+ 
   calculateBalance(blockchain) {
     let balance = this.balance;
-    let cointransactions = [];
-    blockchain.chain.forEach(block => block.data.forEach(cointransaction => {
-      cointransactions.push(cointransaction);
+    let transactions = [];
+    blockchain.chain.forEach(block => block.data.forEach(transaction => {
+      transactions.push(transaction);
     }));
-
-    const walletInputTs = cointransactions
-      .filter(cointransaction => cointransaction.input.address === this.publicKey);
+    console.log("transactions of balance")
+console.log(transactions);
+    const PaymentTransactions = transactions[0];
+    console.log("Payment transactions ")
+    console.log(PaymentTransactions);
+    const walletInputTs = PaymentTransactions.filter(transaction => transaction.input.address === this.publicKey);
 
     let startTime = 0;
 
@@ -76,9 +83,9 @@ class Wallet {
       startTime = recentInputT.input.timestamp;
     }
 
-    cointransactions.forEach(cointransaction => {
-      if (cointransaction.input.timestamp > startTime) {
-        cointransaction.outputs.find(output => {
+    PaymentTransactions.forEach(transaction => {
+      if (transaction.input.timestamp > startTime) {
+        transaction.outputs.find(output => {
           if (output.address === this.publicKey) {
             balance += output.amount;
           }
@@ -97,3 +104,4 @@ class Wallet {
 }
 
 module.exports = Wallet;
+

@@ -1,118 +1,73 @@
-const PaymntTransaction      = require('./CoinTransaction');
-const MetaDataTransaction    = require('./MetaDataTransaction');
-//const CompTransaction        = require('./CompTransaction');
-//const IntegrationTransaction = require('./IntegrationTransaction');
-const { MaxNumOfPaymentTransactions, MaxNumOfMetadataTransactions, 
-        MaxNumOfCompTransactions, MaxNumOfIntegrationTransactions} 
-        = require('../config');
+const Transaction = require('../wallet/transaction');
+const Metadata    = require('../wallet/metadata')
 class TransactionPool {
   constructor() {
-    this.paymenttransactions = [];
-    this.metaDataTransactions =[];
-    this.comptransactions = [];
-    this.integrationTransactions =[];
+    this.transactions = [];
+    this.metadataS     =[];
   }
-  updateOrAddPaymentTransaction(paymenttransaction) {
-    let paymenttransactionWithId = this.paymenttransactions.find(t => 
-        t.id === paymenttransaction.id);
-     if (paymenttransactionWithId) {
-       this.paymenttransactions[this.paymenttransactions.indexOf
-       (paymenttransactionWithId)] = paymenttransaction;
-     } else { 
-      this.paymenttransactions.push(paymenttransaction);
-    }
-  }
-  updateOrAddMetaDataTransaction(metaDataTransaction) {
-    let metaDataTransactionWithId = this.metaDataTransactions.find(t => 
-        t.id === metaDataTransaction.id);
-    if (metaDataTransactionWithId) {
-      this.metaDataTransactions[this.metaDataTransactions.indexOf
-      (metaDataTransactionWithId)] = metaDataTransaction;
+
+  updateOrAddTransaction(transaction) {
+    let transactionWithId = this.transactions.find(t => t.id === transaction.id);
+
+    if (transactionWithId) {
+      this.transactions[this.transactions.indexOf(transactionWithId)] = transaction;
     } else {
-      this.metaDataTransactions.push(metaDataTransaction);
+      this.transactions.push(transaction);
     }
   }
-  updateOrAddCompTransaction(comptransaction) {
-    let comptransactionWithId = this.comptransactions.find(t => 
-        t.id === comptransaction.id);
-     if (comptransactionWithId) {
-       this.comptransactions[this.comptransactions.indexOf
-       (comptransactionWithId)] = comptransaction;
-     } else { 
-      this.comptransactions.push(comptransaction);
-    } }
-  updateOrAddIntegrationTransaction(integrationTransaction) {
-    let integrationTransactionWithId = this.integrationTransaction.find(
-        t => t.id === integrationTransaction.id);
-    if (integrationTransactionWithId) {
-      this.integrationTransactions[this.integrationTransactions.indexOf
-      (integrationTransactionWithId)] = integrationTransaction;
-    } else {
-      this.integrationTransactions.push(integrationTransaction);
-    }
+
+  AddMetadata(metadata) {
+    // let metadataWithId = this.metadataS.find(t => t.id === metadata.id);
+
+    // if (metadataWithId) {
+    //   this.metaDataS[this.metadataS.indexOf(metadataWithId)] = metadata;
+    // } else {
+      this.metadataS.push(metadata);
+  //  }
   }
-  existingPaymentTransaction(address) {
-    return this.paymenttransactions.find(t => 
-           t.input.address === address); }
-  existingMetaDataTransaction(address) {
-    return this.metaDataTransactions.find(t => 
-           t.Signiture.address === address);}
-  existingCompTransaction(address) {
-    return this.comptransactions.find(t => 
-           t.input.address === address); }
-  existingIntegrationTransaction(address) {
-    return this.integrationTransactions.find(t => 
-           t.Signiture.address === address);}
-  validPaymentTransactions() {
-    return this.paymenttransactions.filter(paymenttransaction => {
-      const outputTotal = paymenttransaction.outputs.reduce(
-                          (total, output) => {
+
+  existingTransaction(address) {
+    return this.transactions.find(t => t.input.address === address);
+  }
+
+  existingMetadata(address) {
+    return this.metadataS.find(t => t.Signiture.address === address);
+  }
+
+  validTransactions() {
+    return this.transactions.filter(transaction => {
+      const outputTotal = transaction.outputs.reduce((total, output) => {
         return total + output.amount;
       }, 0);
-      if (paymenttransaction.input.amount !== outputTotal) {
-        console.log(`Invalid transaction from 
-        ${paymenttransaction.input.address}.`);
-        return;}
-      if (!PaymentTransaction.verifyPaymentTransaction(
-        paymenttransaction)) {
-        console.log(`Invalid signature from 
-        ${paymenttransaction.input.address}.`);
-        return;}
-      return paymenttransaction;
+
+      if (transaction.input.amount !== outputTotal) {
+        console.log(`Invalid transaction from ${transaction.input.address}.`);
+        return;
+      }
+
+      if (!Transaction.verifyTransaction(transaction)) {
+        console.log(`Invalid signature from ${transaction.input.address}.`);
+        return;
+      }
+
+      return transaction;
     });
   }
-  validMetaDataTransactions(){
-    if (!MetaDataTransaction.verifyMetaDataTransaction(
-      metaDataTransaction)) {
-       console.log(`Invalid signature from 
-       ${metaDataTransaction.Signiture.address}.`);
-        return;
-      }
-    return metaDataTransaction;
+
+  validMetadataS(){
+    return this.metadataS.filter(metadata => {
+      if (!Metadata.verifyMetadata(metadata)) {
+         console.log(`Invalid signature from ${metadata.Signiture.address}.`);
+          return;
+        }
+    return metadata;
+  });
   }
-  validCompTransactions(){
-    if (!CompTransaction.verifyCompTransaction(
-      CompTransaction)) {
-       console.log(`Invalid signature from 
-       ${CompTransaction.Signiture.address}.`);
-        return;
-      }
-    return compTransaction;
-  }
-  validIntegrationTransactions(){
-    if (!IntegrationTransaction.verifyIntegrationTransaction(
-         integrationTransaction)) {
-       console.log(`Invalid signature from 
-      ${integrationTransaction.Signiture.address}.`);
-        return;
-      }
-    return integrationTransaction;
-  }
-  clearAll() {
-    this.cointransactions        = [];
-    this.metaDataTransactions    = [];
-    this.comptransactions        = [];
-    this.integrationTransactions = [];
+
+  clear() {
+    this.transactions = [];
+    this.metadataS    = [];
   }
 }
+
 module.exports = TransactionPool;

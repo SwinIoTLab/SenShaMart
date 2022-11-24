@@ -1,0 +1,13 @@
+[  {
+  "@id" : "http://example.org/data/Observation/346344",
+  "@type" : [ "http://www.w3.org/2002/07/owl#NamedIndividual", "http://www.w3.org/ns/sosa/Observation" ],
+  "http://www.w3.org/ns/sosa/hasFeatureOfInterest" : [ {
+    "@id" : "http://www.w3.org/ns/sosa/'Office_temperature'"
+  } ],
+  "http://www.w3.org/ns/sosa/madeBySensor" : [ {
+    "@id" : "http://www.w3.org/ns/sosa/'DHT11'"
+  } ],
+  "http://www.w3.org/ns/sosa/observedProperty" : [ {
+    "@id" : "http://www.w3.org/ns/sosa/'air_temperature'"
+  } ]
+}]

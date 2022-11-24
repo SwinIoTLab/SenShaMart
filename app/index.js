@@ -27,73 +27,53 @@
  * to monitor the node
  * 
  */
-
-const express         = require('express');
-const bodyParser      = require('body-parser');
-const Blockchain      = require('../blockchain');
-const P2pServer       = require('./p2p-server');
-const Wallet          = require('../wallet');
+const express = require('express');
+const bodyParser = require('body-parser');
+const Blockchain = require('../blockchain');
+const P2pServer = require('./p2p-server');
+const Wallet = require('../wallet');
 const TransactionPool = require('../wallet/transaction-pool');
-const Miner           = require('./miner');
-const morgan          = require('morgan');//AddedM
-const multer          = require('multer');
-//const productRoutes   = require("./products");//addedM
-const newEngine       = require('@comunica/actor-init-sparql').newEngine;
+const Miner = require('./miner');
+const QueryEngine = require('@comunica/query-sparql').QueryEngine;
+
 const N3              = require('n3');
 const jsonld          = require('jsonld');
 const DataFactory     = require('n3').DataFactory;
-const fs              = require('fs');
-const swaggerUi       = require('swagger-ui-express')
-const swaggerFile     = require('./swagger_output.json')
-var   lodash          = require('lodash');
 var   mqtt            = require('mqtt');
-var   aedes           = require('aedes')();
+var   aedes           = require('aedes')(); /* aedes is a stream-based MQTT broker */
 var   MQTTserver      = require('net').createServer(aedes.handle);
-var   mosca           = require('mosca');
-//var   awsIot          = require('aws-iot-device-sdk');
-'use strict';// "use strict" is to indicate that the code should be executed in "strict mode".
-             // With strict mode, you can not, for example, use undeclared variables.
+const fs              = require('fs'); /* file system (fs) module allows you to work with 
+                                          the file system on your computer*/
+const multer          = require('multer');/* Multer is a node.js middleware for handling multipart/form-data
+                                          , which is primarily used for uploading files.*/
+'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
+              With strict mode, you can not, for example, use undeclared variables.*/
+
+
+const app = express();
+const bc = new Blockchain();
+const wallet = new Wallet();
+const tp = new TransactionPool();
+const p2pServer = new P2pServer(bc, tp);
+const miner = new Miner(bc, tp, wallet, p2pServer);
 
 const parser        = new N3.Parser({format: 'application/n-quads'});
 const store         = new N3.Store();
-const store2        = new N3.Store();
-const myEngine      = newEngine();
-const app           = express();
-const bc            = new Blockchain();
-const wallet        = new Wallet();
-const tp            = new TransactionPool();
-const p2pServer     = new P2pServer(bc, tp);
-const miner         = new Miner(bc, tp, wallet, p2pServer);
+const myEngine = new QueryEngine();
 
-//var   client        = mqtt.connect('mqtt://broker.hivemq.com');
+app.use(bodyParser.json());
 
-var   MOSCAsettings = { MOSCAport:1883 }
-//var   MOSCAserver   = new mosca.Server(MOSCAsettings);
-
-
-//Mosca mqtt server intialization
-// MOSCAserver.on('ready', function(){
-// console.log("ready");
-// });
-
-//aedes mqtt server intialization
-const MQTTport = process.env.MQTT_PORT || 1883;
-MQTTserver.listen(MQTTport, function () {
-	console.log('MQTTserver listening on port', MQTTport)
-})
-
-//
+//initialising a local storage for storing metadata file initially before storing it in the tripple store
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
     cb(null, './uploads/');
   }, 
   filename: function(req, file, cb) {
-    cb(null, new Date().toISOString() + file.originalname);
+    cb(null, new Date().toISOString() + file.originalname); 
   }
 });
-
- //filtering the type of uploaded files
-const fileFilter = (req, file, cb) => { 
+ //filtering the type of uploaded Metadata files
+ const fileFilter = (req, file, cb) => { 
   // reject a file
   if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' ) {
     cb(null, true);
@@ -101,7 +81,7 @@ const fileFilter = (req, file, cb) => {
     cb(null, false);
   }
 };
-
+// defining a storage and setup limits for storing metadata file initially before storing it in the tripple store
 const upload = multer({
   storage: storage,
   limits: {
@@ -110,89 +90,54 @@ const upload = multer({
  fileFilter: fileFilter 
 });
 
-const port = process.env.HTTP_PORT || 3001;
+// innitialising the HTTP PORT to listen 
+const port = process.env.HTTP_PORT || 3000;
 app.listen(port, () => console.log(`Listening on port ${port}`));
 p2pServer.listen();
 
-app.use('/doc', swaggerUi.serve, swaggerUi.setup(swaggerFile))
+//aedes mqtt server intialization
+const MQTTport = process.env.MQTT_PORT || 1882;
+MQTTserver.listen(MQTTport, function () {
+	console.log('MQTTserver listening on port', MQTTport)
+})
 
-function log(message) {
-  console.log(`New block added: ${message.toString()}`);
-  // fs.writeFileSync('./blocks.json', JSON.stringify(message),{'flags': 'a'}); //the problem with this function was overwrite even when i changed the flag to 'a'
-  // fs.appendFile('./blocks.json', JSON.stringify(message) ,function(err){     //this function makes erorrs when the data is big
-  //   if(err) throw err;
-  //   console.log('IS WRITTEN')
-    // });
-  var BlockStream = fs.createWriteStream("blocks.json", {flags:'a'});
-  BlockStream.write(message+ "\n");
-}
+app.use('/uploads', express.static('uploads')); // to store uploaded metadata to '/uploads' folder
+app.use(bodyParser.json()); //
 
-function logQuery(message) {
-  //console.log(`New block added: ${message.toString()}`);
-  // fs.writeFileSync('./blocks.json', JSON.stringify(message),{'flags': 'a'}); //the problem with this function was overwrite even when i changed the flag to 'a'
-  // fs.appendFile('./blocks.json', JSON.stringify(message) ,function(err){     //this function makes erorrs when the data is big
-  //   if(err) throw err;
-  //   console.log('IS WRITTEN')
-    // });
-  var QueryStream = fs.createWriteStream("Query.json", {flags:'a'});
-  QueryStream.write(message+ "\n");
-}
-
-
-///////////////////////////////
-app.use(morgan("dev"));//AddedM
-app.use('/uploads', express.static('uploads'));
-app.use(bodyParser.urlencoded({ extended: false }));//addedM
-app.use(bodyParser.json());
-//addedM
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
-  if (req.method === 'OPTIONS') {
-      res.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET');
-      return res.status(200).json({});
-  }
-  next();
-});
-//finished AddedM
-
-//GET functions
+// GET APIs
 app.get('/blocks', (req, res) => {
-  res.json(bc.chain); 
+  res.json(bc.chain);
 });
-
+///////////////
 app.get('/MetaDataTransactions', (req, res) => {
-  res.json(tp.metaDataTransactions);
+  res.json(tp.metadataS);
 });
-
-app.get('/CoinTransactions', (req, res) => {
-  res.json(tp.cointransactions);
+///////////////
+app.get('/PaymentTransactions', (req, res) => {
+  res.json(tp.transactions);
 });
-
+///////////////
 app.get('/Transactions', (req, res) => {
   res.json(tp);
 });
-
+///////////////
 app.get('/mine-transactions', (req, res) => {
   const block = miner.mine();
   console.log(`New block added: ${block.toString()}`);
   //res.redirect('/blocks'); 
   res.json("Block mined");
 });
-
+///////////////
 app.get('/public-key', (req, res) => {
   res.json({ publicKey: wallet.publicKey }); 
 });
-
+///////////////
 app.get('/Balance', (req, res) => {
    res.json({ Balance: wallet.balance });
 });
-/////////////////////////////
 
-//POST functions
+//////////////////////////////////////////////////
+// POST APIs
 app.post('/mine', (req, res) => {
   const block = bc.addBlock(req.body.data);
   console.log(`New block added: ${block.toString()}`);
@@ -200,9 +145,16 @@ app.post('/mine', (req, res) => {
   p2pServer.syncChains();
 
   res.redirect('/blocks');
+});
+///////////////
+app.post('/transact', (req, res) => {
+  const { recipient, amount } = req.body;
+  const transaction = wallet.createTransaction(recipient, amount, bc, tp);
+  p2pServer.broadcastTransaction(transaction);
+  res.redirect('/transactions');
 }); 
-
-app.post('/RegistringIoTdevice', (req, res)=> {
+///////////////
+app.post('/IoTdeviceRegistration', (req, res)=> {
   const {Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
          OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
          PaymentPerMinute,Protocol, MessageAttributes, Interval, 
@@ -227,7 +179,7 @@ app.post('/RegistringIoTdevice', (req, res)=> {
   let MessageAttributesIn = MessageAttributes;
   let IntervalIn          = Interval;
   let FurtherDetailsIn    = FurtherDetails; 
-  var metaDataTransaction = wallet.createMetaDataTransaction(NameIn, 
+  var metaDataTransaction = wallet.createMetadata(NameIn, 
                             GeoIn, IP_URLIn,Topic_TokenIn, 
                             PermissionIn, RequestDetailIn, OrgOwnerIn, 
                             DepOwnerIn, PrsnOwnerIn, PaymentPerKbyteIn,
@@ -235,30 +187,30 @@ app.post('/RegistringIoTdevice', (req, res)=> {
                             MessageAttributesIn, IntervalIn, 
                             FurtherDetailsIn, 
                             SSNmetadata, tp);
-    p2pServer.broadcastMetaDataTransaction(metaDataTransaction);});
-   res.json("MetadataTransactionCreated");});
-
    /**
    * the following piece of code 
    * is for storing the metadata as a Nquad format inside the blockchain
    */
-//  jsonld.toRDF(metaDataTransaction.SSNmetadata, {format: 'application/n-quads'}, 
-//  (err, nquads) => {
-//   // nquads is a string of N-Quads
-//   parser.parse(
-//      nquads,
-//       (error, quadN, prefixes) => {
-//       // console.log(quadN)
-//       if (quadN)
-//       //console.log(quadN.predicate)
-//       store.addQuad(DataFactory.quad(
-//          DataFactory.namedNode(quadN.subject.id), 
-//          DataFactory.namedNode(quadN.predicate.id), 
-//          DataFactory.namedNode(quadN.object.id)));       
-//       });
-//  });
-//  metaDataTransaction.SSNmetadata= store;
+ jsonld.toRDF(metaDataTransaction.SSNmetadata, {format: 'application/n-quads'}, 
+ (err, nquads) => {
+  // nquads is a string of N-Quads
+  parser.parse(
+     nquads,
+      (error, quadN, prefixes) => {
+      // console.log(quadN)
+      if (quadN)
+      //console.log(quadN.predicate)
+      store.addQuad(DataFactory.quad(
+         DataFactory.namedNode(quadN.subject.id), 
+         DataFactory.namedNode(quadN.predicate.id), 
+         DataFactory.namedNode(quadN.object.id)));       
+      });
+ });
+ metaDataTransaction.SSNmetadata= store;
+ p2pServer.broadcastMetadata(metaDataTransaction);});
+ res.json("MetadataTransactionCreated");});
 
+///////////////
 app.post('/IoTdevicePaymentTransaction', (req, res) => {
   const { Recipient_payment_address, Amount_of_money, Payment_method,
           Further_details} = req.body;
@@ -275,78 +227,54 @@ app.post('/IoTdevicePaymentTransaction', (req, res) => {
      res.redirect('/PayPalTransaction')
   }
 });
-
+///////////////
 app.post("/UploadMetafile", upload.single('file'), (req, res) => {
-    //  recipient: req.body.recipient, 
-    //  amount   : req.body.amount,
-   // const Geo            = req.body.Geo;
-   // const IPSO           = req.body.IPSO;
-   // const Type           = req.body.Type;
-   // const Permission     = req.body.Permission;
-   // const OrgOwner       = req.body.OrgOwner;
-    const file           = req.file;
-      //file    : req.body.file
-    res.status(201).json({
-    message: 'Uploading Metadata was successful',
-    MetadataFile : file
-  });
+  //  recipient: req.body.recipient, 
+  //  amount   : req.body.amount,
+ // const Geo            = req.body.Geo;
+ // const IPSO           = req.body.IPSO;
+ // const Type           = req.body.Type;
+ // const Permission     = req.body.Permission;
+ // const OrgOwner       = req.body.OrgOwner;
+  const file           = req.file;
+    //file    : req.body.file
+  res.status(201).json({
+  message: 'Uploading Metadata was successful',
+  MetadataFile : file
 });
-
-//////simple search engine 
-app.post('/selectedMeta', (req, res) => {
-  const {Name}= req.body;
- data =bc.chain.map (a => a.data);
- var PickedSensors = [];
- for (let i= 1; i<data.length; i++ ){
-      //var pickeditems = [null];
-     
-       var metadata= data[i][1];
-      //pickeditems.push(...metadata);
-   // }
-// return meta_array.Geo === 30;
-//meta_array=bc.chain.map(b => b.input);
-
-    var picked = lodash.find(metadata, x=> x.Name === Name);
-    if (picked != null){
-    PickedSensors.push(picked);
-    }
- } 
-     
- res.json(PickedSensors);   
-
 });
-
+/////////////////////
 //Start of comunica sparql query code
 /**
  * this code under construction
  * try Comunica SPARQL RDFJS
  * I believe we need to change the way of storing the metadata
  */
-app.post('/sparql', (req, res) => {
+  app.post('/sparql', (req, res) => {
   const {Select,subject,predicate,object,Limit}= req.body; /**these 
   variable are used for the sparql query*/
   var meta = []//represents the array of all metadata inside  blockchain
   var queryResult
-  BlockData =bc.chain.map (a => a.data); /** extracting the data section 
-  from each block inside the whole blockchain */
-  var i;//i represents the number of blocks inside the whole blockchain
-  for ( i= 1; i < BlockData.length; i++ ){ 
-    var j //represents number of metadata transaction inside each block
-   for ( j= 0; j<BlockData[i][1].length ;j++){ 
-     meta.push(BlockData[i][1][j]["SSNmetadata"]); } }  
-     parser.parse(
-       nquads,
-        (error, quadN, prefixes) => {
-        if (quadN)
-           store.addQuad(DataFactory.quad(
-           DataFactory.namedNode(quadN.subject.id), 
-           DataFactory.namedNode(quadN.predicate.id), 
-           DataFactory.namedNode(quadN.object.id)));
-        else {(console.log("no metadata"))
-          store.addQuad(DataFactory.quad(
-          DataFactory.namedNode('http://ex.org/null'), 
-          DataFactory.namedNode('http://ex.org/null'),
-          DataFactory.namedNode('http://ex.org/null')));}});   
+  // BlockData =bc.chain.map (a => a.data); /** extracting the data section 
+  // from each block inside the whole blockchain */
+  // var i;//i represents the number of blocks inside the whole blockchain
+  // for ( i= 1; i < BlockData.length; i++ ){ 
+  //   var j //represents number of metadata transaction inside each block
+  //  for ( j= 0; j<BlockData[i][1].length ;j++){ 
+  //    meta.push(BlockData[i][1][j]["SSNmetadata"]); } }  
+  //    parser.parse(
+  //      nquads,
+  //       (error, quadN, prefixes) => {
+  //       if (quadN)
+  //          store.addQuad(DataFactory.quad(
+  //          DataFactory.namedNode(quadN.subject.id), 
+  //          DataFactory.namedNode(quadN.predicate.id), 
+  //          DataFactory.namedNode(quadN.object.id)));
+  //       else {(console.log("no metadata"))
+  //         store.addQuad(DataFactory.quad(
+  //         DataFactory.namedNode('http://ex.org/null'), 
+  //         DataFactory.namedNode('http://ex.org/null'),
+  //         DataFactory.namedNode('http://ex.org/null')));}});   
         const start = async function (a,b){  
         const result = await myEngine.query(`SELECT ${Select} WHERE 
                        {${subject} ${predicate} ${object}} LIMIT 
@@ -356,195 +284,10 @@ app.post('/sparql', (req, res) => {
               console.log(data.toObject()));
               queryResult= result.bindingsStream};
         start() 
-        logQuery(queryResult);
+      //  logQuery(queryResult);
         res.json(queryResult);});
 
-
-
-// this code to query the nquad data straight forward from the blockchain without changing the formt
-app.post('/sparql2', (req, res) => {
-  //find a way to define default values for the comming variables
-  const {Select,subject,predicate,object,Limit}= req.body; // these variable are used for the sparql query
-  var meta = [] // represents the array of all metadata inside the blockchain
-  var queryResult
-  /**
-   * change the following code to custome map function to remove the for loop 
-   * and make the code faster
-   */
-  BlockData =bc.chain.map (a => a.data); //extracting the data section from each block inside the whole blockchain
-  var i;//i represents the number of blocks inside the whole blockchain
-  for ( i= 1; i < BlockData.length; i++ ){ /**the purpose of this for loop is passing each BlockData to check for metadata
-                                              this loop could be avoided if we used custome map function */ 
-   
-    var j // j represents the number of metadata transaction inside each block
-   for ( j= 0; j<BlockData[i][1].length ;j++){ /** the purpose of this for loop is passing each metadata transaction inside each block
-                                                   this loop could be avoided if we used custome map function  */ 
-     meta.push(BlockData[i][1][j]["SSNmetadata"]); /**this array depends on the structure of the data section from chain from bc
-                                                      i represents the number of blocks inside the whole blockchain
-                                                      j represents the number of metadarta transaction inside each block */ 
-   }
-     
-  } 
-  console.log(meta) // printing the metadata just for testing purposes
-  
- // jsonld.toRDF(meta, {format: 'application/n-quads'}, (err, nquads) => { /**
-
-    //  parser.parse(  /**this piece of code is used for parse the metadata and store it in N3store */
-    //    nquads,
-    //     (error, quadN, prefixes) => {
-    //     // console.log(quadN)
-    //     if (quadN)
-        // store2.addQuad(DataFactory.quad(
-        //    DataFactory.namedNode(meta.subject.id), DataFactory.namedNode(meta.predicate.id), DataFactory.namedNode(meta.object.id)));
-    //      //  console.log(store)
-    //      });
-        
-        // const start = async function (a,b){ // we need this line of code to allow "await" function to work because it requires async function
-        //   const result = await myEngine.query(`SELECT ${Select} WHERE {${subject} ${predicate} ${object}} LIMIT ${Limit}`,
-        //     { sources: [{ type: 'rdfjsSource', value: meta}] }) 
-        //   result.bindingsStream.on('data', (data) => console.log(data.toObject()));
-        //   queryResult= result.bindingsStream
-        //  // console.log(queryResult)
-        //   };
-        //   start()
-        //   res.json(queryResult); 
- 
-  });
- 
-//try to make it return the query results insted of the metadata
-
-  
-//});
-
-/**
- * this part is an implementation for sparql-engine
- * any line code will be added for this reason will have a comment of "sparql-engne" 
- * 
-*/
-// const {Parser, Store }=require('n3');
-// const {Graph, HashMapDataset, PlanBuilder}= require('sparql-engine');//sparql-engine related
-// const CustomGraph =require(/*import your Grapg subclass */);
-
- 
-// // Format a triple pattern acccording to N3 API
-// // SPARQL variables must be replaced by `null` values
-// function formatTriplePattern (triple){
-//   let subject = null
-//   let predicate = null
-//   let object = null
-//   if (!triple.subject.startWith('?')){
-//     subject = triple.subject
-//   }
-//   if (!triple.predicate.startWith('?')){
-//     predicate = triple.predicate 
-//   }
-//   if(!triple.object.startWith('?')){
-//     object = triple.object
-//   }
-//   return { subject, predicate, object}
-// }
-//////////////////////END OF SPARQL_ENGINE CODE
-
-
-// ////////////////sparqle-engine code startred/////////
-// /**
-//  * the following code is for checking sparql-engine
-//   */
-
-//   // class CustomGraph extends Graph {
-
-//   //  /**
-//   //    * Returns an iterator that finds RDF triples matching a triple pattern in the graph.
-//   //    * @param  triple - Triple pattern to find
-//   //    * @return An observable which finds RDF triples matching a triple pattern
-//   //    */
-//   //   find (triple:TripleObject, options: Object): Observable<TripleObject> {/*       */} 
-//   // }
-
-//   class N3Graph extends Graph {
-//     constructor (){
-//       super()
-//       this._store = store()
-//     }
-
-//     insert (triple){
-//       return new Promise((resolve, reject) => {
-//         try {
-//           this._store.addTriple(triple.subject, triple.predicate, triple.object)
-//           resolve()
-        
-//         } catch (e) {
-//           reject (e)
-//         }
-//       })
-//     }
-
-//     find (triple) {
-//       const {subject, predicate, object}= formatTriplePattern(triple)
-//       return this._store.getTriple (subject, predicate, object)
-//     }
-
-//     estimateCardinality (triple){
-//       const {subject,predicate,object} = formatTriplePattern(triple)
-//       return Promise.resolve(this._store.countTriples(subject,predicate,object))
-//     }
-
-//   }
-
-
-// const graph = new N3Graph()
-// const dataset = new HashMapDataset ('http://example.org#default', graph)
-
-// //load some RDF data into the graph
-// const parser = new Parser()
-// parser.parse(`
-// @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-// @prefic : <http://example.org#> .
-// :a foaf:name "a" .
-// :b foaf:name "b" .
-// `).forEach(t => {graph._store.addTriple(t)
-// })
-
-
-// // const GRAPH_A_IRI ='http://example.org#graph-a';
-// // const GRAPH_B_IRI ='http://example.org#graph-b';
-// // const graph_a =new CustomGraph(/* */);
-// // const graph_b = new CustomGraph(/* */);
-
-// // //we set graph_a as a defualt RDF dataset
-// // const dataset = new HashMapDataset(GRAPH_A_IRI, graph_a);
-// // //insert graph_b as a Named Grapg
-// // dataset.addNamedGraph(GRAPH_B_IRI, graph_b);
-
-// //Get the Name of all the people in the default Graph 
-// // const query= `
-// // PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-// // PREFIX foaf: <http://xmlns.com/foaf/0.1>
-// // SELECT ?name
-// // WHERE{
-// //   ?s a foaf:Person .
-// //   ?s rdfs:label ?label .
-// // }`
-// const query = `
-//   PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-//   SELECT ?name
-//   WHERE {
-//     ?s foaf:name ?name .
-//   }`
-
-// // Creates a plan builder for the RDF dataset
-// const builder = new PlanBuilder(dataset);
-
-// // Get an iterator to evaluate the query
-// const iterator = builder.build(query);
-
-// //read results
-// iterator.subscribe(
-//   binding => console.log(bindings),
-//   err => console.error(err),
-//   () => console.log('Query evaluation complete')
-// );
-///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
+        ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
 DistributedBrokers      = ["mqtt.eclipse.org", "test.mosquitto.org","broker.hivemq.com"];
 DistributedBrokersPorts = [1883,1883,1883];
 function makeTopic(length) {
