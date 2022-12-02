@@ -57,7 +57,7 @@ const tp = new TransactionPool();
 const p2pServer = new P2pServer(bc, tp);
 const miner = new Miner(bc, tp, wallet, p2pServer);
 
-const parser        = new N3.Parser({format: 'application/n-quads'});
+const parser        = new N3.Parser(); //({format: 'application/n-quads'});
 const store         = new N3.Store();
 const myEngine = new QueryEngine();
 
@@ -75,7 +75,7 @@ const storage = multer.diskStorage({
  //filtering the type of uploaded Metadata files
  const fileFilter = (req, file, cb) => { 
   // reject a file
-  if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' ) {
+  if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' || file.mimettype === 'turtle') {
     cb(null, true);
   } else {
     cb(null, false);
@@ -124,8 +124,8 @@ app.get('/Transactions', (req, res) => {
 app.get('/mine-transactions', (req, res) => {
   const block = miner.mine();
   console.log(`New block added: ${block.toString()}`);
-  //res.redirect('/blocks'); 
-  res.json("Block mined");
+  res.redirect('/blocks'); 
+ // res.json("Block mined");
 });
 ///////////////
 app.get('/public-key', (req, res) => {
@@ -134,6 +134,64 @@ app.get('/public-key', (req, res) => {
 ///////////////
 app.get('/Balance', (req, res) => {
    res.json({ Balance: wallet.balance });
+});
+
+///////////////
+//this API prints all the quads stored in the RDF store and returns the entire store
+app.get('/quads', (req, res) => {
+  for (const quad of store)
+  console.log(quad);
+  res.json(store);
+
+});
+
+app.get('/IoTdeviceRegistration', (req, res)=> {
+  fs.readdir('./uploads', function(err, files) {  
+  console.log(files[files.length-2]); 
+  var FileName = files[files.length-2];
+  let rawdata             = fs.readFileSync(`./uploads/${FileName}`);  
+  let SenShaMartDesc      = JSON.parse(rawdata); 
+/* the following piece of code is used to genrate JSON object out of name-value pairs submitted
+  let SenShaMartExtNames  = ['Name','Geo' ,'IP_URL' , 'Topic_Token', 'Permission', 'RequestDetail', 
+                             'OrgOwner', 'DepOwner','PrsnOwner', 'PaymentPerKbyte', 
+                             'PaymentPerMinute','Protocol', 'MessageAttributes', 'Interval', 
+                             'FurtherDetails']
+  let SenShaMartExtValues = [Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
+                            OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
+                            PaymentPerMinute,Protocol, MessageAttributes, Interval, 
+                            FurtherDetails]                           
+  let SenSHaMArtExt = {};
+  for (let i =0; i <SenShaMartExtNames.length; i++){
+    SenSHaMArtExt[`${SenShaMartExtNames[i]}`]= SenShaMartExtValues[i] 
+     
+    } 
+//let SenShaMartOnt = SSNmetadata;
+//SenShaMartOnt.push(SenSHaMArtExt); */
+console.log(SenShaMartDesc)
+jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
+  (err, nquads) => {
+    console.log(nquads)
+    var metaDataTransaction = wallet.createMetadata( 
+      nquads, tp);
+
+   parser.parse(
+    nquads,
+       (error, quadN, prefixes) => {
+      if (quadN){
+      store.addQuad(DataFactory.quad(
+        DataFactory.namedNode(quadN.subject.id), 
+        DataFactory.namedNode(quadN.predicate.id), 
+        DataFactory.namedNode(quadN.object.id)));
+      }  
+      else {
+        console.log("# That's all, folks!", prefixes);
+      } 
+       });
+ //console.log(metaDataTransaction.SSNmetadata)
+ p2pServer.broadcastMetadata(metaDataTransaction);
+});
+});
+ res.json("MetadataTransactionCreated");
 });
 
 //////////////////////////////////////////////////
@@ -147,68 +205,12 @@ app.post('/mine', (req, res) => {
   res.redirect('/blocks');
 });
 ///////////////
-app.post('/transact', (req, res) => {
+app.post('/PaymentTransaction', (req, res) => {
   const { recipient, amount } = req.body;
   const transaction = wallet.createTransaction(recipient, amount, bc, tp);
   p2pServer.broadcastTransaction(transaction);
   res.redirect('/transactions');
 }); 
-///////////////
-app.post('/IoTdeviceRegistration', (req, res)=> {
-  const {Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
-         OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
-         PaymentPerMinute,Protocol, MessageAttributes, Interval, 
-         FurtherDetails} = req.body;
-  fs.readdir('./uploads', function(err, files) {  
-  console.log(files[files.length-2]); 
-  var FileName = files[files.length-2];
-  let rawdata             = fs.readFileSync(`./uploads/${FileName}`);  
-  let SSNmetadata         = JSON.parse(rawdata); 
-  let NameIn              = Name; 
-  let GeoIn               = Geo;
-  let IP_URLIn            = IP_URL;
-  let Topic_TokenIn       = Topic_Token;
-  let PermissionIn        = Permission;
-  let RequestDetailIn     = RequestDetail;
-  let OrgOwnerIn          = OrgOwner;
-  let DepOwnerIn          = DepOwner;
-  let PrsnOwnerIn         = PrsnOwner;
-  let PaymentPerKbyteIn   = PaymentPerKbyte;
-  let PaymentPerMinuteIn  = PaymentPerMinute;
-  let ProtocolIn          = Protocol;
-  let MessageAttributesIn = MessageAttributes;
-  let IntervalIn          = Interval;
-  let FurtherDetailsIn    = FurtherDetails; 
-  var metaDataTransaction = wallet.createMetadata(NameIn, 
-                            GeoIn, IP_URLIn,Topic_TokenIn, 
-                            PermissionIn, RequestDetailIn, OrgOwnerIn, 
-                            DepOwnerIn, PrsnOwnerIn, PaymentPerKbyteIn,
-                            PaymentPerMinuteIn,ProtocolIn,
-                            MessageAttributesIn, IntervalIn, 
-                            FurtherDetailsIn, 
-                            SSNmetadata, tp);
-   /**
-   * the following piece of code 
-   * is for storing the metadata as a Nquad format inside the blockchain
-   */
- jsonld.toRDF(metaDataTransaction.SSNmetadata, {format: 'application/n-quads'}, 
- (err, nquads) => {
-  // nquads is a string of N-Quads
-  parser.parse(
-     nquads,
-      (error, quadN, prefixes) => {
-      // console.log(quadN)
-      if (quadN)
-      //console.log(quadN.predicate)
-      store.addQuad(DataFactory.quad(
-         DataFactory.namedNode(quadN.subject.id), 
-         DataFactory.namedNode(quadN.predicate.id), 
-         DataFactory.namedNode(quadN.object.id)));       
-      });
- });
- metaDataTransaction.SSNmetadata= store;
- p2pServer.broadcastMetadata(metaDataTransaction);});
- res.json("MetadataTransactionCreated");});
 
 ///////////////
 app.post('/IoTdevicePaymentTransaction', (req, res) => {
@@ -238,54 +240,31 @@ app.post("/UploadMetafile", upload.single('file'), (req, res) => {
  // const OrgOwner       = req.body.OrgOwner;
   const file           = req.file;
     //file    : req.body.file
+  
   res.status(201).json({
   message: 'Uploading Metadata was successful',
   MetadataFile : file
 });
 });
+
 /////////////////////
 //Start of comunica sparql query code
-/**
- * this code under construction
- * try Comunica SPARQL RDFJS
- * I believe we need to change the way of storing the metadata
- */
   app.post('/sparql', (req, res) => {
-  const {Select,subject,predicate,object,Limit}= req.body; /**these 
-  variable are used for the sparql query*/
-  var meta = []//represents the array of all metadata inside  blockchain
-  var queryResult
-  // BlockData =bc.chain.map (a => a.data); /** extracting the data section 
-  // from each block inside the whole blockchain */
-  // var i;//i represents the number of blocks inside the whole blockchain
-  // for ( i= 1; i < BlockData.length; i++ ){ 
-  //   var j //represents number of metadata transaction inside each block
-  //  for ( j= 0; j<BlockData[i][1].length ;j++){ 
-  //    meta.push(BlockData[i][1][j]["SSNmetadata"]); } }  
-  //    parser.parse(
-  //      nquads,
-  //       (error, quadN, prefixes) => {
-  //       if (quadN)
-  //          store.addQuad(DataFactory.quad(
-  //          DataFactory.namedNode(quadN.subject.id), 
-  //          DataFactory.namedNode(quadN.predicate.id), 
-  //          DataFactory.namedNode(quadN.object.id)));
-  //       else {(console.log("no metadata"))
-  //         store.addQuad(DataFactory.quad(
-  //         DataFactory.namedNode('http://ex.org/null'), 
-  //         DataFactory.namedNode('http://ex.org/null'),
-  //         DataFactory.namedNode('http://ex.org/null')));}});   
-        const start = async function (a,b){  
-        const result = await myEngine.query(`SELECT ${Select} WHERE 
-                       {${subject} ${predicate} ${object}} LIMIT 
-                       ${Limit}`, { sources: [{ type: 'rdfjsSource', 
-                       value: store}] }) 
-              result.bindingsStream.on('data', (data) => 
-              console.log(data.toObject()));
-              queryResult= result.bindingsStream};
-        start() 
-      //  logQuery(queryResult);
-        res.json(queryResult);});
+  const {Select,subject,predicate,object,Limit}= req.body;
+    const start = async function (a,b){  
+      const bindingsStream = await myEngine.queryBindings(`SELECT ${Select} WHERE 
+            {${subject} ${predicate} ${object}} LIMIT 
+            ${Limit}`, { sources: [{ type: 'rdfjsSource', 
+            value: store}]
+            });
+      bindingsStream.on('data', (binding) => {
+        console.log(binding.toString());
+        queryResult= binding;
+      });
+    };
+    start() 
+    res.json("Query succsessful");
+  });
 
         ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
 DistributedBrokers      = ["mqtt.eclipse.org", "test.mosquitto.org","broker.hivemq.com"];

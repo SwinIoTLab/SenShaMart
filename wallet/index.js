@@ -40,18 +40,14 @@ class Wallet {
     return transaction;
   }
 
-  createMetadata(Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, OrgOwner, DepOwner,
-    PrsnOwner, PaymentPerKbyte, PaymentPerMinute, Protocol, MessageAttributes, Interval,  
-    FurtherDetails, SSNmetadata, transactionPool){
+  createMetadata(SSNmetadata, transactionPool){
      //let metadata = transactionPool.existingMetadata(this.publicKey);
   
       // if (metaData) {
       //   metadata.update(this, Geo, Std, Name,MetaHash,file);
       // } else {*/
      
-      let metadata= Metadata.newMetadata(this, Name,Geo ,IP_URL , Topic_Token, Permission, 
-        RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, PaymentPerMinute, 
-        Protocol, MessageAttributes,Interval, FurtherDetails, SSNmetadata);
+      let metadata= Metadata.newMetadata(this, SSNmetadata);
       transactionPool.AddMetadata(metadata);
  
       //}
@@ -66,7 +62,7 @@ class Wallet {
       transactions.push(transaction);
     }));
     console.log("transactions of balance")
-console.log(transactions);
+    console.log(transactions);
     const PaymentTransactions = transactions[0];
     console.log("Payment transactions ")
     console.log(PaymentTransactions);
