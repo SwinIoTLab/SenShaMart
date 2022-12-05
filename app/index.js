@@ -38,7 +38,6 @@ const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
 const N3              = require('n3');
 const jsonld          = require('jsonld');
-const DataFactory     = require('n3').DataFactory;
 var   mqtt            = require('mqtt');
 var   aedes           = require('aedes')(); /* aedes is a stream-based MQTT broker */
 var   MQTTserver      = require('net').createServer(aedes.handle);
@@ -54,11 +53,10 @@ const app = express();
 const bc = new Blockchain();
 const wallet = new Wallet();
 const tp = new TransactionPool();
-const p2pServer = new P2pServer(bc, tp);
+const p2pServer = new P2pServer(bc, tp,'./persist_block_chain.json');
 const miner = new Miner(bc, tp, wallet, p2pServer);
 
 const parser        = new N3.Parser(); //({format: 'application/n-quads'});
-const store         = new N3.Store();
 const myEngine = new QueryEngine();
 
 app.use(bodyParser.json());
@@ -167,31 +165,15 @@ app.get('/IoTdeviceRegistration', (req, res)=> {
     } 
 //let SenShaMartOnt = SSNmetadata;
 //SenShaMartOnt.push(SenSHaMArtExt); */
-console.log(SenShaMartDesc)
-jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
-  (err, nquads) => {
-    console.log(nquads)
-    var metaDataTransaction = wallet.createMetadata( 
-      nquads, tp);
-
-   parser.parse(
-    nquads,
-       (error, quadN, prefixes) => {
-      if (quadN){
-      store.addQuad(DataFactory.quad(
-        DataFactory.namedNode(quadN.subject.id), 
-        DataFactory.namedNode(quadN.predicate.id), 
-        DataFactory.namedNode(quadN.object.id)));
-      }  
-      else {
-        console.log("# That's all, folks!", prefixes);
-      } 
-       });
- //console.log(metaDataTransaction.SSNmetadata)
- p2pServer.broadcastMetadata(metaDataTransaction);
-});
-});
- res.json("MetadataTransactionCreated");
+  console.log(SenShaMartDesc)
+  jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
+    (err, nquads) => {
+      console.log(nquads)
+      var metaDataTransaction = wallet.createMetadata( 
+        nquads, tp);
+    });
+  });
+  res.json("MetadataTransactionCreated");
 });
 
 //////////////////////////////////////////////////
@@ -200,7 +182,7 @@ app.post('/mine', (req, res) => {
   const block = bc.addBlock(req.body.data);
   console.log(`New block added: ${block.toString()}`);
 
-  p2pServer.syncChains();
+  p2pServer.newBlock(block);
 
   res.redirect('/blocks');
 });
@@ -208,7 +190,7 @@ app.post('/mine', (req, res) => {
 app.post('/PaymentTransaction', (req, res) => {
   const { recipient, amount } = req.body;
   const transaction = wallet.createTransaction(recipient, amount, bc, tp);
-  p2pServer.broadcastTransaction(transaction);
+  //p2pServer.broadcastTransaction(transaction);
   res.redirect('/transactions');
 }); 
 
@@ -249,13 +231,14 @@ app.post("/UploadMetafile", upload.single('file'), (req, res) => {
 
 /////////////////////
 //Start of comunica sparql query code
-  app.post('/sparql', (req, res) => {
+app.post('/sparql', (req, res) => {
+  console.log(req.body);
   const {Select,subject,predicate,object,Limit}= req.body;
     const start = async function (a,b){  
       const bindingsStream = await myEngine.queryBindings(`SELECT ${Select} WHERE 
             {${subject} ${predicate} ${object}} LIMIT 
             ${Limit}`, { sources: [{ type: 'rdfjsSource', 
-            value: store}]
+            value: p2pServer.store}]
             });
       bindingsStream.on('data', (binding) => {
         console.log(binding.toString());

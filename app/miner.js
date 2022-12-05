@@ -25,9 +25,8 @@ class Miner {
     console.log(validTransactions);
    // const validMetadataS    = this.transactionPool.metadataS;
     const block = this.blockchain.addBlock([validTransactions, validMetadataS]);
-    this.p2pServer.syncChains();
+    this.p2pServer.newBlock(block);
     this.transactionPool.clear();
-    this.p2pServer.broadcastClearTransactions();
  
     return block;
   }

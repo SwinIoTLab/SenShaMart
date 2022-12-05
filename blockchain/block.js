@@ -24,7 +24,12 @@ class Block {
   static genesis() {
     return new this('Genesis time', '-----', 'f1r57-h45h', [], 0, DIFFICULTY);
   }
+  //we want this to eventually be continously running where there are things in the pool,
+  //however as node is single threaded, this almost has to be a fiber, and yield after every
+  //other iteration to allow for meaningful forward progress
 
+  //we can either add all new transactions into the block as we see them, or stay with the starting list, idk which
+  //to be done later
   static mineBlock(lastBlock, data) {
     let hash, timestamp;
     const lastHash = lastBlock.hash;
