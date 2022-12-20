@@ -241,28 +241,35 @@ app.post("/UploadMetafile", upload.single('file'), (req, res) => {
 app.post('/sparql', (req, res) => {
   console.log(req.body);
   const start = async function () {
-    let result = [];
-    const bindingsStream = await myEngine.queryBindings(
-      req.body,
-      {
-        readOnly: true,
-        sources: [{
-          type: 'rdfjsSource',
-          value: p2pServer.store
-        }]
+    try {
+      let result = [];
+      const bindingsStream = await myEngine.queryBindings(
+        req.body,
+        {
+          readOnly: true,
+          sources: [{
+            type: 'rdfjsSource',
+            value: p2pServer.store
+          }]
+        });
+      bindingsStream.on('data', (binding) => {
+        console.log(binding.toString());
+        result.push(binding);
       });
-    bindingsStream.on('data', (binding) => {
-      console.log(binding.toString());
-      result.push(binding);
-    });
-    bindingsStream.on('end', () => {
-      res.json(JSON.stringify(result));
-    });
-    bindingsStream.on('error', (err) => {
+      bindingsStream.on('end', () => {
+        res.json(JSON.stringify(result));
+      });
+      bindingsStream.on('error', (err) => {
+        console.error(err);
+      });
+    } catch (err) {
       console.error(err);
-    });
+      res.json("Error occured while querying");
+    }
   };
+
   start()
+
 });
 
         ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
