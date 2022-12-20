@@ -8,7 +8,11 @@ class Block {
     this.hash = hash;
     this.data = data;
     this.nonce = nonce;
-    this.difficulty = difficulty || DIFFICULTY;
+    if (difficulty === undefined) {
+      this.difficulty = DIFFICULTY;
+    } else {
+      this.difficulty = difficulty;
+    }
   }
 
   toString() {
@@ -24,26 +28,20 @@ class Block {
   static genesis() {
     return new this('Genesis time', '-----', 'f1r57-h45h', [], 0, DIFFICULTY);
   }
-  //we want this to eventually be continously running where there are things in the pool,
-  //however as node is single threaded, this almost has to be a fiber, and yield after every
-  //other iteration to allow for meaningful forward progress
 
-  //we can either add all new transactions into the block as we see them, or stay with the starting list, idk which
-  //to be done later
-  static mineBlock(lastBlock, data) {
-    let hash, timestamp;
-    const lastHash = lastBlock.hash;
-    let { difficulty } = lastBlock;
-    let nonce = 0;
+  //returns false if hash doesn't match
+  static checkHash(hash, timestamp, lastHash, data, nonce, difficulty) {
+    const computedHash = Block.hash(timestamp, lastHash, data, nonce, difficulty);
 
-    do {
-      nonce++;
-      timestamp = Date.now();
-      difficulty = Block.adjustDifficulty(lastBlock, timestamp);
-      hash = Block.hash(timestamp, lastHash, data, nonce, difficulty);
-    } while (hash.substring(0, difficulty) !== '0'.repeat(difficulty));
+    if (computedHash !== hash) {
+      return false;
+    }
 
-    return new this(timestamp, lastHash, hash, data, nonce, difficulty);
+    if (hash.substring(0, difficulty) !== '0'.repeat(difficulty)) {
+      return false;
+    }
+
+    return true;
   }
 
   static hash(timestamp, lastHash, data, nonce, difficulty) {
@@ -55,11 +53,16 @@ class Block {
     return Block.hash(timestamp, lastHash, data, nonce, difficulty);
   }
 
+  //returns false if block's hash doesn't match internals
+  static checkBlock(block) {
+    return Block.checkHash(block.hash, block.timestamp, block.lastHash, block.data, block.nonce, block.difficulty);
+  }
+
   static adjustDifficulty(lastBlock, currentTime) {
     let { difficulty } = lastBlock;
     difficulty = lastBlock.timestamp + MINE_RATE > currentTime ?
       difficulty + 1 : difficulty - 1;
-    return difficulty;
+    return Math.max(0, difficulty);
   }
 }
 

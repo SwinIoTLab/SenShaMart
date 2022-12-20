@@ -1,29 +1,50 @@
 const Transaction = require('../wallet/transaction');
-const Metadata    = require('../wallet/metadata')
+const Metadata = require('../wallet/metadata')
+
+const Return = {
+  add: 1,
+  update: 2,
+  error: 3
+};
+
 class TransactionPool {
   constructor() {
     this.transactions = [];
     this.metadataS     =[];
   }
 
+  //returns true on update, false on add
   updateOrAddTransaction(transaction) {
-    let transactionWithId = this.transactions.find(t => t.id === transaction.id);
+    if (!Transaction.verifyTransaction(transaction)) {
+      console.log("Couldn't update or add transaction, transaction couldn't be verified");
+      return Return.error;
+    }
+    const foundIndex = this.transactions.findIndex(t => t.id === transaction.id);
 
-    if (transactionWithId) {
-      this.transactions[this.transactions.indexOf(transactionWithId)] = transaction;
+    if (foundIndex !== -1) {
+      this.transactions[foundIndex] = transaction;
+      return Return.update;
     } else {
       this.transactions.push(transaction);
+      return Return.add;
     }
   }
 
-  AddMetadata(metadata) {
-    // let metadataWithId = this.metadataS.find(t => t.id === metadata.id);
+  updateOrAddMetadata(metadata) {
+    if (!Metadata.verifyMetadata(metadata)) {
+      console.log("Couldn't update metdata, metadata couldn't be verified");
+      return Return.error;
+    }
 
-    // if (metadataWithId) {
-    //   this.metaDataS[this.metadataS.indexOf(metadataWithId)] = metadata;
-    // } else {
+    const foundIndex = this.metadataS.findIndex(t => t.id === metadata.id);
+
+    if (foundIndex !== -1) {
+      this.metadataS[foundIndex] = metadata;
+      return Return.update;
+    } else {
       this.metadataS.push(metadata);
-  //  }
+      return Return.add;
+    }
   }
 
   existingTransaction(address) {
@@ -64,10 +85,31 @@ class TransactionPool {
   });
   }
 
-  clear() {
+  clearFromBlock(block) {
+    const transactions = block.data[0];
+    const metadatas = block.data[1];
+    for (const transaction of transactions) {
+      const foundTransaction = this.transactions.findIndex(t => t.id === transaction.id);
+
+      if (foundTransaction !== -1) {
+        this.transactions.splice(foundTransaction, 1);
+      }
+    }
+
+    for (const metadata of metadatas) {
+      const foundMetadata = this.metadataS.findIndex(m => m.id === metadata.id);
+
+      if (foundMetadata !== -1) {
+        this.metadataS.splice(foundMetadata, 1);
+      }
+    }
+  }
+
+  clearAll() {
     this.transactions = [];
     this.metadataS    = [];
   }
 }
 
 module.exports = TransactionPool;
+module.exports.Return = Return;

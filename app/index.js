@@ -33,8 +33,8 @@ const Blockchain = require('../blockchain');
 const P2pServer = require('./p2p-server');
 const Wallet = require('../wallet');
 const TransactionPool = require('../wallet/transaction-pool');
-const Miner = require('./miner');
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
+const ChainUtil = require('../chain-util');
 
 const N3              = require('n3');
 const jsonld          = require('jsonld');
@@ -51,10 +51,10 @@ const multer          = require('multer');/* Multer is a node.js middleware for 
 
 const app = express();
 const bc = new Blockchain();
-const wallet = new Wallet();
+//currently gen a new keypair per run, we probably want to load this from something else in the future
+const wallet = new Wallet(ChainUtil.genKeyPair());
 const tp = new TransactionPool();
-const p2pServer = new P2pServer(bc, tp,'./persist_block_chain.json');
-const miner = new Miner(bc, tp, wallet, p2pServer);
+const p2pServer = new P2pServer(bc, tp, wallet, './persist_block_chain.json');
 
 const parser        = new N3.Parser(); //({format: 'application/n-quads'});
 const myEngine = new QueryEngine();
@@ -119,12 +119,12 @@ app.get('/Transactions', (req, res) => {
   res.json(tp);
 });
 ///////////////
-app.get('/mine-transactions', (req, res) => {
-  const block = miner.mine();
-  console.log(`New block added: ${block.toString()}`);
-  res.redirect('/blocks'); 
- // res.json("Block mined");
-});
+//app.get('/mine-transactions', (req, res) => {
+//  const block = miner.mine();
+//  console.log(`New block added: ${block.toString()}`);
+//  res.redirect('/blocks'); 
+// // res.json("Block mined");
+//});
 ///////////////
 app.get('/public-key', (req, res) => {
   res.json({ publicKey: wallet.publicKey }); 
@@ -137,60 +137,66 @@ app.get('/Balance', (req, res) => {
 ///////////////
 //this API prints all the quads stored in the RDF store and returns the entire store
 app.get('/quads', (req, res) => {
-  for (const quad of store)
-  console.log(quad);
+  //for (const quad of store)
+  //console.log(quad);
   res.json(store);
 
 });
 
 app.get('/IoTdeviceRegistration', (req, res)=> {
   fs.readdir('./uploads', function(err, files) {  
-  console.log(files[files.length-2]); 
-  var FileName = files[files.length-2];
-  let rawdata             = fs.readFileSync(`./uploads/${FileName}`);  
-  let SenShaMartDesc      = JSON.parse(rawdata); 
-/* the following piece of code is used to genrate JSON object out of name-value pairs submitted
-  let SenShaMartExtNames  = ['Name','Geo' ,'IP_URL' , 'Topic_Token', 'Permission', 'RequestDetail', 
-                             'OrgOwner', 'DepOwner','PrsnOwner', 'PaymentPerKbyte', 
-                             'PaymentPerMinute','Protocol', 'MessageAttributes', 'Interval', 
-                             'FurtherDetails']
-  let SenShaMartExtValues = [Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
-                            OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
-                            PaymentPerMinute,Protocol, MessageAttributes, Interval, 
-                            FurtherDetails]                           
-  let SenSHaMArtExt = {};
-  for (let i =0; i <SenShaMartExtNames.length; i++){
-    SenSHaMArtExt[`${SenShaMartExtNames[i]}`]= SenShaMartExtValues[i] 
+    //console.log(files[files.length-2]); 
+    var FileName = files[files.length-2];
+    let rawdata             = fs.readFileSync(`./uploads/${FileName}`);  
+    let SenShaMartDesc      = JSON.parse(rawdata); 
+  /* the following piece of code is used to genrate JSON object out of name-value pairs submitted
+    let SenShaMartExtNames  = ['Name','Geo' ,'IP_URL' , 'Topic_Token', 'Permission', 'RequestDetail', 
+                               'OrgOwner', 'DepOwner','PrsnOwner', 'PaymentPerKbyte', 
+                               'PaymentPerMinute','Protocol', 'MessageAttributes', 'Interval', 
+                               'FurtherDetails']
+    let SenShaMartExtValues = [Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
+                              OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
+                              PaymentPerMinute,Protocol, MessageAttributes, Interval, 
+                              FurtherDetails]                           
+    let SenSHaMArtExt = {};
+    for (let i =0; i <SenShaMartExtNames.length; i++){
+      SenSHaMArtExt[`${SenShaMartExtNames[i]}`]= SenShaMartExtValues[i] 
      
-    } 
-//let SenShaMartOnt = SSNmetadata;
-//SenShaMartOnt.push(SenSHaMArtExt); */
-  console.log(SenShaMartDesc)
-  jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
-    (err, nquads) => {
-      console.log(nquads)
-      var metaDataTransaction = wallet.createMetadata( 
-        nquads, tp);
+      } 
+  //let SenShaMartOnt = SSNmetadata;
+  //SenShaMartOnt.push(SenSHaMArtExt); */
+      //console.log(SenShaMartDesc);
+    jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
+      (err, nquads) => {
+        //console.log(nquads)
+        var metadata = wallet.createMetadata( 
+          nquads, tp);
+        p2pServer.newMetadata(metadata);
+      });
     });
+    res.json("MetadataTransactionCreated");
   });
-  res.json("MetadataTransactionCreated");
-});
 
 //////////////////////////////////////////////////
 // POST APIs
-app.post('/mine', (req, res) => {
-  const block = bc.addBlock(req.body.data);
-  console.log(`New block added: ${block.toString()}`);
+//this doesn't work well with the continious miner
+//app.post('/mine', (req, res) => {
+//  const block = bc.addBlock(req.body.data);
+//  console.log(`New block added: ${block.toString()}`);
 
-  p2pServer.newBlock(block);
+//  p2pServer.newBlock(block);
 
-  res.redirect('/blocks');
-});
+//  res.redirect('/blocks');
+//});
 ///////////////
 app.post('/PaymentTransaction', (req, res) => {
   const { recipient, amount } = req.body;
   const transaction = wallet.createTransaction(recipient, amount, bc, tp);
-  //p2pServer.broadcastTransaction(transaction);
+  if (transaction === null) {
+    res.json("Couldn't create transaction");
+    return;
+  }
+  p2pServer.newTransaction(transaction);
   res.redirect('/transactions');
 }); 
 
@@ -198,11 +204,12 @@ app.post('/PaymentTransaction', (req, res) => {
 app.post('/IoTdevicePaymentTransaction', (req, res) => {
   const { Recipient_payment_address, Amount_of_money, Payment_method,
           Further_details} = req.body;
-  if (Payment_method == "SensorCoin"){
-  const PaymentTransaction = wallet.createCoinTransaction(
-        Recipient_payment_address, Amount_of_money, bc, tp);
-  p2pServer.broadcastCoinTransaction(PaymentTransaction);
-  res.json("PaymentTransactionCreated");
+  if (Payment_method == "SensorCoin") {
+    //create coin transaction doesn't exist yet
+    const PaymentTransaction = wallet.createCoinTransaction(
+      Recipient_payment_address, Amount_of_money, bc, tp);
+    p2pServer.broadcastCoinTransaction(PaymentTransaction);
+    res.json("PaymentTransactionCreated");
   }
   else if (Payment_method == "Bitcoin") {
      res.redirect('/BitcoinTransaction')
@@ -233,21 +240,30 @@ app.post("/UploadMetafile", upload.single('file'), (req, res) => {
 //Start of comunica sparql query code
 app.post('/sparql', (req, res) => {
   console.log(req.body);
-  const {Select,subject,predicate,object,Limit}= req.body;
-    const start = async function (a,b){  
-      const bindingsStream = await myEngine.queryBindings(`SELECT ${Select} WHERE 
-            {${subject} ${predicate} ${object}} LIMIT 
-            ${Limit}`, { sources: [{ type: 'rdfjsSource', 
-            value: p2pServer.store}]
-            });
-      bindingsStream.on('data', (binding) => {
-        console.log(binding.toString());
-        queryResult= binding;
+  const start = async function () {
+    let result = [];
+    const bindingsStream = await myEngine.queryBindings(
+      req.body,
+      {
+        readOnly: true,
+        sources: [{
+          type: 'rdfjsSource',
+          value: p2pServer.store
+        }]
       });
-    };
-    start() 
-    res.json("Query succsessful");
-  });
+    bindingsStream.on('data', (binding) => {
+      console.log(binding.toString());
+      result.push(binding);
+    });
+    bindingsStream.on('end', () => {
+      res.json(JSON.stringify(result));
+    });
+    bindingsStream.on('error', (err) => {
+      console.error(err);
+    });
+  };
+  start()
+});
 
         ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
 DistributedBrokers      = ["mqtt.eclipse.org", "test.mosquitto.org","broker.hivemq.com"];

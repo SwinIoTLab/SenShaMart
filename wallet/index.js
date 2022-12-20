@@ -1,12 +1,12 @@
-const ChainUtil = require('../chain-util');
 const Transaction = require('./transaction');
 const { INITIAL_BALANCE } = require('../config');
 const Metadata = require('./metadata');
+const ChainUtil = require('../chain-util');
 
 class Wallet {
-  constructor() {
+  constructor(keyPair) {
     this.balance = INITIAL_BALANCE;
-    this.keyPair = ChainUtil.genKeyPair();
+    this.keyPair = keyPair;
     this.publicKey = this.keyPair.getPublic().encode('hex');
   }
 
@@ -25,36 +25,16 @@ class Wallet {
 
     if (amount > this.balance) {
       console.log(`Amount: ${amount} exceceds current balance: ${this.balance}`);
-      return;
+      return null;
     }
 
-    let transaction = transactionPool.existingTransaction(this.publicKey);
-
-    if (transaction) {
-      transaction.update(this, recipient, amount);
-    } else { 
-      transaction = Transaction.newTransaction(this, recipient, amount);
-      transactionPool.updateOrAddTransaction(transaction);
-    }
-
-    return transaction;
+    return Transaction.newTransaction(this, recipient, amount);
   }
 
-  createMetadata(SSNmetadata, transactionPool){
-     //let metadata = transactionPool.existingMetadata(this.publicKey);
+  createMetadata(SSNmetadata) {
+    return Metadata.newMetadata(this, SSNmetadata);
+  }
   
-      // if (metaData) {
-      //   metadata.update(this, Geo, Std, Name,MetaHash,file);
-      // } else {*/
-     
-      let metadata= Metadata.newMetadata(this, SSNmetadata);
-      transactionPool.AddMetadata(metadata);
- 
-      //}
-      return metadata; 
-    }
-  
- 
   calculateBalance(blockchain) {
     let balance = this.balance;
     let transactions = [];
@@ -93,7 +73,7 @@ class Wallet {
   }
 
   static blockchainWallet() {
-    const blockchainWallet = new this();
+    const blockchainWallet = new this(ChainUtil.genKeyPair());
     blockchainWallet.address = 'blockchain-wallet';
     return blockchainWallet;
   }

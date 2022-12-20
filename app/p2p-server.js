@@ -1,9 +1,12 @@
 const Websocket = require('ws');
 const N3 = require('n3');
-const parser = new N3.Parser(); //({format: 'application/n-quads'});
 const DataFactory = require('n3').DataFactory;
 const fs = require('fs');
 const process = require('process');
+const Miner = require('./miner');
+const Transaction = require('../wallet/transaction');
+const TransactionPool = require('../wallet/transaction-pool');
+const Metadata = require('../wallet/metadata');
 
 const P2P_PORT = process.env.P2P_PORT || 5000;
 const peers = process.env.PEERS ? process.env.PEERS.split(',') : [];
@@ -15,12 +18,13 @@ const MESSAGE_TYPES = {
 };
 
 class P2pServer {
-  constructor(blockchain, transactionPool,chainStorageLocation) {
+  constructor(blockchain, transactionPool, wallet, chainStorageLocation) {
     this.blockchain = blockchain;
     this.transactionPool = transactionPool;
     this.sockets = [];
     this.store = new N3.Store();
     this.chainStorageLocation = chainStorageLocation;
+    this.miner = new Miner(this.blockchain, this.transactionPool, wallet, this);
 
     //possible race if deleted after check, but we live with it I guess
     if (fs.existsSync(this.chainStorageLocation)) {
@@ -63,39 +67,93 @@ class P2pServer {
       const data = JSON.parse(message);
       switch(data.type) {
         case MESSAGE_TYPES.chain:
-          newChain(data.chain);
+          this.newChain(data.chain);
           break;
         case MESSAGE_TYPES.transaction:
-          this.transactionPool.updateOrAddTransaction(data.transaction);
+          this.newTransaction(data.transaction, false);
           break;
         case MESSAGE_TYPES.metadata:
-          this.transactionPool.updateOrAddMetadata(data.metadata);
+          this.newMetadata(data.metadata, false);
           break;
-        case MESSAGE_TYPES.clear_transactions:
-          this.transactionPool.clear();
-          break;
+        //case MESSAGE_TYPES.clear_transactions:
+        //  this.transactionPool.clear();
+        //  break;
       }
     });
   }
 
-  newBlock(block) {
-    this.onNewBlock(block.data);
-    this.syncChains();
-    this.persistChain(this.blockchain.chain);
+  newMetadata(metadata, broadcast) {
+    if (!Metadata.verifyMetadata(metadata)) {
+      console.log("Couldn't add metadata to p2pServer, couldn't verify");
+      return;
+    }
+
+    switch (this.transactionPool.updateOrAddMetadata(metadata)) {
+      case TransactionPool.Return.add:
+        this.miner.startMine();
+        break;
+      case TransactionPool.Return.update:
+        this.miner.interruptIfContainsMetadata(metadata);
+        break;
+      case TransactionPool.Return.error:
+        console.log("Couldn't add metadata to p2pServer, couldn't updateOrAdd");
+        return;
+    }
+
+    if (broadcast === undefined || broadcast) {
+      this.broadcastMetadata(metadata);
+    }
   }
 
-  newChain(chain,persist) {
-    if (!this.blockchain.replaceChain(chain)) {
+  newTransaction(transaction, broadcast) {
+    if (!Transaction.verifyTransaction(transaction)) {
+      console.log("Couldn't add transaction to p2pServer, couldn't verify");
+      return false;
+    }
+
+    switch (this.transactionPool.updateOrAddTransaction(transaction)) {
+      case TransactionPool.Return.add:
+        this.miner.startMine();
+        break;
+      case TransactionPool.Return.update:
+        this.miner.interruptIfContainsTransaction(transaction);
+        break;
+      case TransactionPool.Return.error:
+        console.log("Couldn't add transaction to p2pServer, couldn't updateOrAdd");
+        return;
+    }
+
+    if (broadcast === undefined || broadcast) {
+      this.broadcastTransaction(transaction);
+    }
+  }
+
+  newBlock(block) {
+    if (!this.blockchain.addBlock(block)) {
+      //invalid block, return
+      return;
+    }
+    this.onNewBlock(block);
+    this.persistChain(this.blockchain.chain);
+    this.syncChains();
+  }
+
+  newChain(chain, persist) {
+    const oldChain = this.blockchain.chain;
+    const divergence = this.blockchain.replaceChain(chain);
+
+    if (divergence === null) {
       //failed to replace
       return;
     }
     if (typeof persist === "undefined" || persist) {
       this.persistChain(chain);
     }
-    //dirty clear
-    this.store = new N3.Store();
-    for (var block in this.blockchain.chain) {
-      this.onNewBlock(block);
+    for (let i = divergence; i < oldChain.length; i++) {
+      this.store.deleteGraph(oldChain[i].hash);
+    }
+    for (let i = divergence; i < this.blockchain.chain.length; i++) {
+      this.onNewBlock(this.blockchain.chain[i]);
     }
   }
 
@@ -112,28 +170,36 @@ class P2pServer {
 
   onNewBlock(block) {
     //block data is of form [transactions,metadatas]
-    if (block.length != 2) {
+    if (block.data.length != 2) {
       //assert?
       return;
     }
-    const metadatas = block[1];
 
-    for (var metadata in metadatas) {
-      if (!(SSNmetadata in metadata)) {
+    this.transactionPool.clearFromBlock(block);
+
+    this.miner.interrupt();
+
+    const metadatas = block.data[1];
+
+    for (const metadata of metadatas) {
+      if (!("SSNmetadata" in metadata)) {
         //assert?
         return;
       }
 
       var ssn = metadata.SSNmetadata;
 
+      const parser = new N3.Parser();
+
       parser.parse(
         ssn,
         (error, quadN, prefixes) => {
           if (quadN) {
-            store.addQuad(DataFactory.quad(
+            this.store.addQuad(DataFactory.quad(
               DataFactory.namedNode(quadN.subject.id),
               DataFactory.namedNode(quadN.predicate.id),
-              DataFactory.namedNode(quadN.object.id)));
+              DataFactory.namedNode(quadN.object.id),
+              DataFactory.namedNode(block.hash)));
           }
         });
     }
@@ -163,13 +229,13 @@ class P2pServer {
     this.sockets.forEach(socket => this.sendChain(socket));
   }
 
-  //broadcastTransaction(transaction) {
-  //  this.sockets.forEach(socket => this.sendTransaction(socket, transaction));
-  //}
+  broadcastTransaction(transaction) {
+    this.sockets.forEach(socket => this.sendTransaction(socket, transaction));
+  }
 
-  //broadcastMetadata(metadata) {
-  //  this.sockets.forEach(socket => this.sendMetadata(socket, metadata));
-  //}
+  broadcastMetadata(metadata) {
+    this.sockets.forEach(socket => this.sendMetadata(socket, metadata));
+  }
 
   //broadcastClearTransactions() {
   //  this.sockets.forEach(socket => socket.send(JSON.stringify({
