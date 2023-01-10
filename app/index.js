@@ -27,16 +27,17 @@
  * to monitor the node
  * 
  */
+
+const LoggerPretty = require("@comunica/logger-pretty").LoggerPretty;
+
 const express = require('express');
 const bodyParser = require('body-parser');
-const Blockchain = require('../blockchain');
 const P2pServer = require('./p2p-server');
 const Wallet = require('../wallet');
 const TransactionPool = require('../wallet/transaction-pool');
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 const ChainUtil = require('../chain-util');
 
-const N3              = require('n3');
 const jsonld          = require('jsonld');
 var   mqtt            = require('mqtt');
 var   aedes           = require('aedes')(); /* aedes is a stream-based MQTT broker */
@@ -48,16 +49,45 @@ const multer          = require('multer');/* Multer is a node.js middleware for 
 'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
               With strict mode, you can not, for example, use undeclared variables.*/
 
+const SETTINGS_STORAGE_LOCATION = "./settings.json";
+const SETTING_MINER_PUBLIC_KEY = "miner-public-key";
+const SETTING_WALLET_PRIVATE_KEY = "wallet-private-key";
+
+var settings = {};
+
+//possible race if deleted after check, but we live with it I guess
+if (fs.existsSync(SETTINGS_STORAGE_LOCATION)) {
+  const rawSettings = fs.readFileSync(SETTINGS_STORAGE_LOCATION, 'utf8');
+  settings = JSON.parse(rawSettings);
+}
 
 const app = express();
-const bc = new Blockchain();
-//currently gen a new keypair per run, we probably want to load this from something else in the future
-const wallet = new Wallet(ChainUtil.genKeyPair());
-const tp = new TransactionPool();
-const p2pServer = new P2pServer(bc, tp, wallet, './persist_block_chain.json');
 
-const parser        = new N3.Parser(); //({format: 'application/n-quads'});
+//wallet init
+var wallet = null;
+
+if (settings.hasOwnProperty(SETTING_WALLET_PRIVATE_KEY)) {
+  wallet = new Wallet(ChainUtil.deserializeKeyPair(settings[SETTING_WALLET_PRIVATE_KEY]));
+} else {
+  wallet = new Wallet(ChainUtil.genKeyPair());
+}
+
+//miner public key init
+var minerPublicKey = null;
+
+if (settings.hasOwnProperty(SETTING_MINER_PUBLIC_KEY)) {
+  minerPublicKey = settings[SETTING_MINER_PUBLIC_KEY];
+} else {
+  minerPublicKey = wallet.publicKey;
+}
+
+const tp = new TransactionPool();
+const p2pServer = new P2pServer(tp, minerPublicKey, './persist_block_chain.json');
 const myEngine = new QueryEngine();
+
+function getBlockchain() {
+  return p2pServer.blockchain;
+}
 
 app.use(bodyParser.json());
 
@@ -73,7 +103,7 @@ const storage = multer.diskStorage({
  //filtering the type of uploaded Metadata files
  const fileFilter = (req, file, cb) => { 
   // reject a file
-  if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' || file.mimettype === 'turtle') {
+  if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' || file.mimetype === 'turtle') {
     cb(null, true);
   } else {
     cb(null, false);
@@ -101,6 +131,9 @@ MQTTserver.listen(MQTTport, function () {
 
 app.use('/uploads', express.static('uploads')); // to store uploaded metadata to '/uploads' folder
 app.use(bodyParser.json()); //
+
+//API HELPERS
+function 
 
 // GET APIs
 app.get('/blocks', (req, res) => {
@@ -131,7 +164,12 @@ app.get('/public-key', (req, res) => {
 });
 ///////////////
 app.get('/Balance', (req, res) => {
-   res.json({ Balance: wallet.balance });
+  const balance = getBlockchain().getBalanceCopy(wallet.publicKey);
+  res.json({ Balance: balance.balance });
+});
+app.get('/Balances', (req, res) => {
+  const balances = getBlockchain().balances;
+  res.json(balances);
 });
 
 ///////////////
@@ -170,15 +208,22 @@ app.get('/IoTdeviceRegistration', (req, res)=> {
       (err, nquads) => {
         //console.log(nquads)
         var metadata = wallet.createMetadata( 
-          nquads, tp);
+          nquads);
         p2pServer.newMetadata(metadata);
       });
     });
     res.json("MetadataTransactionCreated");
   });
 
+app.get('/storeSize', (req, res) => {
+  res.json({
+    size: getBlockchain().store.size
+  });
+});
+
 //////////////////////////////////////////////////
 // POST APIs
+
 //this doesn't work well with the continious miner
 //app.post('/mine', (req, res) => {
 //  const block = bc.addBlock(req.body.data);
@@ -190,18 +235,38 @@ app.get('/IoTdeviceRegistration', (req, res)=> {
 //});
 ///////////////
 app.post('/PaymentTransaction', (req, res) => {
+  if (!req.body.hasOwnProperty('recpient')) {
+    res.json({
+      result: false,
+      reason: "Missing \"recipient\" in body"
+    });
+    return;
+  }
+  if (!req.body.hasOwnProperty('amount')) {
+    res.json({
+      result: false,
+      reason: "Missing \"amount\" in body"
+    });
+    return;
+  }
   const { recipient, amount } = req.body;
-  const transaction = wallet.createTransaction(recipient, amount, bc, tp);
+  const transaction = wallet.createTransaction(recipient, amount, getBlockchain());
   if (transaction === null) {
     res.json("Couldn't create transaction");
     return;
   }
   p2pServer.newTransaction(transaction);
-  res.redirect('/transactions');
+  res.json(transaction);
 }); 
 
 ///////////////
 app.post('/IoTdevicePaymentTransaction', (req, res) => {
+  if (!req.body.hasOwnProperty("Recipient_payment_address")) {
+    req.json({
+      result: false,
+      reason: "Missing \"Recipient_
+    }
+  }
   const { Recipient_payment_address, Amount_of_money, Payment_method,
           Further_details} = req.body;
   if (Payment_method == "SensorCoin") {
@@ -239,24 +304,22 @@ app.post("/UploadMetafile", upload.single('file'), (req, res) => {
 /////////////////////
 //Start of comunica sparql query code
 app.post('/sparql', (req, res) => {
-  console.log(req.body);
   const start = async function () {
     try {
       let result = [];
       const bindingsStream = await myEngine.queryBindings(
-        req.body,
+        req.body.query,
         {
+          log: new LoggerPretty({ level: 'trace' }),
           readOnly: true,
-          sources: [{
-            type: 'rdfjsSource',
-            value: p2pServer.store
-          }]
+          sources: [getBlockchain().store]
         });
       bindingsStream.on('data', (binding) => {
         console.log(binding.toString());
         result.push(binding);
       });
       bindingsStream.on('end', () => {
+        console.log('end');
         res.json(JSON.stringify(result));
       });
       bindingsStream.on('error', (err) => {

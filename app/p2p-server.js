@@ -1,12 +1,12 @@
 const Websocket = require('ws');
-const N3 = require('n3');
-const DataFactory = require('n3').DataFactory;
+
 const fs = require('fs');
 const process = require('process');
 const Miner = require('./miner');
 const Transaction = require('../wallet/transaction');
 const TransactionPool = require('../wallet/transaction-pool');
 const Metadata = require('../wallet/metadata');
+const Blockchain = require('../blockchain');
 
 const P2P_PORT = process.env.P2P_PORT || 5000;
 const peers = process.env.PEERS ? process.env.PEERS.split(',') : [];
@@ -18,22 +18,26 @@ const MESSAGE_TYPES = {
 };
 
 class P2pServer {
-  constructor(blockchain, transactionPool, wallet, chainStorageLocation) {
-    this.blockchain = blockchain;
+  constructor(transactionPool, rewardPublicKey, chainStorageLocation) {
+    this.blockchain = new Blockchain();
     this.transactionPool = transactionPool;
     this.sockets = [];
-    this.store = new N3.Store();
     this.chainStorageLocation = chainStorageLocation;
-    this.miner = new Miner(this.blockchain, this.transactionPool, wallet, this);
 
     //possible race if deleted after check, but we live with it I guess
     if (fs.existsSync(this.chainStorageLocation)) {
       const rawPersistedChain = fs.readFileSync(this.chainStorageLocation, 'utf8');
-      const chain = JSON.parse(rawPersistedChain);
-      this.newChain(chain, false);
+      const deserialized = Blockchain.deserialize(rawPersistedChain);
+      if (deserialized === null) {
+        console.log(`Couldn't deserialize chain at '${this.chainStorageLocation}', starting from genesis`);
+      } else {
+        this.blockchain = deserialized;
+      }
     } else {
       console.log("Didn't find a persisted chain, starting from genesis");
     }
+
+    this.miner = new Miner(this.blockchain, this.transactionPool, rewardPublicKey, this);
   }
 
   listen() {
@@ -106,7 +110,7 @@ class P2pServer {
   }
 
   newTransaction(transaction, broadcast) {
-    if (!Transaction.verifyTransaction(transaction)) {
+    if (!Transaction.verify(transaction)) {
       console.log("Couldn't add transaction to p2pServer, couldn't verify");
       return false;
     }
@@ -128,32 +132,32 @@ class P2pServer {
     }
   }
 
-  newBlock(block) {
+  blockMined(block) {
     if (!this.blockchain.addBlock(block)) {
       //invalid block, return
       return;
     }
-    this.onNewBlock(block);
-    this.persistChain(this.blockchain.chain);
+    this.transactionPool.clearFromBlock(block);
+    this.miner.interrupt();
+    this.persistChain(this.blockchain);
     this.syncChains();
   }
 
   newChain(chain, persist) {
-    const oldChain = this.blockchain.chain;
-    const divergence = this.blockchain.replaceChain(chain);
-
-    if (divergence === null) {
+    const replaceResult = this.blockchain.replaceChain(chain);
+    if (!replaceResult.result) {
       //failed to replace
       return;
     }
+
+    for (let i = 0; i < replaceResult.chainDifference; i++) {
+      this.transactionPool.clearFromBlock(this.blockchain.chain[i]);
+    }
+
+    this.miner.interrupt();
+
     if (typeof persist === "undefined" || persist) {
-      this.persistChain(chain);
-    }
-    for (let i = divergence; i < oldChain.length; i++) {
-      this.store.deleteGraph(oldChain[i].hash);
-    }
-    for (let i = divergence; i < this.blockchain.chain.length; i++) {
-      this.onNewBlock(this.blockchain.chain[i]);
+      this.persistChain(this.blockchain);
     }
   }
 
@@ -161,70 +165,33 @@ class P2pServer {
     try {
       fs.writeFileSync(
         this.chainStorageLocation,
-        JSON.stringify(chain));
+        chain.serialize());
     } catch (err) {
-      console.error("Couldn't persist chain, aborting");
+      console.error(`Couldn't persist chain, aborting: ${err}`);
       process.exit(-1);
-    }
-  }
-
-  onNewBlock(block) {
-    //block data is of form [transactions,metadatas]
-    if (block.data.length != 2) {
-      //assert?
-      return;
-    }
-
-    this.transactionPool.clearFromBlock(block);
-
-    this.miner.interrupt();
-
-    const metadatas = block.data[1];
-
-    for (const metadata of metadatas) {
-      if (!("SSNmetadata" in metadata)) {
-        //assert?
-        return;
-      }
-
-      var ssn = metadata.SSNmetadata;
-
-      const parser = new N3.Parser();
-
-      parser.parse(
-        ssn,
-        (error, quadN, prefixes) => {
-          if (quadN) {
-            this.store.addQuad(DataFactory.quad(
-              DataFactory.namedNode(quadN.subject.id),
-              DataFactory.namedNode(quadN.predicate.id),
-              DataFactory.namedNode(quadN.object.id),
-              DataFactory.namedNode(block.hash)));
-          }
-        });
     }
   }
 
   sendChain(socket) {
     socket.send(JSON.stringify({
       type: MESSAGE_TYPES.chain,
-      chain: this.blockchain.chain
+      chain: this.blockchain.serialize()
     }));
   }
 
-  //sendTransaction(socket, transaction) {
-  //  socket.send(JSON.stringify({
-  //    type: MESSAGE_TYPES.transaction,
-  //    transaction
-  //  }));
-  //}
+  sendTransaction(socket, transaction) {
+    socket.send(JSON.stringify({
+      type: MESSAGE_TYPES.transaction,
+      transaction
+    }));
+  }
   
-  //sendMetadata(socket, metadata) {
-  //  socket.send(JSON.stringify({ 
-  //    type: MESSAGE_TYPES.metadata,
-  //    metadata
-  //  }));
-  //}
+  sendMetadata(socket, metadata) {
+    socket.send(JSON.stringify({ 
+      type: MESSAGE_TYPES.metadata,
+      metadata
+    }));
+  }
   syncChains() {
     this.sockets.forEach(socket => this.sendChain(socket));
   }

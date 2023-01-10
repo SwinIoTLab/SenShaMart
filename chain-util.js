@@ -19,6 +19,14 @@ class ChainUtil {
   static verifySignature(publicKey, signature, dataHash) {
     return ec.keyFromPublic(publicKey, 'hex').verify(dataHash, signature);
   }
+
+  static deserializeKeyPair(serialized) {
+    return ec.keyFromPrivate(serialized, 'hex');
+  }
+
+  static serializeKeyPair(keyPair) {
+    return keyPair.getPrivate().toString('hex');
+  }
 }
 
 module.exports = ChainUtil;

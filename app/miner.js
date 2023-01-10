@@ -1,22 +1,26 @@
-const Wallet = require('../wallet');
-const Transaction = require('../wallet/transaction');
 const Block = require('../blockchain/block');
 
+const ITERATIONS = 1;
  
 class Miner {
-  static STATE_WAITING = 0;
-  static STATE_RUNNING = 1;
-  static STATE_INTERRUPTED = 2;
-  static STATE_RESTARTING = 3;
+  static STATE_RUNNING = 0;
+  static STATE_INTERRUPTED = 1;
 
-  constructor(blockchain, transactionPool, wallet, p2pServer) {
+  constructor(blockchain, transactionPool, reward, p2pServer) {
     this.blockchain = blockchain;
     this.transactionPool = transactionPool;
-    this.wallet = wallet;
     this.p2pServer = p2pServer;
-    this.state = Miner.STATE_WAITING;
-    this.mining = [[], []];
+    this.state = Miner.STATE_INTERRUPTED;
     this.lastBlock = null;
+
+    this.minedStartTime = null;
+
+    this.mining = {};
+    this.mining.transactions = [];
+    this.mining.reward = reward;
+    this.mining.metadatas = [];
+
+    this.startMine();
   }
 
   interrupt() {
@@ -26,65 +30,77 @@ class Miner {
   }
 
   interruptIfContainsTransaction(transaction) {
-    if (this.state === Miner.STATE_RUNNING && this.mining[0].find(t => t.id === transaction.id)) {
+    if (this.state === Miner.STATE_RUNNING && this.mining.metadatas.find(t => t.id === transaction.id)) {
       this.state = Miner.STATE_INTERRUPTED;
     }
   }
   interruptIfContainsMetadata(metadata) {
-    if (this.state === Miner.STATE_RUNNING && this.mining[1].find(t => t.id === metadata.id)) {
+    if (this.state === Miner.STATE_RUNNING && this.mining.transactions.find(t => t.id === metadata.id)) {
       this.state = Miner.STATE_INTERRUPTED;
     }
   }
 
   startMine() {
     //only continue if state is waiting or restarting
-    if (this.state !== Miner.STATE_WAITING && this.state !== Miner.STATE_RESTARTING) {
+    if (this.state !== Miner.STATE_INTERRUPTED && this.state !== Miner.STATE_RESTARTING) {
       return;
     }
 
-    const validTransactions = this.transactionPool.validTransactions();
-    const validMetadataS = this.transactionPool.validMetadataS();
+    this.minedStartTime = process.hrtime.bigint();
 
-    if (validTransactions.length === 0 && validMetadataS.length === 0) {
-      this.state = Miner.STATE_WAITING;
-      return;
-    }
-
-    validTransactions.push(
-      Transaction.rewardTransaction(this.wallet, Wallet.blockchainWallet())
-    );
+    this.mining.transactions =  this.transactionPool.validTransactionsCopy();
+    this.mining.metadatas = this.transactionPool.validMetadatasCopy();
 
     this.lastBlock = this.blockchain.chain[this.blockchain.chain.length - 1];
 
+    this.nonce = 0;
     this.state = Miner.STATE_RUNNING;
 
-    this.mining = [validTransactions, validMetadataS];
-    this.nonce = 0;
     this.mine();
   }
 
   mine() {
     if (this.state !== Miner.STATE_RUNNING) {
       this.state = Miner.STATE_RESTARTING;
-      startMine();
+      this.startMine();
       return;
     }
     const timestamp = Date.now();
     const difficulty = Block.adjustDifficulty(this.lastBlock, timestamp);
-    const hash = Block.hash(timestamp, this.lastBlock.hash, this.mining, this.nonce, difficulty);
 
-    if (hash.substring(0, difficulty) === '0'.repeat(difficulty)) {
-      //success
-      this.p2pServer.newBlock(new Block(timestamp, this.lastBlock.hash, hash, this.mining, this.nonce, difficulty));
-      this.state = Miner.STATE_RESTARTING;
-      setImmediate(() => { this.startMine() });
-    } else {
-      //failure
-      this.nonce++;
-      setImmediate(() => { this.mine() });
+    for (let i = 0; i < ITERATIONS; ++i) {
+      const hash = Block.hash(
+        timestamp,
+        this.lastBlock.hash,
+        this.mining.reward,
+        this.mining.transactions,
+        this.mining.metadatas,
+        this.nonce,
+        difficulty);
+
+      if (hash.substring(0, difficulty) === '0'.repeat(difficulty)) {
+        //success
+        const endTime = process.hrtime.bigint();
+        console.log(`Mined a block of difficulty ${difficulty} in ${Number(endTime - this.minedStartTime) / 1000000}ms`);
+        this.p2pServer.blockMined(new Block(
+          timestamp,
+          this.lastBlock.hash,
+          hash,
+          this.mining.reward,
+          this.mining.transactions,
+          this.mining.metadatas,
+          this.nonce,
+          difficulty));
+        this.state = Miner.STATE_RESTARTING;
+        setImmediate(() => { this.startMine() });
+      } else {
+        //failure
+        this.nonce++;
+      }
     }
+    setImmediate(() => { this.mine() });
   }
 }
 
-module.exports = Miner; 
+module.exports = Miner;
 

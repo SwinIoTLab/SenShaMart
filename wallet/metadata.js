@@ -63,9 +63,7 @@ class Metadata {
   }
 
   static newMetadata(senderWallet,SSNmetadata){
-    return Metadata.MetadataOfIoTDevice(senderWallet, SSNmetadata
-    );
-  
+    return Metadata.MetadataOfIoTDevice(senderWallet, SSNmetadata);
   }
 
   static signMetadata (metadata, senderWallet) {
@@ -76,14 +74,13 @@ class Metadata {
     }
     }
 
-
-    static verifyMetadata(metadata) {
-        return ChainUtil.verifySignature(
-          metadata.Signiture.address,
-          metadata.Signiture.signature,
-          ChainUtil.hash(metadata.SSNmetadata)
-        );
-      }
+  static verifyMetadata(metadata) {
+    return ChainUtil.verifySignature(
+      metadata.Signiture.address,
+      metadata.Signiture.signature,
+      ChainUtil.hash(metadata.SSNmetadata)
+    );
+  }
 }
 
 module.exports = Metadata;

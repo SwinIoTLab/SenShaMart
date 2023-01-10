@@ -18,12 +18,14 @@ describe('Wallet', () => {
     beforeEach(() => {
       sendAmount = 50;
       recipient = 'r4nd0m-4ddr355';
-      transaction = wallet.createTransaction(recipient, sendAmount, bc, tp);
+      transaction = wallet.createTransaction(recipient, sendAmount, bc);
+      tp.updateOrAddTransaction(transaction);
     });
 
     describe('and doing the same transaction', () => {
       beforeEach(() => {
-        wallet.createTransaction(recipient, sendAmount, bc, tp);
+        transaction = wallet.createTransaction(recipient, sendAmount, bc);
+        tp.updateOrAddTransaction(transaction);
       });
 
       it('doubles the `sendAmount` subtracted from the wallet balance', () => {
@@ -46,7 +48,8 @@ describe('Wallet', () => {
       addBalance = 100;
       repeatAdd = 3;
       for (let i=0; i<repeatAdd; i++) {
-        senderWallet.createTransaction(wallet.publicKey, addBalance, bc, tp);
+        const transaction = senderWallet.createTransaction(wallet.publicKey, addBalance, bc);
+        tp.updateOrAddTransaction(transaction);
       }
       bc.addBlock(tp.transactions);
     });
@@ -66,14 +69,16 @@ describe('Wallet', () => {
         tp.clear();
         subtractBalance = 60;
         recipientBalance = wallet.calculateBalance(bc);
-        wallet.createTransaction(senderWallet.publicKey, subtractBalance, bc, tp);
+        const transaction = wallet.createTransaction(senderWallet.publicKey, subtractBalance, bc);
+        tp.updateOrAddTransaction(transaction);
         bc.addBlock(tp.transactions);
       });
 
       describe('and the sender sends another transaction to the recipient', () => {
         beforeEach(() => {
           tp.clear();
-          senderWallet.createTransaction(wallet.publicKey, addBalance, bc, tp);
+          const transaction = senderWallet.createTransaction(wallet.publicKey, addBalance, bc);
+          tp.updateOrAddTransaction(transaction);
           bc.addBlock(tp.transactions);
         });
 
