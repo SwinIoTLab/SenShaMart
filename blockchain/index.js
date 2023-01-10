@@ -144,8 +144,7 @@ function findChainDifference(oldChain, newChain) {
 
 function addBlockMetadata(blockchain, block) {
   const metadatas = Block.getMetadatas(block);
-  for (const key in metadatas) {
-    const metadata = metadatas[key];
+  for (const metadata of metadatas) {
     if (!("SSNmetadata" in metadata)) {
       //assert?
       return;
@@ -163,7 +162,7 @@ function addBlockMetadata(blockchain, block) {
             DataFactory.namedNode(quadN.subject.id),
             DataFactory.namedNode(quadN.predicate.id),
             DataFactory.namedNode(quadN.object.id),
-            DataFactory.namedNode(block.hash)));
+            DataFactory.namedNode(metadata.id)));
         }
       });
   }
@@ -257,7 +256,9 @@ class Blockchain {
 
     //fix metadata
     for (let i = oldChain.length - 1; i >= chainDifference; i--) {
-      this.store.deleteGraph(oldChain[i].hash);
+      for (const metadata of Block.getMetadatas(oldChain[i])) {
+        this.store.deleteGraph(metadata.id);
+      }
     }
     for (let i = chainDifference; i < newChain.length; ++i) {
       addBlockMetadata(this, newChain[i]);
