@@ -1,14 +1,13 @@
 const Wallet = require('./index');
-const TransactionPool = require('./transaction-pool');
 const Blockchain = require('../blockchain');
+const ChainUtil = require('../chain-util');
 const { INITIAL_BALANCE } = require('../config');
 
 describe('Wallet', () => {
-  let wallet, tp, bc;
+  let wallet, bc;
 
   beforeEach(() => {
-    wallet = new Wallet();
-    tp = new TransactionPool();
+    wallet = new Wallet(ChainUtil.genKeyPair());
     bc = new Blockchain();
   });
 
@@ -28,6 +27,7 @@ describe('Wallet', () => {
         tp.updateOrAddTransaction(transaction);
       });
 
+      //?
       it('doubles the `sendAmount` subtracted from the wallet balance', () => {
         expect(transaction.outputs.find(output => output.address === wallet.publicKey).amount)
           .toEqual(wallet.balance - sendAmount * 2);

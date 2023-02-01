@@ -1,3 +1,6 @@
 {
-  "wallet-private-key": "557360924eae1b0a7ff4727c4226300788b2e98e50b91195f1048e671d4d5d6e"
+  "miner-public-key": "041171cd24b7ddb430cb0764c117ab26170af80a664210edd4b901d17a44857d68dfd92552487480efa9d64a3e57dd9853404044b593c8cb593def5234e3954c60",
+  "wallet-keypair": "edfb811d963164da2c37de34ae6c30fd36b87551ffb8c1dba98dd63d1926a90a",
+  "broker-keypair": "edfb811d963164da2c37de34ae6c30fd36b87551ffb8c1dba98dd63d1926a90a",
+  "broker-name": "broker1"
 }

@@ -1,20 +1,43 @@
 const ChainUtil = require('../chain-util');
-const { DIFFICULTY, MINE_RATE } = require('../config');
+const { DIFFICULTY, MINE_RATE } = require('../constants');
 
-function concatIfNotUndefined(concatTo, concatting) {
-  if (typeof concatting !== "undefined") {
-    concatTo += `${concatting}`;
+function concatIfNotUndefined(concatTo, prefix, concatting) {
+  if (typeof concatting !== "undefined" && concatting.length !== 0) {
+    return concatTo + `${prefix}${concatting}`;
+  } else {
+    return concatTo;
+  }
+}
+
+function getData(block, key) {
+
+  const got = block[key];
+
+  if (typeof got !== "undefined" && got !== null) {
+    return got;
+  } else {
+    return [];
   }
 }
 
 class Block {
-  constructor(timestamp, lastHash, hash, reward, transactions, metadatas, nonce, difficulty) {
+  constructor(timestamp, lastHash, hash, reward, payments, sensorRegistrations, brokerRegistrations, integrations, nonce, difficulty) {
     this.timestamp = timestamp;
     this.lastHash = lastHash;
     this.hash = hash;
     this.reward = reward;
-    this.transactions = transactions;
-    this.metadatas = metadatas;
+    if (payments !== null && payments.length !== 0) {
+      this.payments = payments;
+    }
+    if (sensorRegistrations !== null && sensorRegistrations.length !== 0) {
+      this.sensorRegistrations = sensorRegistrations;
+    }
+    if (brokerRegistrations !== null && brokerRegistrations.length !== 0) {
+      this.brokerRegistrations = brokerRegistrations;
+    }
+    if (integrations !== null && integrations.length !== 0) {
+      this.integrations = integrations;
+    }
     this.nonce = nonce;
     if (difficulty === undefined) {
       this.difficulty = DIFFICULTY;
@@ -23,20 +46,20 @@ class Block {
     }
   }
 
-  static getTransactions(block) {
-    if (typeof block.transactions !== "undefined" && block.transactions !== null) {
-      return block.transactions;
-    } else {
-      return [];
-    }
+  static getPayments(block) {
+    return getData(block, "payments");
   }
 
-  static getMetadatas(block) {
-    if (typeof block.metadatas !== "undefined" && block.metadatas !== null) {
-      return block.metadatas;
-    } else {
-      return [];
-    }
+  static getSensorRegistrations(block) {
+    return getData(block, "sensorRegistrations");
+  }
+
+  static getBrokerRegistrations(block) {
+    return getData(block, "brokerRegistrations");
+  }
+
+  static getIntegrations(block) {
+    return getData(block, "integrations");
   }
 
   toString() {
@@ -52,16 +75,17 @@ class Block {
   }
 
   static genesis() {
-    return new this('Genesis time', '-----', 'f1r57-h45h', null, null, null, 0, DIFFICULTY);
+    return new this('Genesis time', '-----', 'f1r57-h45h', null, null, null, null, null, 0, DIFFICULTY);
   }
 
-  static hash(timestamp, lastHash, reward, transactions, metadatas, nonce, difficulty) {
+  static hash(timestamp, lastHash, reward, payments, sensorRegistrations, brokerRegistrations, integrations, nonce, difficulty) {
     //backwards compatible hashing:
-    //if we add a new type of thing to the chain, the hash of previous blocks won't change as if will be undefined
-    let hashing = `${timestamp}${lastHash}${nonce}${difficulty}`;
-    concatIfNotUndefined(hashing, reward);
-    concatIfNotUndefined(hashing, transactions);
-    concatIfNotUndefined(hashing, metadatas);
+    //if we add a new type of thing to the chain, the hash of previous blocks won't change as it will be undefined
+    let hashing = `${timestamp}${lastHash}${nonce}${difficulty}${reward}`;
+    hashing = concatIfNotUndefined(hashing, 'payments', payments);
+    hashing = concatIfNotUndefined(hashing, 'sensorRegistrations', sensorRegistrations);
+    hashing = concatIfNotUndefined(hashing, 'brokerRegistrations', brokerRegistrations);
+    hashing = concatIfNotUndefined(hashing, 'integrations', integrations);
 
     return ChainUtil.hash(hashing).toString();
   }
@@ -71,23 +95,17 @@ class Block {
       block.timestamp,
       block.lastHash,
       block.reward,
-      block.transactions,
-      block.metadatas,
+      block.payments,
+      block.sensorRegistrations,
+      block.brokerRegistrations,
+      block.integrations,
       block.nonce,
       block.difficulty);
   }
 
   //returns false if block's hash doesn't match internals
   static checkHash(block) {
-
-    const computedHash = Block.hash(
-      block.timestamp,
-      block.lastHash,
-      block.reward,
-      block.transactions,
-      block.metadatas,
-      block.nonce,
-      block.difficulty);
+    const computedHash = Block.blockHash(block);
 
     if (computedHash !== block.hash) {
       return false;
@@ -107,6 +125,40 @@ class Block {
     } else {
       return Math.max(0, prevDifficulty - 1);
     }
+  }
+
+  static debugMine(lastBlock, reward, payments, sensorRegistrations,brokerRegistrations,integrations) {
+    const timestamp = Date.now();
+    const difficulty = Block.adjustDifficulty(lastBlock, timestamp);
+
+    let nonce = 0;
+    let hash = '';
+
+    do {
+      nonce++;
+      hash = Block.hash(
+        timestamp,
+        lastBlock.hash,
+        reward,
+        payments,
+        sensorRegistrations,
+        brokerRegistrations,
+        integrations,
+        nonce,
+        difficulty);
+    } while (hash.substring(0, difficulty) !== '0'.repeat(difficulty));
+
+    return new Block(
+      timestamp,
+      lastBlock.hash,
+      hash,
+      reward,
+      payments,
+      sensorRegistrations,
+      brokerRegistrations,
+      integrations,
+      nonce,
+      difficulty);
   }
 }
 

@@ -2,12 +2,12 @@
   "name": "senshamartproject",
   "version": "1.0.0",
   "description": "A novel Marketplace for sharing sensors in decentralized environment",
-  "main": "app/index.js",
+  "main": "miner/miner-app.js",
   "scripts": {
     "test": "jest --watchAll",
     "dev-test": "nodemon dev-test",
-    "start": "node ./app",
-    "dev": "nodemon ./app"
+    "start": "node ./miner/miner-app",
+    "dev": "nodemon ./miner/miner-app"
   },
   "jest": {
     "testEnvironment": "node"
@@ -21,7 +21,7 @@
     "nodemon": "^2.0.20"
   },
   "dependencies": {
-    "@comunica/query-sparql": "^2.5.2",
+    "@comunica/query-sparql-rdfjs": "^2.5.2",
     "aedes": "^0.42.5",
     "body-parser": "^1.20.1",
     "crypto-js": "^4.1.1",

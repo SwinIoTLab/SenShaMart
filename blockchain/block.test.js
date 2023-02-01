@@ -4,13 +4,13 @@ describe('Block', () => {
   let data, lastBlock, block;
 
   beforeEach(() => {
-    data = 'bar';
+    reward = 'bar';
     lastBlock = Block.genesis();
-    block = Block.mineBlock(lastBlock, data);
+    block = Block.debugMine(lastBlock, reward,[],[]);
   });
 
   it('sets the `data` to match the input', () => {
-    expect(block.data).toEqual(data);
+    expect(block.reward).toEqual(reward);
   });
 
   it('sets the `lastHash` to match the hash of the last block', () => {

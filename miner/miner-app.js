@@ -28,147 +28,145 @@
  * 
  */
 
-const LoggerPretty = require("@comunica/logger-pretty").LoggerPretty;
-
 const express = require('express');
 const bodyParser = require('body-parser');
-const P2pServer = require('./p2p-server');
-const Wallet = require('../wallet');
-const TransactionPool = require('../wallet/transaction-pool');
-const QueryEngine = require('@comunica/query-sparql').QueryEngine;
-const ChainUtil = require('../chain-util');
+const P2pServer = require('../p2p-server');
+const QueryEngine = require('@comunica/query-sparql-rdfjs').QueryEngine;
 
-const jsonld          = require('jsonld');
-var   mqtt            = require('mqtt');
-var   aedes           = require('aedes')(); /* aedes is a stream-based MQTT broker */
-var   MQTTserver      = require('net').createServer(aedes.handle);
-const fs              = require('fs'); /* file system (fs) module allows you to work with 
-                                          the file system on your computer*/
-const multer          = require('multer');/* Multer is a node.js middleware for handling multipart/form-data
-                                          , which is primarily used for uploading files.*/
+const Blockchain = require('../blockchain/blockchain');
+const Miner = require('./miner');
 'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
               With strict mode, you can not, for example, use undeclared variables.*/
 
-const SETTINGS_STORAGE_LOCATION = "./settings.json";
-const SETTING_MINER_PUBLIC_KEY = "miner-public-key";
-const SETTING_WALLET_PRIVATE_KEY = "wallet-private-key";
+const Config = require('../config');
 
-var settings = {};
+const Payment = require('../blockchain/payment');
+const Integration = require('../blockchain/integration');
+const SensorRegistration = require('../blockchain/sensor-registration');
+const BrokerRegistration = require('../blockchain/broker-registration');
+const Transaction = require('../blockchain/transaction');
 
-//possible race if deleted after check, but we live with it I guess
-if (fs.existsSync(SETTINGS_STORAGE_LOCATION)) {
-  const rawSettings = fs.readFileSync(SETTINGS_STORAGE_LOCATION, 'utf8');
-  settings = JSON.parse(rawSettings);
+const {
+  DEFAULT_PORT_MINER_API,
+  DEFAULT_PORT_MINER_CHAIN,
+  DEFAULT_PORT_MINER_TX_SHARE,
+  DEFAULT_PORT_MINER_TX_RECV
+} = require('../constants');
+
+const CONFIGS_STORAGE_LOCATION = "./settings.json";
+
+const config = new Config(CONFIGS_STORAGE_LOCATION);
+
+const minerPublicKey = config.get({
+  key: "miner-public-key",
+  default: ""
+});
+const blockchainLocation = config.get({
+  key: "miner-blockchain-location",
+  default: "./miner_blockchain.json"
+});
+const chainServerPort = config.get({
+  key: "miner-chain-server-port",
+  default: DEFAULT_PORT_MINER_CHAIN
+});
+const chainServerPeers = config.get({
+  key: "miner-chain-server-peers",
+  default: []
+});
+const txShareServerPort = config.get({
+  key: "miner-tx-share-server-port",
+  default: DEFAULT_PORT_MINER_TX_SHARE
+});
+const txShareServerPeers = config.get({
+  key: "miner-tx-share-server-peers",
+  default: []
+});
+const txRecvServerPort = config.get({
+  key: "miner-tx-recv-port",
+  default: DEFAULT_PORT_MINER_TX_RECV
+});
+const apiPort = config.get({
+  key: "miner-api-port",
+  default: DEFAULT_PORT_MINER_API
+});
+
+const blockchain = Blockchain.loadFromDisk(blockchainLocation);
+
+function onMined(block) {
+  if (!blockchain.addBlock(block)) {
+    //invalid block, return
+    return;
+  }
+
+  miner.onNewBlock(block);
+  blockchain.saveToDisk(blockchainLocation);
+  chainServer.broadcast(blockchain.serialize());
 }
+
+function onChainServerConnect(socket) {
+  console.log("onChainServerConnect");
+  P2pServer.send(socket, blockchain.serialize());
+}
+
+function onChainServerRecv(data) {
+  const replaceResult = blockchain.replaceChain(data);
+  if (!replaceResult.result) {
+    //failed to replace
+    return;
+  }
+
+  for (let i = replaceResult.chainDifference; i < blockchain.chain.length; i++) {
+    miner.onNewBlock(blockchain.chain[i]);
+  }
+
+  blockchain.saveToDisk(blockchainLocation);
+}
+
+const chainServer = new P2pServer("Chain-server");
+const txShareServer = new P2pServer("Tx-share-server");
+const txRecvServer = new P2pServer("Tx-share-server");
+const miner = new Miner(blockchain, minerPublicKey, onMined);
+
+chainServer.start(chainServerPort, chainServerPeers, onChainServerConnect, onChainServerRecv);
 
 const app = express();
-
-//wallet init
-var wallet = null;
-
-if (settings.hasOwnProperty(SETTING_WALLET_PRIVATE_KEY)) {
-  wallet = new Wallet(ChainUtil.deserializeKeyPair(settings[SETTING_WALLET_PRIVATE_KEY]));
-} else {
-  wallet = new Wallet(ChainUtil.genKeyPair());
-}
-
-//miner public key init
-var minerPublicKey = null;
-
-if (settings.hasOwnProperty(SETTING_MINER_PUBLIC_KEY)) {
-  minerPublicKey = settings[SETTING_MINER_PUBLIC_KEY];
-} else {
-  minerPublicKey = wallet.publicKey;
-}
-
-const tp = new TransactionPool();
-const p2pServer = new P2pServer(tp, minerPublicKey, './persist_block_chain.json');
 const myEngine = new QueryEngine();
-
-function getBlockchain() {
-  return p2pServer.blockchain;
-}
 
 app.use(bodyParser.json());
 
-//initialising a local storage for storing metadata file initially before storing it in the tripple store
-const storage = multer.diskStorage({
-  destination: function(req, file, cb) {
-    cb(null, './uploads/');
-  }, 
-  filename: function(req, file, cb) {
-    cb(null, new Date().toISOString() + file.originalname); 
-  }
-});
- //filtering the type of uploaded Metadata files
- const fileFilter = (req, file, cb) => { 
-  // reject a file
-  if (file.mimetype === 'application/json' || file.mimetype === 'text/plain' || file.mimetype === 'turtle') {
-    cb(null, true);
-  } else {
-    cb(null, false);
-  }
-};
-// defining a storage and setup limits for storing metadata file initially before storing it in the tripple store
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 1024 * 1024 * 5
-  },
- fileFilter: fileFilter 
-});
-
-// innitialising the HTTP PORT to listen 
-const port = process.env.HTTP_PORT || 3000;
-app.listen(port, () => console.log(`Listening on port ${port}`));
-p2pServer.listen();
+// initialising the HTTP PORT to listen 
+app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
 
 //aedes mqtt server intialization
-const MQTTport = process.env.MQTT_PORT || 1882;
-MQTTserver.listen(MQTTport, function () {
-	console.log('MQTTserver listening on port', MQTTport)
-})
+//const MQTTport = process.env.MQTT_PORT || 1882;
+//MQTTserver.listen(MQTTport, function () {
+//	console.log('MQTTserver listening on port', MQTTport)
+//})
 
-app.use('/uploads', express.static('uploads')); // to store uploaded metadata to '/uploads' folder
-app.use(bodyParser.json()); //
-
-//API HELPERS
-function 
+app.use(bodyParser.json());
 
 // GET APIs
 app.get('/blocks', (req, res) => {
-  res.json(bc.chain);
-});
-///////////////
-app.get('/MetaDataTransactions', (req, res) => {
-  res.json(tp.metadataS);
-});
-///////////////
-app.get('/PaymentTransactions', (req, res) => {
-  res.json(tp.transactions);
+  res.json(blockchain.chain);
 });
 ///////////////
 app.get('/Transactions', (req, res) => {
-  res.json(tp);
+  res.json(miner.txs);
 });
-///////////////
-//app.get('/mine-transactions', (req, res) => {
-//  const block = miner.mine();
-//  console.log(`New block added: ${block.toString()}`);
-//  res.redirect('/blocks'); 
-// // res.json("Block mined");
-//});
-///////////////
 app.get('/public-key', (req, res) => {
-  res.json({ publicKey: wallet.publicKey }); 
+  res.json(minerPublicKey); 
 });
 ///////////////
+app.get('/MinerBalance', (req, res) => {
+  const balance = blockchain.getBalanceCopy(minerPublicKey);
+  res.json(balance);
+});
 app.get('/Balance', (req, res) => {
-  const balance = getBlockchain().getBalanceCopy(wallet.publicKey);
-  res.json({ Balance: balance.balance });
+  const balance = blockchain.getBalanceCopy(req.body.publicKey);
+  res.json(balance);
 });
 app.get('/Balances', (req, res) => {
-  const balances = getBlockchain().balances;
+  const balances = blockchain.balances;
   res.json(balances);
 });
 
@@ -177,128 +175,51 @@ app.get('/Balances', (req, res) => {
 app.get('/quads', (req, res) => {
   //for (const quad of store)
   //console.log(quad);
-  res.json(store);
-
+  res.json(blockchain.stores);
 });
 
-app.get('/IoTdeviceRegistration', (req, res)=> {
-  fs.readdir('./uploads', function(err, files) {  
-    //console.log(files[files.length-2]); 
-    var FileName = files[files.length-2];
-    let rawdata             = fs.readFileSync(`./uploads/${FileName}`);  
-    let SenShaMartDesc      = JSON.parse(rawdata); 
-  /* the following piece of code is used to genrate JSON object out of name-value pairs submitted
-    let SenShaMartExtNames  = ['Name','Geo' ,'IP_URL' , 'Topic_Token', 'Permission', 'RequestDetail', 
-                               'OrgOwner', 'DepOwner','PrsnOwner', 'PaymentPerKbyte', 
-                               'PaymentPerMinute','Protocol', 'MessageAttributes', 'Interval', 
-                               'FurtherDetails']
-    let SenShaMartExtValues = [Name,Geo ,IP_URL , Topic_Token, Permission, RequestDetail, 
-                              OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
-                              PaymentPerMinute,Protocol, MessageAttributes, Interval, 
-                              FurtherDetails]                           
-    let SenSHaMArtExt = {};
-    for (let i =0; i <SenShaMartExtNames.length; i++){
-      SenSHaMArtExt[`${SenShaMartExtNames[i]}`]= SenShaMartExtValues[i] 
-     
-      } 
-  //let SenShaMartOnt = SSNmetadata;
-  //SenShaMartOnt.push(SenSHaMArtExt); */
-      //console.log(SenShaMartDesc);
-    jsonld.toRDF(SenShaMartDesc, {format: 'application/n-quads'}, 
-      (err, nquads) => {
-        //console.log(nquads)
-        var metadata = wallet.createMetadata( 
-          nquads);
-        p2pServer.newMetadata(metadata);
-      });
-    });
-    res.json("MetadataTransactionCreated");
-  });
-
-app.get('/storeSize', (req, res) => {
-  res.json({
-    size: getBlockchain().store.size
-  });
+app.get('/brokers', (req, res) => {
+  res.json(blockchain.brokers);
 });
 
-//////////////////////////////////////////////////
-// POST APIs
+app.get('/sensors', (req, res) => {
+  res.json(blockchain.sensors);
+});
 
-//this doesn't work well with the continious miner
-//app.post('/mine', (req, res) => {
-//  const block = bc.addBlock(req.body.data);
-//  console.log(`New block added: ${block.toString()}`);
 
-//  p2pServer.newBlock(block);
+app.get('/ChainServer/sockets', (req, res) => {
+  res.json(chainServer.sockets);
+});
+app.post('/ChainServer/connect', (req, res) => {
+  chainServer.connect(req.body.url);
+  res.json("Connecting");
+});
 
-//  res.redirect('/blocks');
-//});
-///////////////
-app.post('/PaymentTransaction', (req, res) => {
-  if (!req.body.hasOwnProperty('recpient')) {
-    res.json({
-      result: false,
-      reason: "Missing \"recipient\" in body"
-    });
+function newTransaction(res, body, type) {
+  const verifyRes = type.verify(body);
+  if (!verifyRes.result) {
+    res.json(`Failed to verify ${type.name}: ${verifyRes.reason}`);
     return;
   }
-  if (!req.body.hasOwnProperty('amount')) {
-    res.json({
-      result: false,
-      reason: "Missing \"amount\" in body"
-    });
-    return;
-  }
-  const { recipient, amount } = req.body;
-  const transaction = wallet.createTransaction(recipient, amount, getBlockchain());
-  if (transaction === null) {
-    res.json("Couldn't create transaction");
-    return;
-  }
-  p2pServer.newTransaction(transaction);
-  res.json(transaction);
-}); 
 
-///////////////
-app.post('/IoTdevicePaymentTransaction', (req, res) => {
-  if (!req.body.hasOwnProperty("Recipient_payment_address")) {
-    req.json({
-      result: false,
-      reason: "Missing \"Recipient_
-    }
-  }
-  const { Recipient_payment_address, Amount_of_money, Payment_method,
-          Further_details} = req.body;
-  if (Payment_method == "SensorCoin") {
-    //create coin transaction doesn't exist yet
-    const PaymentTransaction = wallet.createCoinTransaction(
-      Recipient_payment_address, Amount_of_money, bc, tp);
-    p2pServer.broadcastCoinTransaction(PaymentTransaction);
-    res.json("PaymentTransactionCreated");
-  }
-  else if (Payment_method == "Bitcoin") {
-     res.redirect('/BitcoinTransaction')
-  }
-  else if (Payment_method == "PayPal") {
-     res.redirect('/PayPalTransaction')
-  }
+  miner.addTransaction(new Transaction(body, type));
+  res.json("Added to pool");
+}
+
+app.post('/Payment', (req, res) => {
+  newTransaction(res, req.body, Payment);
 });
-///////////////
-app.post("/UploadMetafile", upload.single('file'), (req, res) => {
-  //  recipient: req.body.recipient, 
-  //  amount   : req.body.amount,
- // const Geo            = req.body.Geo;
- // const IPSO           = req.body.IPSO;
- // const Type           = req.body.Type;
- // const Permission     = req.body.Permission;
- // const OrgOwner       = req.body.OrgOwner;
-  const file           = req.file;
-    //file    : req.body.file
-  
-  res.status(201).json({
-  message: 'Uploading Metadata was successful',
-  MetadataFile : file
+
+app.post('/Integration', (req, res) => {
+  newTransaction(res, req.body, Integration);
 });
+
+app.post('/BrokerRegistration', (req, res) => {
+  newTransaction(res, req.body, BrokerRegistration);
+});
+
+app.post('/SensorRegistration', (req, res) => {
+  newTransaction(res, req.body, SensorRegistration);
 });
 
 /////////////////////
@@ -310,16 +231,17 @@ app.post('/sparql', (req, res) => {
       const bindingsStream = await myEngine.queryBindings(
         req.body.query,
         {
-          log: new LoggerPretty({ level: 'trace' }),
           readOnly: true,
-          sources: [getBlockchain().store]
+          sources: blockchain.stores
         });
       bindingsStream.on('data', (binding) => {
-        console.log(binding.toString());
-        result.push(binding);
+        const pushing = {};
+        for (const [key, value] of binding) {
+          pushing[key.value] = value.value;
+        }
+        result.push(pushing);
       });
       bindingsStream.on('end', () => {
-        console.log('end');
         res.json(JSON.stringify(result));
       });
       bindingsStream.on('error', (err) => {
@@ -335,7 +257,7 @@ app.post('/sparql', (req, res) => {
 
 });
 
-        ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
+/*        ///////////////////////////////////////////////////////////Integration///////////////////////////////////////////////////////////
 DistributedBrokers      = ["mqtt.eclipse.org", "test.mosquitto.org","broker.hivemq.com"];
 DistributedBrokersPorts = [1883,1883,1883];
 function makeTopic(length) {
@@ -367,9 +289,10 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
   MassagiesRecived.push(false);
   data =bc.chain.map (a => a.data);
   MetaANDTransFound = false;
-  for (let j= data.length-1; j>0; j-- ){/** this for loop load 
-  Blockchain and search for metadata and payment transaction that match 
-  the provided MetadataID and TransactionID  */ 
+  for (let j= data.length-1; j>0; j-- ){
+  //this for loop load 
+  //Blockchain and search for metadata and payment transaction that match 
+  //the provided MetadataID and TransactionID 
       var metadata     = data[j][1];
       var transaction  = data [j][0];
       var pickedMetadata   = lodash.find(metadata, x=> 
@@ -404,11 +327,10 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
 
 
 
-    app.get ('/IoTdataObtainingAndForward', (req, res) => {
+app.get ('/IoTdataObtainingAndForward', (req, res) => {
       console.log (`transaction of IoT Application ${i} approved`)
       BrokerRandomNumber = (Math.floor(
-      Math.random()*DistributedBrokers.length)+1)-1 /**  collect 
-      a random number to select a random broker*/
+      Math.random()*DistributedBrokers.length)+1)-1 //collect a random number to select a random broker
       MiddlewareBroker = DistributedBrokers[BrokerRandomNumber];
       MiddlewareTopic = makeTopic(5);// generate random topic
       MiddlewarePort = DistributedBrokersPorts[BrokerRandomNumber];
@@ -416,8 +338,7 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
       configurationMessage = {"host/broker":MiddlewareBroker,
                               "topic":MiddlewareTopic,
                               "port":MiddlewarePort, 
-                              "duration":Duration} /** add pk of the node
-      connect to the IoT device and send the configuration massage*/ 
+                              "duration":Duration} //add pk of the node connect to the IoT device and send the configuration massage 
       var   IoTDeviceClient = mqtt.connect(IoTDeviceBroker);
       MiddlewareClients.push(mqtt.connect(`mqtt://${MiddlewareBroker}`))
       var MiddlewareClient = MiddlewareClients[i]
@@ -432,8 +353,7 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
       IoTDeviceClient.on("message", (topic, message) => {
         console.log(message.toString())
         IoTDeviceClient.end(true)});
-      /**  connect the randomly choosed mqtt middlware broker to 
-       * listen to the transmitted massagies */
+      //connect the randomly choosed mqtt middlware broker to listen to the transmitted massagies
       MiddlewareClient.on("connect", ack => {
         console.log("connected!");
         console.log(MiddlewareBroker)
@@ -441,21 +361,19 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
         MiddlewareClient.subscribe(MiddlewareTopic, err => {
               console.log(err); });}); 
       MiddlewareTracking.push({index:i, 
-      TrackingTopic:MiddlewareTopic})/** this used to track the connection
-      in case there are multiple conection at the same time */ 
-      MiddlewareClient.on("message", (topic, message) => {/**  call back,
-      will run each time a massage recived, I did it in a way if there are
-      multiple connections, it will run for all the massagies, then truck the 
-      massagies by MiddlwareTracking Array */
+      TrackingTopic:MiddlewareTopic}) //this used to track the connection in case there are multiple conection at the same time
+      MiddlewareClient.on("message", (topic, message) => {
+      //call back,
+      //will run each time a massage recived, I did it in a way if there are
+      //multiple connections, it will run for all the massagies, then truck the 
+      //massagies by MiddlwareTracking Array
         var MiddlewareFound = MiddlewareTracking.filter(function(item) {
           return item.TrackingTopic == topic;}); 
         console.log(MiddlewareFound);
         console.log(message.toString());
-        MiddlewareIndex = MiddlewareFound[0].index/**  this is the index of 
-        the connection or the Middleware*/
+        MiddlewareIndex = MiddlewareFound[0].index//  this is the index of the connection or the Middleware
         console.log(MiddlewareIndex)
-        MassageCounter[MiddlewareIndex]++;/** this used to track the number 
-        of recived massagies of each connection */ 
+        MassageCounter[MiddlewareIndex]++;//this used to track the number of recived massagies of each connection
         console.log(Date.now()-StartSending[MiddlewareIndex])
         if (Date.now() - StartSending[MiddlewareIndex] >= 
             (Durations[MiddlewareIndex]*1000)
@@ -463,18 +381,17 @@ app.post('/IoTdeviceIntegration-Control', (req, res) => {
           console.log("sending time finished")
           if (MassageCounter[MiddlewareIndex] > 0.75*(
               Durations[MiddlewareIndex]/Intervals[MiddlewareIndex])
-              ){/** which means most of massagies have been sent */
+              ){// which means most of massagies have been sent
             console.log("massages recived")
             MassagiesRecived[MiddlewareIndex] = true;}
-          if (MassagiesRecived[MiddlewareIndex]){/** if massagies recived,
-             pay the 10% as service fees */
+          if (MassagiesRecived[MiddlewareIndex]){// if massagies recived, pay the 10% as service fees
             const PaymentTransaction = wallet.createPaymentTransaction(
             NodeAddress,(0.1*paymentAmount[MiddlewareIndex]) , bc, tp);
             p2pServer.broadcastPaymentTransaction(PaymentTransaction);
             console.log("amount paid to the IoT device")
             console.log(MiddlewareIndex)
             MiddlewareClient = MiddlewareClients[MiddlewareIndex];
-            /**  disconnect the middleware mqtt broker */
+            //disconnect the middleware mqtt broker
             MiddlewareClient.end(true)}
           else{// if massagies not recived, pay the IoT application back
             res.redirect('/IoTapplicationCompensationTransaction')}};});
@@ -686,4 +603,4 @@ i++;
 });
 
 
-});
+});*/
