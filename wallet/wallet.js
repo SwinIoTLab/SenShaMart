@@ -19,6 +19,9 @@ class Wallet {
   //TODO: API for multiple outputs
   //returns Transaction
   createPayment(rewardAmount, outputs, blockchain) {
+    console.log(`${outputs}`);
+    console.log(`${rewardAmount}`);
+
     const balance = blockchain.getBalanceCopy(this.publicKey);
 
     if (balance.counter > this.counter) {
@@ -49,7 +52,7 @@ class Wallet {
 
   //TODO: API for multiple sensors
   //returns Transaction
-  createIntegration(rewardAmount, outputs, blockchain) {
+  createIntegration(rewardAmount, witnessCount, outputs, blockchain) {
     const balance = blockchain.getBalanceCopy(this.publicKey);
 
     if (balance.counter > this.counter) {
@@ -69,7 +72,7 @@ class Wallet {
     const counterToUse = this.counter + 1;
     this.counter++;
 
-    return new Integration(this.keyPair, counterToUse, outputs, rewardAmount);
+    return new Integration(this.keyPair, counterToUse, outputs, witnessCount, rewardAmount);
   }
 
   createIntegrationAsTransaction(rewardAmount, outputs, blockchain) {

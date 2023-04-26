@@ -20,14 +20,14 @@ function validateMetadata(t) {
 
   for (const triple of t) {
     switch (triple.p) {
-      case "IoT device metadata/Cost_of_Using_IoT_Devices/Cost_Per_Minute": costPerMinute.push(triple); break;
-      case "IoT device metadata/Cost_of_Using_IoT_Devices/Cost_Per_Kbyte": costPerKB.push(triple); break;
+      case "http://SSM/Cost_of_Using_IoT_Devices/Cost_Per_Minute": costPerMinute.push(triple); break;
+      case "http://SSM/Cost_of_Using_IoT_Devices/Cost_Per_Kbyte": costPerKB.push(triple); break;
       case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
         if (triple.o === "http://www.w3.org/ns/sosa/Sensor") {
           isSensor.push(triple.s);
         }
         break;
-      case "IoT device metadata/Integration/Broker": integrationBroker.push(triple); break;
+      case "http://SSM/Integration/Broker": integrationBroker.push(triple); break;
     }
   }
 

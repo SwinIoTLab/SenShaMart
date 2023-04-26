@@ -1,0 +1,92 @@
+<html>
+<head>
+  <script src="/logic.js"></script>
+</head>
+<body>
+  <div>
+    <span>Senshamart simple ui</span><button id="refresh">Refresh</button>
+  </div>
+  <div id="status">LOADING</div>
+  <div>
+    <span>Wallet public key: </span><span id="publicKey">LOADING</span>
+  </div>
+  <div>
+    <span>Current amount: </span><span id="coinCount">LOADING</span>
+  </div>
+  <div>
+    <button id="payButton">pay</button>
+    <button id="queryButton">query</button>
+    <button id="sensorInfoButton">sensor info</button>
+    <button id="brokerInfoButton">broker info</button>
+    <button id="registerSensorButton">register sensor</button>
+    <button id="registerBrokerButton">register broker</button>
+    <button id="integrateButton">integrate</button>
+  </div>
+  <div id="payTab">
+    <div>
+      <span>Pay:</span><input id="payAmount" type="number" />
+    </div>
+    <div>
+      <span>To:</span><input id="payTo" type="text" style="width:50%"/>
+    </div>
+    <div>
+      <span>Reward:</span><input id="payReward" type="number"/>
+    </div>
+    <button input id="payDo">Pay</button>
+    <div>Existing Wallets:</div>
+    <div>
+      <select id="payWallets" style="width:50%" size="10">
+      </select>
+      <label id="payInfo" style="width:50%">TEST</label>
+    </div>
+  </div>
+  <div id="queryTab">
+    <div>Query:</div>
+    <div>
+      <textarea id="queryInput" spellcheck="false">
+        Query here!
+      </textarea>
+    </div>
+    <div>
+      <button id="queryGo">Go!</button>
+    </div>
+    <div>
+      <table>
+        <thead id="queryHead"></thead>
+        <tbody id="queryBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="sensorInfoTab">
+    <div>
+      Sensors:
+    </div>
+    <div>
+      <span>
+        <select id="sensorSensors" style="width:50%"size="10">
+        </select>
+      </span>
+      <span>
+        <label id="sensorInfo"style="width:50%">TEST</label>
+      </span>
+    </div>
+  </div>
+
+  <div id="brokerInfoTab">
+
+  </div>
+  <div id="registerSensorTab">
+
+  </div>
+  <div id="registerBrokerTab">
+
+  </div>
+  <div id="integrateTab">
+
+  </div>
+</body>
+</html>
+
+<script>
+  startSenshamartWalletUI();
+</script>

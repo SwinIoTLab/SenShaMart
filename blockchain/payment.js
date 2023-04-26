@@ -6,17 +6,23 @@ const outputValidation = {
 };
 
 function validateOutputs(t) {
-  if (!ChainUtil.validateArray(t, function (output) {
-    return ChainUtil.validateObject(output, outputValidation).result;
-  })) {
-    return false;
+  let validateRes = ChainUtil.validateArray(t, function (output) {
+      return ChainUtil.validateObject(output, outputValidation);
+    });
+  if (!validateRes.result) {
+    return validateRes
   }
 
   if (t.length <= 0) {
-    return false;
+    return {
+      result: false,
+      reason: "Outputs length isn't positive"
+    };
   }
 
-  return true;
+  return {
+    result: true
+  };
 }
 
 const baseValidation = {

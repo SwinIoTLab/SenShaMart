@@ -4,6 +4,7 @@ const Payment = require('../blockchain/payment');
 const Integration = require('../blockchain/integration');
 const SensorRegistration = require('../blockchain/sensor-registration');
 const BrokerRegistration = require('../blockchain/broker-registration');
+const Compensation = require('../blockchain/compensation');
 
 const ITERATIONS = 1;
 
@@ -27,6 +28,7 @@ function mine(miner) {
       miner.txs.sensorRegistrations.mining,
       miner.txs.brokerRegistrations.mining,
       miner.txs.integrations.mining,
+      miner.txs.compensations.mining,
       miner.nonce,
       difficulty);
 
@@ -34,7 +36,7 @@ function mine(miner) {
       //success
       const endTime = process.hrtime.bigint();
       console.log(`Mined a block of difficulty ${difficulty} in ${Number(endTime - miner.minedStartTime) / 1000000}ms`);
-      miner.onMined(new Block(
+      miner.blockchain.addBlock(new Block(
         timestamp,
         miner.lastBlock.hash,
         hash,
@@ -43,6 +45,7 @@ function mine(miner) {
         miner.txs.sensorRegistrations.mining,
         miner.txs.brokerRegistrations.mining,
         miner.txs.integrations.mining,
+        miner.txs.compensations.mining,
         miner.nonce,
         difficulty));
       miner.state = STATE_INTERRUPTED;
@@ -69,8 +72,7 @@ function startMine(miner) {
   miner.txs.integrations.mining = [...miner.txs.integrations.pool];
   miner.txs.sensorRegistrations.mining = [...miner.txs.sensorRegistrations.pool];
   miner.txs.brokerRegistrations.mining = [...miner.txs.brokerRegistrations.pool];
-
-  miner.lastBlock = miner.blockchain.chain[miner.blockchain.chain.length - 1];
+  miner.txs.compensations.mining = [...miner.txs.compensations.pool];
 
   miner.nonce = 0;
   miner.state = STATE_RUNNING;
@@ -89,22 +91,23 @@ function clearFromBlock(miner, txs, blockTxs) {
     if (foundIndex !== -1) {
       txs.pool.splice(foundIndex, 1);
     }
-
-    if (txs.mining.some(findTx(tx))) {
-      miner.state = STATE_INTERRUPTED;
-    }
   }
 }
 
 class Miner {
-  constructor(blockchain, reward, onMined) {
-    this.blockchain = blockchain;
-    this.onMined = onMined;
+  constructor(blockchain, reward) {
+    this.lastBlock = blockchain.lastBlock();
     this.state = STATE_INTERRUPTED;
-    this.lastBlock = null;
     this.reward = reward;
 
     this.minedStartTime = null;
+
+    this.blockchain = blockchain;
+    blockchain.addListener((newBlocks, oldBlocks, difference) => {
+      for (var i = difference; i < newBlocks.length; i++) {
+        this.onNewBlock(newBlocks[i]);
+      }
+    });
 
     this.txs = {
       payments: {
@@ -120,6 +123,10 @@ class Miner {
         mining: []
       },
       brokerRegistrations: {
+        pool: [],
+        mining: []
+      },
+      compensations: {
         pool: [],
         mining: []
       }
@@ -142,6 +149,7 @@ class Miner {
       case Integration: txs = this.txs.integrations; break;
       case SensorRegistration: txs = this.txs.sensorRegistrations; break;
       case BrokerRegistration: txs = this.txs.brokerRegistrations; break;
+      case Compensation: txs = this.txs.compensations; break;
       default: throw new Error(`unknown tx type: ${tx.type.name()}`);
     }
 
@@ -162,6 +170,11 @@ class Miner {
     clearFromBlock(this, this.txs.integrations, Block.getIntegrations(block));
     clearFromBlock(this, this.txs.sensorRegistrations, Block.getSensorRegistrations(block));
     clearFromBlock(this, this.txs.brokerRegistrations, Block.getBrokerRegistrations(block));
+    clearFromBlock(this, this.txs.compensations, Block.getCompensations(block));
+
+    this.state = STATE_INTERRUPTED;
+
+    this.lastBlock = block;
   }
 }
 

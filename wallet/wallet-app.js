@@ -1,7 +1,9 @@
 //WALLET
 const express = require('express');
 const bodyParser = require('body-parser');
-const P2pServer = require('../p2p-server');
+const BlockchainProp = require('../network/blockchain-prop');
+
+const fs = require('fs');
 
 const N3 = require('n3');
 
@@ -13,6 +15,8 @@ const QueryEngine = require('@comunica/query-sparql-rdfjs').QueryEngine;
 const Blockchain = require('../blockchain/blockchain');
 
 const {
+  DEFAULT_UI_HTML,
+  DEFAULT_UI_JS,
   DEFAULT_PORT_WALLET_API,
   DEFAULT_PORT_WALLET_CHAIN,
   DEFAULT_PORT_MINER_CHAIN
@@ -41,31 +45,46 @@ const chainServerPort = config.get({
   key: "wallet-chain-server-port",
   default: DEFAULT_PORT_WALLET_CHAIN
 });
+const chainServerPublicAddress = config.get({
+  key: "wallet-chain-server-public-address",
+  default: "-"
+});
 const chainServerPeers = config.get({
   key: "wallet-chain-server-peers",
   default: ["ws://127.0.0.1:" + DEFAULT_PORT_MINER_CHAIN]
 });
+const uiHtmlLocation = config.get({
+  key: "wallet-ui-html",
+  default: DEFAULT_UI_HTML
+});
+const uiJsLocation = config.get({
+  key: "wallet-ui-js",
+  default: DEFAULT_UI_JS
+});
 
 const blockchain = Blockchain.loadFromDisk(blockchainLocation);
 
-function onChainServerRecv(data) {
-  const replaceResult = blockchain.replaceChain(Blockchain.deserialize(data));
-  if (!replaceResult.result) {
-    console.log(`Failed to replace chain: ${replaceResult.reason}`);
-    //failed to replace
-    return;
-  }
+const chainServer = new BlockchainProp("Wallet-chain-server", false, blockchain);
 
-  blockchain.saveToDisk(blockchainLocation);
-}
-
-const chainServer = new P2pServer("Chain-server");
-
-chainServer.start(chainServerPort, chainServerPeers, (_) => { }, onChainServerRecv);
+chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers);
 const app = express();
 app.use(bodyParser.json());
 
 app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
+
+//UI
+
+app.get('/logic.js', (req, res) => {
+  res.type('.js').sendFile(uiJsLocation, {
+    root:"./"
+  });
+});
+
+app.get('/ui.html', (req, res) => {
+  res.type('.html').sendFile(uiHtmlLocation, {
+    root:"./"
+  });
+});
 
 app.get('/ChainServer/sockets', (req, res) => {
   res.json(chainServer.sockets);
@@ -91,20 +110,34 @@ app.get('/Balance', (req, res) => {
   res.json(balance);
 });
 app.get('/Balances', (req, res) => {
-  const balances = blockchain.balances;
+  const balances = blockchain.chain.balances.current;
   res.json(balances);
+});
+app.get('/Sensors', (req, res) => {
+  res.json(blockchain.chain.sensors.current);
+});
+app.get('/Brokers', (req, res) => {
+  res.json(blockchain.chain.sensors.current);
+});
+app.get('/Integrations', (req, res) => {
+  res.json(blockchain.chain.integrations.current);
 });
 
 app.post('/Payment', (req, res) => {
+  console.log(JSON.stringify(req.body));
+  const rewardAmount = req.body.rewardAmount;
+  const outputs = req.body.outputs;
+
   res.json(wallet.createPayment(
-    req.body.rewardAmount,
-    req.body.outputs,
+    rewardAmount,
+    outputs,
     blockchain));
 });
 
 app.post('/Integration', (req, res) => {
   res.json(wallet.createIntegration(
     req.body.rewardAmount,
+    req.body.witnessCount,
     req.body.outputs,
     blockchain));
 });
@@ -166,7 +199,7 @@ app.post('/BrokerRegistration', (req, res) => {
         });
 
         if (quad.predicate.id === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-          && quad.object.id === "SSM/Broker") {
+          && quad.object.id === "http://SSM/Broker") {
           brokers.push(quad.subject.id);
         }
         return;
@@ -265,13 +298,13 @@ app.post('/sparql', (req, res) => {
         req.body.query,
         {
           readOnly: true,
-          sources: blockchain.stores
+          sources: blockchain.chain.stores
         });
       bindingsStream.on('data', (binding) => {
-        result.push(binding);
+        result.push(binding.entries);
       });
       bindingsStream.on('end', () => {
-        res.json(JSON.stringify(result));
+        res.json(result);
       });
       bindingsStream.on('error', (err) => {
         console.error(err);

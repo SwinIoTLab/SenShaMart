@@ -31,8 +31,8 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const P2pServer = require('../p2p-server');
+const BlockchainProp = require('../network/blockchain-prop');
 const QueryEngine = require('@comunica/query-sparql-rdfjs').QueryEngine;
-
 const Blockchain = require('../blockchain/blockchain');
 const Miner = require('./miner');
 'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
@@ -73,17 +73,9 @@ const chainServerPeers = config.get({
   key: "miner-chain-server-peers",
   default: []
 });
-const txShareServerPort = config.get({
-  key: "miner-tx-share-server-port",
-  default: DEFAULT_PORT_MINER_TX_SHARE
-});
-const txShareServerPeers = config.get({
-  key: "miner-tx-share-server-peers",
-  default: []
-});
-const txRecvServerPort = config.get({
-  key: "miner-tx-recv-port",
-  default: DEFAULT_PORT_MINER_TX_RECV
+const minerPublicAddress = config.get({
+  key: "miner-public-address",
+  default: "-"
 });
 const apiPort = config.get({
   key: "miner-api-port",
@@ -92,42 +84,10 @@ const apiPort = config.get({
 
 const blockchain = Blockchain.loadFromDisk(blockchainLocation);
 
-function onMined(block) {
-  if (!blockchain.addBlock(block)) {
-    //invalid block, return
-    return;
-  }
+const chainServer = new BlockchainProp("Chain-server", true, blockchain);
+const miner = new Miner(blockchain, minerPublicKey);
 
-  miner.onNewBlock(block);
-  blockchain.saveToDisk(blockchainLocation);
-  chainServer.broadcast(blockchain.serialize());
-}
-
-function onChainServerConnect(socket) {
-  console.log("onChainServerConnect");
-  P2pServer.send(socket, blockchain.serialize());
-}
-
-function onChainServerRecv(data) {
-  const replaceResult = blockchain.replaceChain(data);
-  if (!replaceResult.result) {
-    //failed to replace
-    return;
-  }
-
-  for (let i = replaceResult.chainDifference; i < blockchain.chain.length; i++) {
-    miner.onNewBlock(blockchain.chain[i]);
-  }
-
-  blockchain.saveToDisk(blockchainLocation);
-}
-
-const chainServer = new P2pServer("Chain-server");
-const txShareServer = new P2pServer("Tx-share-server");
-const txRecvServer = new P2pServer("Tx-share-server");
-const miner = new Miner(blockchain, minerPublicKey, onMined);
-
-chainServer.start(chainServerPort, chainServerPeers, onChainServerConnect, onChainServerRecv);
+chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
 const app = express();
 const myEngine = new QueryEngine();
