@@ -1,5 +1,4 @@
 const Block = require('./block');
-const N3 = require('n3');
 const DataFactory = require('n3').DataFactory;
 const Payment = require('./payment');
 const SensorRegistration = require('./sensor-registration');
@@ -8,6 +7,7 @@ const Integration = require('./integration');
 const Compensation = require('./compensation');
 const fs = require('fs');
 const ChainUtil = require('../chain-util');
+const RdsStore = require('./rds-store');
 const {
   MINING_REWARD} = require('../constants');
 
@@ -121,18 +121,22 @@ class Updater {
     this.sensors = {};
     this.brokers = {};
     this.integrations = {};
-    this.store = new N3.Store();
+    this.store = new RdsStore;
+
+    this.store.startPush();
 
     if (block !== null) {
-      this.store.addQuad(
-        DataFactory.namedNode(this.block.hash),
-        DataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-        DataFactory.namedNode("http://SSM/Block"));
+      this.store.push(
+        DataFactory.quad(
+          DataFactory.namedNode(this.block.hash),
+          DataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+          DataFactory.namedNode("http://SSM/Block")));
 
-      this.store.addQuad(
-        DataFactory.namedNode(this.block.hash),
-        DataFactory.namedNode("http://SSM/lastBlock"),
-        DataFactory.namedNode(this.parent.getBlockFromTop(0).hash));
+      this.store.push(
+        DataFactory.quad(
+          DataFactory.namedNode(this.block.hash),
+          DataFactory.namedNode("http://SSM/lastBlock"),
+          DataFactory.namedNode(this.parent.getBlockFromTop(0).hash)));
     }
   }
 
@@ -207,7 +211,7 @@ class Updater {
     this.parent.sensors.add(this.sensors);
     this.parent.brokers.add(this.brokers);
     this.parent.integrations.add(this.integrations);
-    this.parent.stores.push(this.store);
+    this.store.pushInto(this.parent.store);
 
     this.parent = null;
   }
@@ -230,7 +234,7 @@ class Chain {
       this.brokers = new PropertyHistory(parent.brokers);
       this.integrations = new PropertyHistory(parent.integrations);
     }
-    this.stores = [];
+    this.store = new RdsStore();
   }
 
   getBlockFromTop(i) {
@@ -316,7 +320,7 @@ class Chain {
     this.sensors.undo();
     this.brokers.undo();
     this.integrations.undo();
-    this.stores.pop();
+    this.store.pop();
   }
 
   clone() {
@@ -326,7 +330,7 @@ class Chain {
     cloned.sensors = this.sensors.clone();
     cloned.brokers = this.brokers.clone();
     cloned.integrations = this.integrations.clone();
-    cloned.stores = [...this.stores];
+    cloned.store = this.store.clone();
     return cloned;
   }
 
@@ -340,18 +344,18 @@ class Chain {
     this.sensors.finish();
     this.brokers.finish();
     this.integrations.finish();
-    this.parent.stores.push(...this.stores);
-
+    this.store.pushInto(this.parent.store);
     this.parent = null;
   }
 }
 
 function addRDF(store, metadata) {
   for (const triple of metadata) {
-    store.addQuad(DataFactory.quad(
-      DataFactory.namedNode(triple.s),
-      DataFactory.namedNode(triple.p),
-      DataFactory.namedNode(triple.o)));
+    store.push(
+      DataFactory.quad(
+        DataFactory.namedNode(triple.s),
+        DataFactory.namedNode(triple.p),
+        DataFactory.namedNode(triple.o)));
   }
 }
 
@@ -608,22 +612,26 @@ function stepSensorRegistration(updater, reward, sensorRegistration) {
   addRDF(updater.store, sensorRegistration.metadata);
 
   const newSensor = extInfo.metadata;
-  updater.store.addQuad(
-    DataFactory.namedNode(newSensor.sensorName),
-    DataFactory.namedNode("http://SSM/transactionCounter"),
-    DataFactory.literal(sensorRegistration.counter));
-  updater.store.addQuad(
-    DataFactory.namedNode(newSensor.sensorName),
-    DataFactory.namedNode("http://SSM/OwnedBy"),
-    DataFactory.namedNode("http://SSM/Wallet/" + sensorRegistration.input));
-  updater.store.addQuad(
-    DataFactory.namedNode(updater.block.hash),
-    DataFactory.namedNode("http://SSM/Transaction"),
-    DataFactory.namedNode(newSensor.sensorName));
-  updater.store.addQuad(
-    DataFactory.namedNode(updater.block.hash),
-    DataFactory.namedNode("http://SSM/SensorRegistration"),
-    DataFactory.namedNode(newSensor.sensorName));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(newSensor.sensorName),
+      DataFactory.namedNode("http://SSM/transactionCounter"),
+      DataFactory.literal(sensorRegistration.counter)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(newSensor.sensorName),
+      DataFactory.namedNode("http://SSM/OwnedBy"),
+      DataFactory.namedNode("http://SSM/Wallet/" + sensorRegistration.input)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(updater.block.hash),
+      DataFactory.namedNode("http://SSM/Transaction"),
+      DataFactory.namedNode(newSensor.sensorName)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(updater.block.hash),
+      DataFactory.namedNode("http://SSM/SensorRegistration"),
+      DataFactory.namedNode(newSensor.sensorName)));
 
   newSensor.counter = sensorRegistration.counter;
   updater.setSensor(newSensor.sensorName, newSensor);
@@ -679,22 +687,26 @@ function stepBrokerRegistration(updater, reward, brokerRegistration) {
 
   const newBroker = extInfo.metadata;
   newBroker.input = brokerRegistration.input;
-  updater.store.addQuad(
-    DataFactory.namedNode(newBroker.brokerName),
-    DataFactory.namedNode("http://SSM/transactionCounter"),
-    DataFactory.literal(brokerRegistration.counter));
-  updater.store.addQuad(
-    DataFactory.namedNode(newBroker.brokerName),
-    DataFactory.namedNode("http://SSM/OwnedBy"),
-    DataFactory.namedNode("http://SSM/Wallet/" + brokerRegistration.input));
-  updater.store.addQuad(
-    DataFactory.namedNode(updater.block.hash),
-    DataFactory.namedNode("http://SSM/Transaction"),
-    DataFactory.namedNode(newBroker.brokerName));
-  updater.store.addQuad(
-    DataFactory.namedNode(updater.block.hash),
-    DataFactory.namedNode("http://SSM/BrokerRegistration"),
-    DataFactory.namedNode(newBroker.brokerName));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(newBroker.brokerName),
+      DataFactory.namedNode("http://SSM/transactionCounter"),
+      DataFactory.literal(brokerRegistration.counter)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(newBroker.brokerName),
+      DataFactory.namedNode("http://SSM/OwnedBy"),
+      DataFactory.namedNode("http://SSM/Wallet/" + brokerRegistration.input)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(updater.block.hash),
+      DataFactory.namedNode("http://SSM/Transaction"),
+      DataFactory.namedNode(newBroker.brokerName)));
+  updater.store.push(
+    DataFactory.quad(
+      DataFactory.namedNode(updater.block.hash),
+      DataFactory.namedNode("http://SSM/BrokerRegistration"),
+      DataFactory.namedNode(newBroker.brokerName)));
 
   newBroker.counter = brokerRegistration.counter;
   updater.setBroker(newBroker.brokerName, newBroker);
@@ -856,7 +868,6 @@ function findBlocksDifference(oldBlocks, newBlocks) {
     difference: oldBlocks.length
   };
 }
-
 
 function saveToDisk(blockchain, location) {
   try {
@@ -1025,6 +1036,10 @@ class Blockchain {
   addListener(listener) {
     this.listeners.push(listener);
   }
+
+  rdfSource() {
+    return this.chain.store;
+  }    
 }
 
 module.exports = Blockchain;

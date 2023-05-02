@@ -44,15 +44,15 @@ class Connection {
     this.socket = socket;
     this.state = STATE_RUNNING;
 
-    this.socket.on("error", () => {
+    this.socket.addEventListener("error", () => {
       this.onError();
     });
 
-    this.socket.on("open", () => {
+    this.socket.addEventListener("open", () => {
       this.onConnection();
     });
 
-    this.socket.on("message", (data) => {
+    this.socket.addEventListener("message", (data) => {
       this.onMessage(data);
     });
 
@@ -60,22 +60,25 @@ class Connection {
   }
 
   connect(address) {
-    console.log(`${this.logName} connecting`);
     this.address = address;
     this.state = STATE_CONNECTING;
 
     this.reconnectWait = 1;
-    this.socket = new Websocket(this.address);
+    this.reconnect();
+  }
 
-    this.socket.on("error", () => {
+  reconnect() {
+    console.log(`${this.logName} connecting`);
+    this.socket = new Websocket(this.address);
+    this.socket.addEventListener("error", () => {
       this.onError();
     });
 
-    this.socket.on("open", () => {
+    this.socket.addEventListener("open", () => {
       this.onConnection();
     });
 
-    this.socket.on("message", (data) => {
+    this.socket.addEventListener("message", (data) => {
       this.onMessage(data);
     });
   }
@@ -88,7 +91,7 @@ class Connection {
     switch (this.state) {
       case STATE_CONNECTING:
         //this.reconnectWait seconds + random [0,1000] ms
-        setTimeout(() => this.socket = new Websocket(this.address),
+        setTimeout(() => this.reconnect(),
           1000 * this.reconnectWait + Math.floor(Math.random() * 1000));
         this.reconnectWait *= 2;
         if (this.reconnectWait > 64) {
@@ -104,7 +107,7 @@ class Connection {
         if (this.address !== null) {
           this.state = STATE_CONNECTING;
           this.reconnectWait = 1;
-          this.socket = new Websocket(this.address);
+          this.reconnect();
         } else {
           //do nothing?
         }

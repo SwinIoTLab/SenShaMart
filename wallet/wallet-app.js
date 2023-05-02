@@ -293,12 +293,12 @@ const myEngine = new QueryEngine();
 app.post('/sparql', (req, res) => {
   const start = async function () {
     try {
-      let result = [];
+      const result = [];
       const bindingsStream = await myEngine.queryBindings(
         req.body.query,
         {
           readOnly: true,
-          sources: blockchain.chain.stores
+          sources: [blockchain.rdfSource()]
         });
       bindingsStream.on('data', (binding) => {
         result.push(binding.entries);
@@ -307,14 +307,13 @@ app.post('/sparql', (req, res) => {
         res.json(result);
       });
       bindingsStream.on('error', (err) => {
-        console.error(err);
+        res.json(err);
       });
     } catch (err) {
       console.error(err);
-      res.json("Error occured while querying");
+      res.json(err);
     }
   };
 
-  start()
-
+  start();
 });
