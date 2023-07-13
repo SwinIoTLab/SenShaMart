@@ -1,5 +1,5 @@
 const Integration = require('./integration');
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 
 function createDummyIntegration(keyPair, witnesses) {
   return new Integration(

@@ -1,4 +1,4 @@
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const Integration = require('./integration');
 
 const integrationValidation = {
@@ -59,6 +59,10 @@ class Compensation {
     return {
       result: true,
     };
+  }
+
+  static name() {
+    return "Compensation";
   }
 }
 

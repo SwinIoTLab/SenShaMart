@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://unpkg.com/n3/browser/n3.min.js"></script>
+  <script src="/demo-logic.js"></script>
+</head>
+<body>
+  <div>
+    <span>Senshamart Demo UI</span><button id="refresh" disabled>Refresh</button>
+  </div>
+  <div id="status">LOADING</div>
+  <div>
+    <span>Wallet public key: </span><span id="publicKey">LOADING</span>
+  </div>
+  <div>
+    <span>Current wallet balance: </span><span id="coinCount">0</span>
+  </div>
+  <div>
+    <span>Current chain length: </span><span id="chainDepth">LOADING</span>
+  </div>
+  <div>
+    <button id="sensorsButton">Registered Sensors</button>
+    <button id="registerSensorButton">Register a Sensor</button>
+    <button id="integrateButton">Integrate with Sensors</button>
+    <button id="freeformQueryButton">Query Sensors</button>
+  </div>
+  <div id="sensorsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Sensor:
+      </div>
+      <div>
+        <div>
+          <select id="sensorSensors" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="sensorInfo" style="display:none">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Name: </span>
+        <input id="sensorInfoName" disabled />
+        <span>Cost Per Minute: </span>
+        <input id="sensorInfoCPM" disabled />
+        <span>Cost Per KB: </span>
+        <input id="sensorInfoCPKB" disabled />
+        <span>Broker: </span>
+        <input id="sensorInfoBroker" disabled />
+      </div>
+      <div>Extra Metadata</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Subject</th>
+              <th>Predicate</th>
+              <th>Object</th>
+            </tr>
+          </thead>
+          <tbody id="sensorInfoRDFBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div id="registerSensorTab">
+    <div style="display:grid; grid-template-columns: auto 1fr">
+      <span>Name:</span><input id="registerName" required />
+      <span>Cost Per Minute:</span><input id="registerCPM" type="number" min="0" value="1" required />
+      <span>Cost Per KB:</span><input id="registerCPKB" type="number" min="0" value="1" required />
+      <span>Broker:</span><select id="registerBroker" required></select>
+      <span>Extra metadata:</span><span><button id="registerClearMetadata">Clear</button><input id="registerMetadata" type="file" value="" /></span>
+      <span>Reward amount:</span><input id="registerReward" type="number" min="0" value="0" required />
+      <button id="registerGo">Create</button>
+    </div>
+    <h1>
+      Raw Sensor Registration Transaction:
+    </h1>
+    <label id="registerResult"></label>
+  </div>
+  <div id="integrateTab">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr">
+      <div>
+        <button id="integrateAdd">Add Sensor</button>
+        <select id="integrateAddSensors" style="width:100%" size="10"></select>
+      </div>
+      <div>
+        <button id="integrateRemove">Remove Sensor</button>
+        <select id="integrateRemoveSensors" style="width:100%" size="10"></select>
+      </div>
+      <div id="integrateInfo" style="display:none">
+        <div style="display:grid;grid-template-columns: auto 1fr">
+          <span>Name: </span>
+          <input id="integrateInfoName" disabled />
+          <span>Cost Per Minute: </span>
+          <input id="integrateInfoCPM" disabled />
+          <span>Cost Per KB: </span>
+          <input id="integrateInfoCPKB" disabled />
+          <span>Broker: </span>
+          <input id="integrateInfoBroker" disabled />
+          <span id="integrateInfoAmountLabel">Amount: </span>
+          <input id="integrateInfoAmount" type="number" min="1" value="1" />
+        </div>
+        <button id="integrateAcceptModifications" style="display:none">Accept Modifications</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:auto 1fr">
+      <span>Reward Amount:</span>
+      <input id="integrateReward" type="number" min="0" value="0" />
+    </div>
+    <button id="integrateGo">Integrate</button>
+    <div>
+      <h1>
+        Connection Info:
+      </h1>
+      <table style="border-collapse: collapse; width: 100%; table-layout: fixed">
+        <thead>
+          <tr>
+            <th>SensorName</th>
+            <th>Broker ip</th>
+            <th>MQTT topic</th>
+          </tr>
+        </thead>
+        <tbody id="integrateConnectInfoBody"></tbody>
+      </table>
+    </div>
+    <h1>
+      Raw Integration Transaction:
+    </h1>
+    <div id="integrateResult">
+
+    </div>
+  </div>
+  <div id="freeformQueryTab">
+    <div>Query:</div>
+    <select id="freeformSelect" style="width:100%">
+    </select>
+    <div id="freeformQuery"></div>
+    <div>
+      <button id="freeformGo">Go!</button>
+    </div>
+    <div>
+      <table style="border-collapse: collapse">
+        <thead id="freeformHead"></thead>
+        <tbody id="freeformBody"></tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
+
+<script>
+  startSenshamartDemoUI();
+</script>

@@ -17,6 +17,8 @@ class Config {
     if (fs.existsSync(looking)) {
       const rawSettings = fs.readFileSync(looking, 'utf8');
       this.settings = JSON.parse(rawSettings);
+    } else {
+      this.settings = {};
     }
   }
 

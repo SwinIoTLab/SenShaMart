@@ -1,6 +1,6 @@
 const Websocket = require('ws');
 
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const crypto = require('crypto');
 
 const STATE_SERVER_HELLOING = 0;

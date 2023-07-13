@@ -1,155 +1,132 @@
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
+const SENSHAMART_URI_PREFIX = require('../util/constants').SENSHAMART_URI_PREFIX;
 
-const tripleValidator = {
-  s: ChainUtil.validateIsString,
-  p: ChainUtil.validateIsString,
-  o: ChainUtil.validateIsString
-};
+function validateTerm(t) {
+  const stringRes = ChainUtil.validateIsString(t);
 
-function validateMetadata(t) {
-  let isSensor = [];
-  let costPerMinute = [];
-  let costPerKB = [];
-  let integrationBroker = [];
-
-  const validationRes = ChainUtil.validateArray(t, ChainUtil.createValidateObject(tripleValidator));
-
-  if (!validationRes.result) {
-    return validationRes;
+  if (!stringRes.result) {
+    return stringRes;
   }
 
-  for (const triple of t) {
-    switch (triple.p) {
-      case "http://SSM/Cost_of_Using_IoT_Devices/Cost_Per_Minute": costPerMinute.push(triple); break;
-      case "http://SSM/Cost_of_Using_IoT_Devices/Cost_Per_Kbyte": costPerKB.push(triple); break;
-      case "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
-        if (triple.o === "http://www.w3.org/ns/sosa/Sensor") {
-          isSensor.push(triple.s);
-        }
-        break;
-      case "http://SSM/Integration/Broker": integrationBroker.push(triple); break;
-    }
-  }
-
-  if (isSensor.length === 0) {
+  if (t.startsWith(SENSHAMART_URI_PREFIX)) {
     return {
       result: false,
-      reason: "No sensor is defined"
-    };
-  } else if (isSensor.length > 1) {
-    return {
-      result: false,
-      reason: "Multiple sensors are defined"
-    };
-  }
-
-  const sensorName = isSensor[0];
-
-  if (costPerMinute.length === 0) {
-    return {
-      result: false,
-      reason: "No cost per minute was defined"
-    };
-  } else if (costPerMinute.length > 1) {
-    return {
-      result: false,
-      reason: "Multiple cost per minutes were defined"
-    }
-  }
-  const CostPerMinuteValue = Number.parseInt(costPerMinute[0].o);
-  if (CostPerMinuteValue === NaN) {
-    return {
-      result: false,
-      reason: "Couldn't parse cost per minute as an integer"
-    };
-  } else if (CostPerMinuteValue < 1) {
-    return {
-      result: false,
-      reason: "Cost per minute was negative"
-    }
-  } else if (costPerMinute[0].s != sensorName) {
-    return {
-      result: false,
-      reason: "Cost per minute object isn't the broker"
-    };
-  }
-
-  if (costPerKB.length === 0) {
-    return {
-      result: false,
-      reason: "No cost per KB was defined"
-    };
-  } else if (costPerKB.length > 1) {
-    return {
-      result: false,
-      reason: "Multiple cost per KB were defined"
-    }
-  }
-  const CostPerKBValue = Number.parseInt(costPerKB[0].o);
-  if (CostPerKBValue === NaN) {
-    return {
-      result: false,
-      reason: "Couldn't parse cost per KB as an integer"
-    };
-  } else if (CostPerKBValue < 1) {
-    return {
-      result: false,
-      reason: "Cost per KB was negative"
-    }
-  } else if (costPerKB[0].s != sensorName) {
-    return {
-      result: false,
-      reason: "Cost per KB object isn't the broker"
-    };
-  }
-
-  if (integrationBroker.length === 0) {
-    return {
-      result: false,
-      reason: "No integration broker was defined"
-    };
-  } else if (integrationBroker.length > 1) {
-    return {
-      result: false,
-      reason: "Multiple integration brokers were defined"
-    };
-  } else if (integrationBroker[0].s != sensorName) {
-    return {
-      result: false,
-      reason: "Integration broker subjsect isn't the sensor"
+      reason: "Starts with reserved prefix"
     };
   }
 
   return {
-    result: true,
-    metadata: {
-      sensorName: sensorName,
-      costPerMinute: CostPerMinuteValue,
-      costPerKB: CostPerKBValue,
-      integrationBroker: integrationBroker[0].o
-    }
+    result: true
   };
 }
+
+function validateLiteral(t) {
+  const termRes = validateTerm(t);
+  if (termRes.result) {
+    return termRes;
+  }
+
+  const numberRes = ChainUtil.validateIsNumber(t);
+
+  if (numberRes.result) {
+    return numberRes;
+  }
+
+  return {
+    result: false,
+    reason: "Wasn't a string or a number"
+  };
+}
+
+const nodeValidator = {
+  s: validateTerm,
+  p: validateTerm,
+  o: validateTerm
+};
+
+const literalValidator = {
+  s: validateTerm,
+  p: validateTerm,
+  o: validateLiteral
+};
+
+const metadataValidation = {
+  name: ChainUtil.validateIsString,
+  costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
+  costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
+  integrationBroker: ChainUtil.validateIsString,
+  extraNodes: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(
+      ChainUtil.createValidateObject(
+        nodeValidator))),
+  extraLiterals: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(
+      ChainUtil.createValidateObject(
+        literalValidator)))
+};
 
 const baseValidation = {
   input: ChainUtil.validateIsPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
-  metadata: validateMetadata,
+  metadata: ChainUtil.createValidateObject(metadataValidation),
   signature: ChainUtil.validateIsSignature
 };
 
 class SensorRegistration {
-  constructor(senderKeyPair, counter, metadata, rewardAmount) {
+  constructor(senderKeyPair, counter, sensorName, costPerMinute, costPerKB, integrationBroker, nodeMetadata, literalMetadata, rewardAmount) {
     this.input = senderKeyPair.getPublic().encode('hex');
     this.counter = counter;
     this.rewardAmount = rewardAmount;
-    this.metadata = metadata;
+    this.metadata = {
+      name: sensorName,
+      costPerMinute: costPerMinute,
+      costPerKB: costPerKB,
+      integrationBroker: integrationBroker,
+    };
+    if (typeof nodeMetadata !== undefined && nodeMetadata !== null) {
+      this.metadata.extraNodes = nodeMetadata;
+    }
+    if (typeof literalMetadata !== undefined && literalMetadata !== null) {
+      this.metadata.extraLiterals = literalMetadata;
+    }
     this.signature = senderKeyPair.sign(SensorRegistration.hashToSign(this));
 
     const verification = SensorRegistration.verify(this);
     if (!verification.result) {
       throw new Error(verification.reason);
+    }
+  }
+
+  static getSensorName(registration) {
+    return registration.metadata.name;
+  }
+
+  static getCostPerMinute(registration) {
+    return registration.metadata.costPerMinute;
+  }
+
+  static getCostPerKB(registration) {
+    return registration.metadata.costPerKB;
+  }
+
+  static getIntegrationBroker(registration) {
+    return registration.metadata.integrationBroker;
+  }
+
+  static getExtraNodeMetadata(registration) {
+    if ("extraNodes" in registration.metadata) {
+      return registration.metadata.extraNodes;
+    } else {
+      return [];
+    }
+  }
+
+  static getExtraLiteralMetadata(registration) {
+    if ("extraLiterals" in registration.metadata) {
+      return registration.metadata.extraLiterals;
+    } else {
+      return [];
     }
   }
 
@@ -163,8 +140,7 @@ class SensorRegistration {
   static verify(registration) {
     const validationResult = ChainUtil.validateObject(registration, baseValidation);
     if (!validationResult.result) {
-      console.log(`Failed validation: ${validationResult.reason}`);
-      return false;
+      return validationResult;
     }
 
     const verifyRes = ChainUtil.verifySignature(
@@ -180,8 +156,8 @@ class SensorRegistration {
     };
   }
 
-  static getExtInformation(registration) {
-    return validateMetadata(registration.metadata);
+  static name() {
+    return "SensorRegistration";
   }
 }
 

@@ -6,3 +6,6 @@
 /node_modules
 /package-lock.json
 /.DS_Store
+/demo/camera_client/out/build
+/demo/camera_client/lib64
+/demo/out/build

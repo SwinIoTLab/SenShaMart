@@ -1,9 +1,14 @@
-const ChainUtil = require('../chain-util');
-const { DIFFICULTY, MINE_RATE } = require('../constants');
+const ChainUtil = require('../util/chain-util');
+const { DIFFICULTY, MINE_RATE } = require('../util/constants');
+const BrokerRegistration = require('./broker-registration');
+const SensorRegistration = require('./sensor-registration');
+const Integration = require('./integration');
+const Payment = require('./payment');
+const Compensation = require('./compensation');
 
 function concatIfNotUndefined(concatTo, prefix, concatting) {
   if (typeof concatting !== "undefined" && concatting.length !== 0) {
-    return concatTo + `${prefix}${concatting}`;
+    return concatTo + `${prefix}${concatting.signature}`;
   } else {
     return concatTo;
   }
@@ -20,18 +25,24 @@ function getData(block, key) {
   }
 }
 
-const acceptableMembers = new Set();
-acceptableMembers.add("timestamp");
-acceptableMembers.add("lastHash");
-acceptableMembers.add("hash");
-acceptableMembers.add("reward");
-acceptableMembers.add("payments");
-acceptableMembers.add("sensorRegistrations");
-acceptableMembers.add("brokerRegistrations");
-acceptableMembers.add("integrations");
-acceptableMembers.add("compensations");
-acceptableMembers.add("nonce");
-acceptableMembers.add("difficulty");
+const baseValidation = {
+  timestamp: ChainUtil.createValidateIsIntegerWithMin(0),
+  lastHash: ChainUtil.validateIsString,
+  hash: ChainUtil.validateIsString,
+  reward: ChainUtil.validateIsPublicKey,
+  nonce: ChainUtil.createValidateIsIntegerWithMin(0),
+  difficulty: ChainUtil.createValidateIsIntegerWithMin(0),
+  sensorRegistrations: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(SensorRegistration.verify)),
+  brokerRegistrations: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(BrokerRegistration.verify)),
+  integrations: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Integration.verify)),
+  compensations: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Compensation.verify)),
+  payments: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Payment.verify))
+}
 
 class Block {
   constructor(timestamp, lastHash, hash, reward, payments, sensorRegistrations, brokerRegistrations, integrations, compensations, nonce, difficulty) {
@@ -185,104 +196,17 @@ class Block {
       difficulty);
   }
 
-  static validateIsBlock(block) {
-    if (!(block instanceof Object)) {
-      return {
-        result: false,
-        reason: "Is not an object"
-      };
-    }
+  static verify(block) {
+    const validationRes = ChainUtil.validateObject(block, baseValidation);
 
-    for (const key in block) {
-      if (!acceptableMembers.has(key)) {
-        return {
-          result: false,
-          reason: `Block has key not in acceptable members`
-        };
-      }
-    }
+    if (!validationRes.result) {
+      return validationRes;
+    } 
 
-    if (!("timestamp" in block)) {
+    if (!Block.checkHash(block)) {
       return {
         result: false,
-        reason: "Block doesn't have a timestamp"
-      };
-    }
-    const timestampRes = ChainUtil.validateIsIntegerWithMin(block.timestamp, 0);
-    if (!timestampRes.result) {
-      return {
-        result: false,
-        reason: "Timestamp validation failed: " + timestampRes.reason
-      };
-    }
-
-    if (!("lastHash" in block)) {
-      return {
-        result: false,
-        reason: "Block doesn't have lastHash"
-      };
-    }
-    const lastHashRes = ChainUtil.validateIsString(block.lastHash);
-    if (!lastHashRes.result) {
-      return {
-        result: false,
-        reason: "lastHash validation failed: " + lastHashRes.reason
-      };
-    }
-
-    if (!("hash" in block)) {
-      return {
-        result: false,
-        reason: "Block doesn't have hash"
-      };
-    }
-    const hashRes = ChainUtil.validateIsString(block.hash);
-    if (!hashRes.result) {
-      return {
-        result: false,
-        reason: "hash validation failed: " + hashRes.reason
-      };
-    }
-
-    if (!("reward" in block)) {
-      return {
-        result: false,
-        reason: "Block doesn't have reward"
-      };
-    }
-    const rewardRes = ChainUtil.validateIsPublicKey(block.reward);
-    if (!rewardRes.result) {
-      return {
-        result: false,
-        reason: "reward validation failed: " + rewardRes.reason
-      };
-    }
-
-    if (!("nonce" in block)) {
-      return {
-        result: false,
-        reason: "Block doesn't have nonce"
-      };
-    }
-    const nonceRes = ChainUtil.validateIsIntegerWithMin(block.nonce);
-    if (!nonceRes.result) {
-      return {
-        result: false,
-        reason: "nonce validation failed: " + nonceRes.reason
-      };
-    }
-
-    if (!("difficulty" in block)) {
-      return {
-        result: false,
-        reason: "Block doesn't have difficulty"
-      };
-    }
-    const difficultyRes = ChainUtil.validateIsIntegerWithMin(block.difficulty);
-    if (!difficultyRes.result) {
-      return {
-        result: false,
-        reason: "difficulty validation failed: " + difficultyRes.reason
+        reason: "Couldn't verify hash"
       };
     }
 

@@ -3,13 +3,11 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const BlockchainProp = require('../network/blockchain-prop');
 
-const fs = require('fs');
-
 const N3 = require('n3');
 
 const Wallet = require('./wallet');
-const Config = require('../config');
-const ChainUtil = require('../chain-util');
+const Config = require('../util/config');
+const ChainUtil = require('../util/chain-util');
 
 const QueryEngine = require('@comunica/query-sparql-rdfjs').QueryEngine;
 const Blockchain = require('../blockchain/blockchain');
@@ -17,10 +15,14 @@ const Blockchain = require('../blockchain/blockchain');
 const {
   DEFAULT_UI_HTML,
   DEFAULT_UI_JS,
+  DEFAULT_DEMO_UI_HTML,
+  DEFAULT_DEMO_UI_JS,
   DEFAULT_PORT_WALLET_API,
   DEFAULT_PORT_WALLET_CHAIN,
   DEFAULT_PORT_MINER_CHAIN
-} = require('../constants');
+} = require('../util/constants');
+const SensorRegistration = require('../blockchain/sensor-registration');
+const BrokerRegistration = require('../blockchain/broker-registration');
 
 'use strict';
 
@@ -61,10 +63,18 @@ const uiJsLocation = config.get({
   key: "wallet-ui-js",
   default: DEFAULT_UI_JS
 });
+const demoUiHtmlLocation = config.get({
+  key: "wallet-demo-ui-html",
+  default: DEFAULT_DEMO_UI_HTML
+});
+const demoUiJsLocation = config.get({
+  key: "wallet-demo-ui-js",
+  default: DEFAULT_DEMO_UI_JS
+});
 
 const blockchain = Blockchain.loadFromDisk(blockchainLocation);
 
-const chainServer = new BlockchainProp("Wallet-chain-server", false, blockchain);
+const chainServer = new BlockchainProp("Wallet-chain-server", blockchain);
 
 chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers);
 const app = express();
@@ -83,6 +93,18 @@ app.get('/logic.js', (req, res) => {
 app.get('/ui.html', (req, res) => {
   res.type('.html').sendFile(uiHtmlLocation, {
     root:"./"
+  });
+});
+
+app.get('/demo-logic.js', (req, res) => {
+  res.type('.js').sendFile(demoUiJsLocation, {
+    root: "./"
+  });
+});
+
+app.get('/demo-ui.html', (req, res) => {
+  res.type('.html').sendFile(demoUiHtmlLocation, {
+    root: "./"
   });
 });
 
@@ -105,6 +127,9 @@ app.get('/key-pair', (req, res) => {
 app.get('/MyBalance', (req, res) => {
   res.json(blockchain.getBalanceCopy(wallet.publicKey));
 });
+app.get('/chain-length', (req, res) => {
+  res.json(blockchain.blocks().length);
+});
 app.get('/Balance', (req, res) => {
   const balance = blockchain.getBalanceCopy(req.body.publicKey);
   res.json(balance);
@@ -114,10 +139,26 @@ app.get('/Balances', (req, res) => {
   res.json(balances);
 });
 app.get('/Sensors', (req, res) => {
-  res.json(blockchain.chain.sensors.current);
+  const returning = {};
+  for (const [key, value] of Object.entries(blockchain.chain.sensors.current)) {
+    const created = {};
+    Object.assign(created, value);
+    created.hash = SensorRegistration.hashToSign(created);
+    returning[key] = created;
+  }
+  res.json(returning);
+  console.log("/Sensors called");
+  console.log(`Returned ${Object.entries(returning).length} sensors`);
 });
 app.get('/Brokers', (req, res) => {
-  res.json(blockchain.chain.sensors.current);
+  const returning = {};
+  for (const [key, value] of Object.entries(blockchain.chain.brokers.current)) {
+    const created = {};
+    Object.assign(created, value);
+    created.hash = BrokerRegistration.hashToSign(created);
+    returning[key] = created;
+  }
+  res.json(returning);
 });
 app.get('/Integrations', (req, res) => {
   res.json(blockchain.chain.integrations.current);
@@ -128,48 +169,48 @@ app.post('/Payment', (req, res) => {
   const rewardAmount = req.body.rewardAmount;
   const outputs = req.body.outputs;
 
-  res.json(wallet.createPayment(
+  const payment = wallet.createPaymentAsTransaction(
+    blockchain,
     rewardAmount,
-    outputs,
-    blockchain));
+    outputs);
+
+  chainServer.sendTx(payment);
+
+  res.json(payment.transaction);
 });
 
 app.post('/Integration', (req, res) => {
-  res.json(wallet.createIntegration(
-    req.body.rewardAmount,
-    req.body.witnessCount,
-    req.body.outputs,
-    blockchain));
+  try {
+    const integration = wallet.createIntegrationAsTransaction(
+      blockchain,
+      req.body.rewardAmount,
+      req.body.witnessCount,
+      req.body.outputs);
+
+    chainServer.sendTx(integration);
+
+    res.json({
+      result: true,
+      tx: integration.transaction,
+      hash: integration.type.hashToSign(integration.transaction)
+    });
+  } catch (err) {
+    console.log(err);
+    res.json({
+      result: false,
+      reason: err.message
+    });
+  }
 });
 
-function extToRdf(triples, sensorId, parentString, obj) {
-  for (const key in obj) {
-    const value = obj[key];
-
-    const type = typeof value;
-
-    switch (typeof value) {
-      case "string":
-        triples.push({
-          s: sensorId,
-          p: parentString + key,
-          o: value
-        });
-        break;
-      case "object":
-        extToRdf(triples, sensorId, parentString + key + '/', value);
-        break;
-      default:
-        console.log("Unsupported value type: " + type);
-        break;
-    }
-  }
-}
-
 const brokerRegistrationValidators = {
-  ssnMetadata: ChainUtil.validateIsString,
+  brokerName: ChainUtil.validateIsString,
+  endpoint: ChainUtil.validateIsString,
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
-  extMetadata: ChainUtil.validateIsObject
+  extraNodeMetadata: ChainUtil.createValidateOptional(
+    ChainUtil.validateIsObject),
+  extraLiteralMetadata: ChainUtil.createValidateOptional(
+    ChainUtil.validateIsObject)
 };
 
 app.post('/BrokerRegistration', (req, res) => {
@@ -180,117 +221,83 @@ app.post('/BrokerRegistration', (req, res) => {
     return;
   }
 
-  const brokers = [];
-  const triples = [];
+  try {
+    const reg = wallet.createBrokerRegistrationAsTransaction(
+      blockchain,
+      req.body.rewardAmount,
+      req.body.brokerName,
+      req.body.endpoint,
+      req.body.extraNodeMetadata,
+      req.body.extraLiteralMetadata);
 
-  const parser = new N3.Parser();
-  parser.parse(
-    req.body.ssnMetadata,
-    (error, quad, prefixes) => {
-      if (error) {
-        res.json(error);
-        return;
-      }
-      if (quad) {
-        triples.push({
-          s: quad.subject.id,
-          p: quad.predicate.id,
-          o: quad.object.id
-        });
+    chainServer.sendTx(reg);
 
-        if (quad.predicate.id === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-          && quad.object.id === "http://SSM/Broker") {
-          brokers.push(quad.subject.id);
-        }
-        return;
-      }
-      //quad is null, we come here, and we are finished parsing
-      if (brokers.length === 0) {
-        res.json("Couldn't find a defined broker");
-        return;
-      } else if (brokers.length > 1) {
-        res.json("Found multiple defined brokers");
-        return;
-      }
-
-      extToRdf(triples, brokers[0], "", req.body.extMetadata);
-
-      try {
-        res.json(wallet.createBrokerRegistration(
-          triples,
-          req.body.rewardAmount,
-          blockchain));
-      } catch (err) {
-        console.log(err);
-        res.json(err.message);
-      }
-    });
+    res.json(reg.transaction);
+  } catch (err) {
+    console.log(err);
+    res.json(err.message);
+  }
 });
 
 const sensorRegistrationValidators = {
-  ssnMetadata: ChainUtil.validateIsString,
+  sensorName: ChainUtil.validateIsString,
+  costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
+  costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
+  integrationBroker: ChainUtil.validateIsString,
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
-  extMetadata: ChainUtil.validateIsObject
+  extraNodeMetadata: ChainUtil.createValidateOptional(
+    ChainUtil.validateIsObject),
+  extraLiteralMetadata: ChainUtil.createValidateOptional(
+    ChainUtil.validateIsObject)
 };
 
 app.post('/SensorRegistration', (req, res) => {
   const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationValidators);
 
   if (!validateRes.result) {
-    res.json(validateRes.reason);
+    res.json({
+      result: false,
+      reason: validateRes.reason
+    });
     return;
   }
 
-  const sensors = [];
-  const triples = [];
+  try {
+    const reg = wallet.createSensorRegistrationAsTransaction(
+      blockchain,
+      req.body.rewardAmount,
+      req.body.sensorName,
+      req.body.costPerMinute,
+      req.body.costPerKB,
+      req.body.integrationBroker,
+      req.body.extraNodeMetadata,
+      req.body.extraLiteralMetadata);
 
-  const parser = new N3.Parser();
-  parser.parse(
-    req.body.ssnMetadata,
-    (error, quad, prefixes) => {
-      if (error) {
-        res.json(error);
-        return;
-      }
-      if (quad) {
-        triples.push({
-          s: quad.subject.id,
-          p: quad.predicate.id,
-          o: quad.object.id
-        });
+    chainServer.sendTx(reg);
 
-        if (quad.predicate.id === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-          && quad.object.id === "http://www.w3.org/ns/sosa/Sensor") {
-          sensors.push(quad.subject.id);
-        }
-        return;
-      }
-      //quad is null, we come here, and we are finished parsing
-      if (sensors.length === 0) {
-        res.json("Couldn't find a defined sensor");
-        return;
-      } else if (sensors.length > 1) {
-        res.json("Found multiple defined sensors");
-        return;
-      }
-
-      extToRdf(triples, sensors[0], "", req.body.extMetadata);
-
-      try {
-        res.json(wallet.createSensorRegistration(
-          triples,
-          req.body.rewardAmount,
-          blockchain));
-      } catch (err) {
-        console.log(err);
-        res.json(err.message);
-      }
+    res.json({
+      result: true,
+      tx: reg.transaction
     });
+  } catch (err) {
+    console.log(err);
+    res.json({
+      result: false,
+      reason: err.message
+    });
+  }
 });
 
 const myEngine = new QueryEngine();
 
 app.post('/sparql', (req, res) => {
+
+  if (!("query" in req.body)) {
+    res.json({
+      result: false,
+      reason:"No query supplied"});
+    return;
+  }
   const start = async function () {
     try {
       const result = [];
@@ -304,14 +311,24 @@ app.post('/sparql', (req, res) => {
         result.push(binding.entries);
       });
       bindingsStream.on('end', () => {
-        res.json(result);
+        res.json({
+          result: true,
+          values: result
+        });
       });
       bindingsStream.on('error', (err) => {
-        res.json(err);
+        res.json({
+          result: false,
+          reason: err
+        });
       });
     } catch (err) {
+      console.error("Exception!");
       console.error(err);
-      res.json(err);
+      res.json({
+        result: false,
+        reason: err.message
+      });
     }
   };
 

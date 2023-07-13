@@ -3,7 +3,7 @@ const Websocket = require('ws');
 //const Aedes = require('aedes')(); /* aedes is a stream-based MQTT broker */
 //const MQTTserver = require('net').createServer(aedes.handle);
 
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const crypto = require('crypto');
 
 const STATE_CLIENT_HELLOING = 0;

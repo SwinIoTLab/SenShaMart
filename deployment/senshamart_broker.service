@@ -1,0 +1,14 @@
+[Unit]
+Description=Senshamart broker
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=ubuntu
+ExecStart=node broker/broker-app
+WorkingDirectory=/home/ubuntu/broker/
+
+[Install]
+WantedBy=multi-user.target

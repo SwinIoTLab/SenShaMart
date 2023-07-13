@@ -6,10 +6,13 @@ const BrokerRegistration = require('./broker-registration');
 const Integration = require('./integration');
 const Compensation = require('./compensation');
 const fs = require('fs');
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const RdsStore = require('./rds-store');
 const {
-  MINING_REWARD} = require('../constants');
+  MINING_REWARD,
+  SENSHAMART_URI_REPLACE } = require('../util/constants');
+
+const URIS = require('./uris');
 
 function makeIntegrationKey(publicKey, counter) {
   return `${publicKey}/${counter}`;
@@ -80,7 +83,9 @@ class PropertyHistory {
       throw new Error("Finishing Property History with null backing");
     }
 
-    this.backing.undos.push(...this.undos);
+    for (const undo of this.undos) {
+      this.backing.undos.push(undo);
+    }
     Object.assign(this.backing.current, this.current);
 
     this.backing = null;
@@ -113,6 +118,30 @@ function getPropertyClone(propertyHistory, key, fallback) {
   }
 }
 
+function namedNode(x) {
+  return DataFactory.namedNode(x);
+}
+
+function literal(x) {
+  return DataFactory.literal(x);
+}
+
+function makeBlockName(block) {
+  return URIS.OBJECT.BLOCK + '/' + block.hash;
+}
+
+function makeSensorTransactionName(sensorRegistration) {
+  return URIS.OBJECT.SENSOR_REGISTRATION + '/' + SensorRegistration.hashToSign(sensorRegistration);
+}
+
+function makeBrokerTransactionName(brokerRegistration) {
+  return URIS.OBJECT.BROKER_REGISTRATION + '/' + BrokerRegistration.hashToSign(brokerRegistration);
+}
+
+function makeWalletName(input) {
+  return URIS.OBJECT.WALLET + '/' + input;
+}
+
 class Updater {
   constructor(parent, block) {
     this.parent = parent;
@@ -126,18 +155,21 @@ class Updater {
     this.store.startPush();
 
     if (block !== null) {
-      this.store.push(
-        DataFactory.quad(
-          DataFactory.namedNode(this.block.hash),
-          DataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-          DataFactory.namedNode("http://SSM/Block")));
+      this.pushQuad(
+        namedNode(makeBlockName(this.block)),
+        namedNode(URIS.PREDICATE.TYPE),
+        namedNode(URIS.OBJECT.BLOCK));
 
-      this.store.push(
-        DataFactory.quad(
-          DataFactory.namedNode(this.block.hash),
-          DataFactory.namedNode("http://SSM/lastBlock"),
-          DataFactory.namedNode(this.parent.getBlockFromTop(0).hash)));
+      this.pushQuad(
+        namedNode(makeBlockName(this.block.hash)),
+        namedNode(URIS.PREDICATE.LAST_BLOCK),
+        namedNode(makeBlockName(this.parent.getBlockFromTop(0))));
     }
+  }
+
+  pushQuad(subject, predicate, object) {
+    this.store.push(
+      DataFactory.quad(subject, predicate, object));
   }
 
   getBalanceCopy(publicKey) {
@@ -177,9 +209,9 @@ class Updater {
   }
 
   getBrokerPublicKeys() {
-    const keys = this.parent.getBrokerPublicKeysSet();
+    const keys = this.parent.getBrokerKeysSet();
 
-    for (const [key, value] of this.brokers) {
+    for (const [key, value] of Object.entries(this.brokers)) {
       keys.add(value.input);
     }
 
@@ -339,7 +371,9 @@ class Chain {
       throw new Error("Finishing Blockchain Metadata with null parent");
     }
 
-    this.parent.blocks.push(...this.blocks);
+    for (const block of this.blocks) {
+      this.parent.blocks.push(block);
+    }
     this.balances.finish();
     this.sensors.finish();
     this.brokers.finish();
@@ -349,13 +383,30 @@ class Chain {
   }
 }
 
-function addRDF(store, metadata) {
+
+function uriReplacePrefix(testing, sensorName) {
+  if (testing.startsWith(SENSHAMART_URI_REPLACE)) {
+    return sensorName.concat(testing.slice(SENSHAMART_URI_REPLACE.length));
+  } else {
+    return testing;
+  }
+}
+
+function addNodeRDF(updater, metadata, sensorName) {
   for (const triple of metadata) {
-    store.push(
-      DataFactory.quad(
-        DataFactory.namedNode(triple.s),
-        DataFactory.namedNode(triple.p),
-        DataFactory.namedNode(triple.o)));
+    updater.pushQuad(
+      namedNode(uriReplacePrefix(triple.s, sensorName)),
+      namedNode(uriReplacePrefix(triple.p, sensorName)),
+      namedNode(uriReplacePrefix(triple.o, sensorName)));
+  }
+}
+
+function addLiteralRDF(updater, metadata, sensorName) {
+  for (const triple of metadata) {
+    updater.pushQuad(
+      namedNode(uriReplacePrefix(triple.s, sensorName)),
+      namedNode(uriReplacePrefix(triple.p, sensorName)),
+      literal(triple.o));
   }
 }
 
@@ -442,7 +493,7 @@ function stepIntegration(updater, reward, integration) {
   inputBalance.balance -= integration.rewardAmount;
 
   for (const output of integration.outputs) {
-    const foundSensor = updater.getSensorCopy(output.sensor);
+    const foundSensor = updater.getSensorCopy(output.sensorName);
 
     if (foundSensor === null) {
       return {
@@ -450,12 +501,29 @@ function stepIntegration(updater, reward, integration) {
         reason: `Integration references non-existant sensor: ${output.sensor}`
       };
     }
-    if (foundSensor.counter !== output.counter) {
+    if (SensorRegistration.hashToSign(foundSensor) !== output.sensorHash) {
       return {
         result: false,
         reason: "Integration references non-current version of sensor"
       };
     }
+
+    const foundBroker = updater.getBrokerCopy(SensorRegistration.getIntegrationBroker(foundSensor));
+
+    if (foundBroker === null) {
+      return {
+        result: false,
+        reason: "Internal consitency error, can't find broker referenced by commited sensor registration"
+      };
+    }
+
+    if (BrokerRegistration.hashToSign(foundBroker) !== output.brokerHash) {
+      return {
+        result: false,
+        reason: "Integration references non-current version of sensor's broker"
+      };
+    }
+
     if (inputBalance.balance < output.amount) {
       return {
         result: false,
@@ -471,14 +539,21 @@ function stepIntegration(updater, reward, integration) {
   updater.setBalance(reward, rewardBalance);
 
   const integrationCopy = Object.assign({}, integration);
-  const brokers = updater.getBrokerKeys();
+  const brokers = updater.getBrokerPublicKeys();
 
   const witnesses = Integration.chooseWitnesses(integration, brokers);
+
+  if (!witnesses.result) {
+    return {
+      result: false,
+      reason: "Couldn't choose witnesses: " + witnesses.reason
+    };
+  }
 
   integrationCopy.witnesses = {};
   integrationCopy.compensationCount = 0;
 
-  for (const witness of witnesses) {
+  for (const witness of witnesses.witnesses) {
     integrationCopy.witnesses[witness] = false;
   }
 
@@ -567,16 +642,7 @@ function stepSensorRegistration(updater, reward, sensorRegistration) {
     };
   }
 
-  const extInfo = SensorRegistration.getExtInformation(sensorRegistration);
-
-  if (!extInfo.result) {
-    return {
-      result: false,
-      reason: "Couldn't get sensor registration ext information: " + extInfo.reason
-    };
-  }
-
-  const foundBroker = updater.getBrokerCopy(extInfo.metadata.integrationBroker);
+  const foundBroker = updater.getBrokerCopy(SensorRegistration.getIntegrationBroker(sensorRegistration));
 
   if (foundBroker === null) {
     return {
@@ -609,32 +675,65 @@ function stepSensorRegistration(updater, reward, sensorRegistration) {
   rewardBalance.balance += sensorRegistration.rewardAmount;
   updater.setBalance(reward, rewardBalance);
 
-  addRDF(updater.store, sensorRegistration.metadata);
+  const sensorName = SensorRegistration.getSensorName(sensorRegistration);
 
-  const newSensor = extInfo.metadata;
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(newSensor.sensorName),
-      DataFactory.namedNode("http://SSM/transactionCounter"),
-      DataFactory.literal(sensorRegistration.counter)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(newSensor.sensorName),
-      DataFactory.namedNode("http://SSM/OwnedBy"),
-      DataFactory.namedNode("http://SSM/Wallet/" + sensorRegistration.input)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(updater.block.hash),
-      DataFactory.namedNode("http://SSM/Transaction"),
-      DataFactory.namedNode(newSensor.sensorName)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(updater.block.hash),
-      DataFactory.namedNode("http://SSM/SensorRegistration"),
-      DataFactory.namedNode(newSensor.sensorName)));
+  const foundExistingSensor = updater.getSensorCopy(sensorName);
 
-  newSensor.counter = sensorRegistration.counter;
-  updater.setSensor(newSensor.sensorName, newSensor);
+  if (foundExistingSensor !== null) {
+    if(foundExistingSensor.input !== sensorRegistration.input) {
+      return {
+        result: false,
+        reason: "A sensor has already been defined with this name"
+      };
+    }
+  }
+
+  addNodeRDF(updater, SensorRegistration.getExtraNodeMetadata(sensorRegistration), sensorName);
+  addLiteralRDF(updater, SensorRegistration.getExtraLiteralMetadata(sensorRegistration), sensorName);
+
+  const transactionName = makeSensorTransactionName(sensorRegistration);
+
+  if (updater.block !== null) {
+    updater.pushQuad(
+      namedNode(makeBlockName(updater.block)),
+      namedNode(URIS.PREDICATE.CONTAINS_TRANSACTION),
+      namedNode(transactionName));
+    updater.pushQuad(
+      namedNode(makeBlockName(updater.block)),
+      namedNode(URIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION),
+      namedNode(transactionName));
+
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.TYPE),
+      namedNode(URIS.OBJECT.SENSOR_REGISTRATION));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.HAS_COUNTER),
+      literal(sensorRegistration.counter));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.IS_OWNED_BY),
+      namedNode(makeWalletName(sensorRegistration.input)));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.DEFINES),
+      namedNode(sensorName));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.COSTS_PER_MINUTE),
+      literal(SensorRegistration.getCostPerMinute(sensorRegistration)));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.COSTS_PER_KB),
+      literal(SensorRegistration.getCostPerKB(sensorRegistration)));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.USES_BROKER),
+      namedNode(makeBrokerTransactionName(foundBroker)));
+  }
+
+  updater.setSensor(sensorName, sensorRegistration);
 
   return {
     result: true
@@ -647,15 +746,6 @@ function stepBrokerRegistration(updater, reward, brokerRegistration) {
     return {
       result: false,
       reason: "Couldn't verify a broker registration: " + verifyRes.reason
-    };
-  }
-
-  const extInfo = BrokerRegistration.getExtInformation(brokerRegistration);
-
-  if (!extInfo.result) {
-    return {
-      result: false,
-      reason: "Couldn't get broker registration ext information: " + extInfo.reason
     };
   }
 
@@ -683,33 +773,56 @@ function stepBrokerRegistration(updater, reward, brokerRegistration) {
   rewardBalance.balance += brokerRegistration.rewardAmount;
   updater.setBalance(reward, rewardBalance);
 
-  addRDF(updater.store, brokerRegistration.metadata);
+  const brokerName = BrokerRegistration.getBrokerName(brokerRegistration);
 
-  const newBroker = extInfo.metadata;
-  newBroker.input = brokerRegistration.input;
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(newBroker.brokerName),
-      DataFactory.namedNode("http://SSM/transactionCounter"),
-      DataFactory.literal(brokerRegistration.counter)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(newBroker.brokerName),
-      DataFactory.namedNode("http://SSM/OwnedBy"),
-      DataFactory.namedNode("http://SSM/Wallet/" + brokerRegistration.input)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(updater.block.hash),
-      DataFactory.namedNode("http://SSM/Transaction"),
-      DataFactory.namedNode(newBroker.brokerName)));
-  updater.store.push(
-    DataFactory.quad(
-      DataFactory.namedNode(updater.block.hash),
-      DataFactory.namedNode("http://SSM/BrokerRegistration"),
-      DataFactory.namedNode(newBroker.brokerName)));
+  const foundExistingBroker = updater.getBrokerCopy(brokerName);
 
-  newBroker.counter = brokerRegistration.counter;
-  updater.setBroker(newBroker.brokerName, newBroker);
+  if (foundExistingBroker !== null) {
+    if(foundExistingBroker.input !== brokerRegistration.input) {
+      return {
+        result: false,
+        reason: "A broker has already been defined with this name"
+      };
+    }
+  }
+
+  addNodeRDF(updater, BrokerRegistration.getExtraNodeMetadata(brokerRegistration), brokerName);
+  addLiteralRDF(updater, BrokerRegistration.getExtraLiteralMetadata(brokerRegistration), brokerName);
+
+  const transactionName = makeBrokerTransactionName(brokerRegistration);
+
+  if (updater.block !== null) {
+    updater.pushQuad(
+      namedNode(makeBlockName(updater.block)),
+      namedNode(URIS.PREDICATE.CONTAINS_TRANSACTION),
+      namedNode(transactionName));
+    updater.pushQuad(
+      namedNode(makeBlockName(updater.block)),
+      namedNode(URIS.PREDICATE.CONTAINS_BROKER_REGISTRATION),
+      namedNode(transactionName));
+
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.TYPE),
+      namedNode(URIS.OBJECT.BROKER_REGISTRATION));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.HAS_COUNTER),
+      literal(brokerRegistration.counter));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.IS_OWNED_BY),
+      namedNode(makeWalletName(brokerRegistration.input)));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.DEFINES),
+      namedNode(brokerName));
+    updater.pushQuad(
+      namedNode(transactionName),
+      namedNode(URIS.PREDICATE.HAS_ENDPOINT),
+      literal(BrokerRegistration.getEndpoint(brokerRegistration)));
+  }
+  updater.setBroker(BrokerRegistration.getBrokerName(brokerRegistration), brokerRegistration);
 
   return {
     result: true
@@ -850,6 +963,8 @@ function findBlocksDifference(oldBlocks, newBlocks) {
     const verifyRes = verifyBlockHash(newBlocks[i - 1], newBlocks[i]);
 
     if (!verifyRes.result) {
+      console.log(`${newBlocks[i - 1].hash}`);
+      console.log(`${newBlocks[i].lastHash}`);
       return {
         result: false,
         reason: `Couldn't verify hashes for block ${i}: ${verifyRes.reason}`
@@ -976,9 +1091,9 @@ class Blockchain {
     return true;
   }
 
-  wouldBeValidBlock(rewardee, payments, sensorRegistrations, brokerRegistrations, integrations) {
+  wouldBeValidBlock(rewardee, payments, sensorRegistrations, brokerRegistrations, integrations, compensations) {
     const updater = this.chain.createUpdater(null);
-    return verifyTxs(updater, rewardee, payments, sensorRegistrations, brokerRegistrations, integrations).result;
+    return verifyTxs(updater, rewardee, payments, sensorRegistrations, brokerRegistrations, integrations, compensations).result;
   }
 
   static isValidChain(blocks) {
@@ -1025,8 +1140,11 @@ class Blockchain {
     this.chain = baseChain;
     verifyResult.newChain.finish();
 
-    onChange(this, this.blocks(), oldChain, chainDifferenceRes.difference);
+    console.log(`new chain of length: ${this.blocks().length}`);
 
+    onChange(this, this.blocks(), oldChain.blocks, chainDifferenceRes.difference);
+
+    
     return {
       result: true,
       chainDifference: chainDifferenceRes.difference,

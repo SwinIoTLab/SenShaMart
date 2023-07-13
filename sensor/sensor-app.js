@@ -2,14 +2,14 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 
-const Config = require('../config');
-const ChainUtil = require('../chain-util');
+const Config = require('../util/config');
+const ChainUtil = require('../util/chain-util');
 const Sensor = require('./sensor');
 
 const {
   DEFAULT_PORT_BROKER_SENSOR_HANDSHAKE,
   DEFAULT_PORT_SENSOR_API,
-} = require('../constants');
+} = require('../util/constants');
 
 'use strict';
 

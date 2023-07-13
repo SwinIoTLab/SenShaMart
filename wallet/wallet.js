@@ -18,7 +18,7 @@ class Wallet {
 
   //TODO: API for multiple outputs
   //returns Transaction
-  createPayment(rewardAmount, outputs, blockchain) {
+  createPayment(blockchain, rewardAmount, outputs) {
     console.log(`${outputs}`);
     console.log(`${rewardAmount}`);
 
@@ -44,15 +44,15 @@ class Wallet {
     return new Payment(this.keyPair, counterToUse, outputs, rewardAmount);
   }
 
-  createPaymentAsTransaction(rewardAmount, outputs, blockchain) {
+  createPaymentAsTransaction(blockchain, rewardAmount, outputs) {
     return new Transaction(
-      this.createPayment(rewardAmount, outputs, blockchain),
+      this.createPayment(blockchain, rewardAmount, outputs),
       Payment);
   }
 
   //TODO: API for multiple sensors
   //returns Transaction
-  createIntegration(rewardAmount, witnessCount, outputs, blockchain) {
+  createIntegration(blockchain, rewardAmount, witnessCount, outputs) {
     const balance = blockchain.getBalanceCopy(this.publicKey);
 
     if (balance.counter > this.counter) {
@@ -75,14 +75,14 @@ class Wallet {
     return new Integration(this.keyPair, counterToUse, outputs, witnessCount, rewardAmount);
   }
 
-  createIntegrationAsTransaction(rewardAmount, outputs, blockchain) {
+  createIntegrationAsTransaction(blockchain, rewardAmount, witnessCount, outputs) {
     return new Transaction(
-      this.createIntegration(rewardAmount, outputs, blockchain),
+      this.createIntegration(blockchain, rewardAmount, witnessCount, outputs),
       Integration);
   }
 
   //returns Transaction
-  createBrokerRegistration(metadata, rewardAmount, blockchain) {
+  createBrokerRegistration(blockchain, rewardAmount, brokerName, endpoint, extraNodeMetadata, extraLiteralMetadata) {
     const balance = blockchain.getBalanceCopy(this.publicKey);
 
     if (balance.counter > this.counter) {
@@ -97,17 +97,24 @@ class Wallet {
     const counterToUse = this.counter + 1;
     this.counter++;
 
-    return new BrokerRegistration(this.keyPair, counterToUse, metadata, rewardAmount)
+    return new BrokerRegistration(
+      this.keyPair,
+      counterToUse,
+      brokerName,
+      endpoint,
+      extraNodeMetadata,
+      extraLiteralMetadata,
+      rewardAmount);
   }
 
-  createBrokerRegistrationAsTransaction(metadata, rewardAmount, blockchain) {
+  createBrokerRegistrationAsTransaction(blockchain, rewardAmount, brokerName, endpoint, extraNodeMetadata, extraLiteralMetadata) {
     return new Transaction(
-      this.createBrokerRegistration(metadata, rewardAmount, blockchain),
+      this.createBrokerRegistration(blockchain, rewardAmount, brokerName, endpoint, extraNodeMetadata, extraLiteralMetadata),
       BrokerRegistration);
   }
 
   //return Transaction
-  createSensorRegistration(metadata, rewardAmount, blockchain) {
+  createSensorRegistration(blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata) {
     const balance = blockchain.getBalanceCopy(this.publicKey);
 
     if (balance.counter > this.counter) {
@@ -122,12 +129,12 @@ class Wallet {
     const counterToUse = this.counter + 1;
     this.counter++;
 
-    return new SensorRegistration(this.keyPair, counterToUse, metadata, rewardAmount);
+    return new SensorRegistration(this.keyPair, counterToUse, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata, rewardAmount);
   }
 
-  createSensorRegistrationAsTransaction(metadata, rewardAmount, blockchain) {
+  createSensorRegistrationAsTransaction(blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata) {
     return new Transaction(
-      this.createSensorRegistration(metadata, rewardAmount, blockchain),
+      this.createSensorRegistration(blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
       SensorRegistration);
   }
 }

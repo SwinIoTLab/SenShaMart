@@ -1,5 +1,4 @@
 const Stream = require("stream");
-const DataFactory = require('n3').DataFactory;
 
 //class NamedNode {
 //  constructor(value) {
@@ -294,32 +293,29 @@ function addQuadToMap(counter, map, key, quad, toPop) {
   if (toPop.has(key)) {
     popper = toPop.get(key);
   } else {
-    popper = {
-      delete: false,
-      removing: []
-    };
+    popper = [];
     toPop.set(key, popper);
   }
 
   if (map.has(key)) {
     quadMap = map.get(key);
-    popper.removing.push(counter);
   } else {
     quadMap = new Map();
     map.set(key, quadMap);
-    popper.delete = true;
   }
+  popper.push(counter);
   quadMap.set(counter, quad);
 }
 
 function popFromSource(list, map) {
   for (const [key, popper] of list) {
-    if (popper.delete) {
+    const innerMap = map.get(key);
+
+    if (popper.length === innerMap.size) {
       map.delete(key)
     } else {
-      const keyMap = map.get(key);
-      for (const counter of popper.removing) {
-        keyMap.delete(counter);
+      for (const counter of popper) {
+        innerMap.delete(counter);
       }
     }
   }
@@ -342,12 +338,12 @@ class Source {
     this.objects = new Map();
     this.graphs = new Map();
     this.all = [];
-    this.pop = [];
+    this.popping = [];
     this.counter = 0;
   }
 
   startPush() {
-    this.pop.push({
+    this.popping.push({
       subjects: new Map(),
       predicates: new Map(),
       objects: new Map(),
@@ -357,7 +353,7 @@ class Source {
   }
 
   push(quad) {
-    const toPop = this.pop[this.pop.length - 1];
+    const toPop = this.popping[this.popping.length - 1];
 
     addQuadToMap(this.counter, this.subjects, quad.subject.value, quad, toPop.subjects);
     addQuadToMap(this.counter, this.predicates, quad.predicate.value, quad, toPop.predicates);
@@ -369,11 +365,11 @@ class Source {
   }
 
   pop() {
-    if (this.pop.length === 0) {
+    if (this.popping.length === 0) {
       throw new Error("Nothing to pop");
     }
 
-    const toPop = this.pop.pop();
+    const toPop = this.popping.pop();
 
     this.all.slice(0, -toPop.count);
 
@@ -453,7 +449,7 @@ class Source {
     cloneTermMap(this.graphs, returning.graphs);
 
     this.all.forEach(item => returning.all.push(item));
-    this.pop.forEach(item => returning.pop.push(item));
+    this.popping.forEach(item => returning.popping.push(item));
     returning.counter = this.counter;
 
     return returning;
@@ -461,7 +457,7 @@ class Source {
 
   pushInto(parent) {
     let on = 0;
-    for (const toPop of this.pop) {
+    for (const toPop of this.popping) {
       parent.startPush();
       for (const quad of this.all.slice(on, on + toPop.count)) {
         parent.push(quad);

@@ -1,11 +1,11 @@
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const SeedRandom = require('seedrandom');
 
 const outputValidation = {
-  publicKey: ChainUtil.validateIsPublicKey,
-  sensor: ChainUtil.validateIsString,
+  sensorName: ChainUtil.validateIsString,
   amount: ChainUtil.createValidateIsIntegerWithMin(1),
-  counter: ChainUtil.createValidateIsIntegerWithMin(1)
+  sensorHash: ChainUtil.validateIsString,
+  brokerHash: ChainUtil.validateIsString
 };
 
 function validateOutputs(t) {
@@ -54,12 +54,12 @@ class Integration {
     }
   }
 
-  static createOutput(recipientPublicKey, sensorId, amount, counter) {
+  static createOutput(amount, sensorName, sensorRegistrationHash, brokerRegistrationHash) {
     return {
-      publicKey: recipientPublicKey,
-      sensor: sensorId,
       amount: amount,
-      counter: counter
+      sensorName: sensorName,
+      sensorHash: sensorRegistrationHash,
+      brokerHash: brokerRegistrationHash
     };
   }
 
@@ -127,6 +127,10 @@ class Integration {
       result: true,
       witnesses: witnesses
     };
+  }
+
+  static name() {
+    return "Integration";
   }
 }
 

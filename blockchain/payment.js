@@ -1,4 +1,4 @@
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 
 const outputValidation = {
   publicKey: ChainUtil.validateIsPublicKey,
@@ -78,6 +78,10 @@ class Payment {
     return {
       result: true,
     };
+  }
+
+  static name() {
+    return "Payment";
   }
 }
 

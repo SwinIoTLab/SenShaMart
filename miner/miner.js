@@ -5,6 +5,7 @@ const Integration = require('../blockchain/integration');
 const SensorRegistration = require('../blockchain/sensor-registration');
 const BrokerRegistration = require('../blockchain/broker-registration');
 const Compensation = require('../blockchain/compensation');
+const Transaction = require('../blockchain/transaction');
 
 const ITERATIONS = 1;
 
@@ -13,39 +14,45 @@ const STATE_INTERRUPTED = 1;
 
 function mine(miner) {
   if (miner.state !== STATE_RUNNING) {
-    this.startMine();
+    startMine(miner);
     return;
   }
   const timestamp = Date.now();
   const difficulty = Block.adjustDifficulty(miner.lastBlock, timestamp);
+
+  const txCount = miner.txs[Payment.name()].mining.length +
+    miner.txs[SensorRegistration.name()].mining.length +
+    miner.txs[BrokerRegistration.name()].mining.length +
+    miner.txs[Integration.name()].mining.length +
+    miner.txs[Compensation.name()].mining.length;
 
   for (let i = 0; i < ITERATIONS; ++i) {
     const hash = Block.hash(
       timestamp,
       miner.lastBlock.hash,
       miner.reward,
-      miner.txs.payments.mining,
-      miner.txs.sensorRegistrations.mining,
-      miner.txs.brokerRegistrations.mining,
-      miner.txs.integrations.mining,
-      miner.txs.compensations.mining,
+      miner.txs[Payment.name()].mining,
+      miner.txs[SensorRegistration.name()].mining,
+      miner.txs[BrokerRegistration.name()].mining,
+      miner.txs[Integration.name()].mining,
+      miner.txs[Compensation.name()].mining,
       miner.nonce,
       difficulty);
 
     if (hash.substring(0, difficulty) === '0'.repeat(difficulty)) {
       //success
       const endTime = process.hrtime.bigint();
-      console.log(`Mined a block of difficulty ${difficulty} in ${Number(endTime - miner.minedStartTime) / 1000000}ms`);
+      console.log(`Mined a block of difficulty ${difficulty} in ${Number(endTime - miner.minedStartTime) / 1000000}ms with ${txCount} txs`);
       miner.blockchain.addBlock(new Block(
         timestamp,
         miner.lastBlock.hash,
         hash,
         miner.reward,
-        miner.txs.payments.mining,
-        miner.txs.sensorRegistrations.mining,
-        miner.txs.brokerRegistrations.mining,
-        miner.txs.integrations.mining,
-        miner.txs.compensations.mining,
+        miner.txs[Payment.name()].mining,
+        miner.txs[SensorRegistration.name()].mining,
+        miner.txs[BrokerRegistration.name()].mining,
+        miner.txs[Integration.name()].mining,
+        miner.txs[Compensation.name()].mining,
         miner.nonce,
         difficulty));
       miner.state = STATE_INTERRUPTED;
@@ -53,7 +60,11 @@ function mine(miner) {
       return;
     } else {
       //failure
-      miner.nonce++;
+      if (miner.nonce === Number.MAX_SAFE_INTEGER) {
+        miner.nonce = Number.MIN_SAFE_INTEGER;
+      } else {
+        miner.nonce++;
+      }
     }
   }
   setImmediate(() => { mine(miner) });
@@ -68,13 +79,23 @@ function startMine(miner) {
   miner.minedStartTime = process.hrtime.bigint();
 
   //TODO make sure these transactions actually work as a collective instead of individually
-  miner.txs.payments.mining = [...miner.txs.payments.pool];
-  miner.txs.integrations.mining = [...miner.txs.integrations.pool];
-  miner.txs.sensorRegistrations.mining = [...miner.txs.sensorRegistrations.pool];
-  miner.txs.brokerRegistrations.mining = [...miner.txs.brokerRegistrations.pool];
-  miner.txs.compensations.mining = [...miner.txs.compensations.pool];
+  for (const type of Transaction.ALL_TYPES) {
+    const key = type.name();
+    miner.txs[key].mining = [];
+    for (const tx of miner.txs[key].pool) {
+      miner.txs[key].mining.push(tx);
+      if (!miner.blockchain.wouldBeValidBlock(miner.reward,
+        miner.txs[Payment.name()].mining,
+        miner.txs[SensorRegistration.name()].mining,
+        miner.txs[BrokerRegistration.name()].mining,
+        miner.txs[Integration.name()].mining,
+        miner.txs[Compensation.name()].mining)) {
+        miner.txs[key].mining.pop();
+      }
+    }
+  }
 
-  miner.nonce = 0;
+  miner.nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
   miner.state = STATE_RUNNING;
 
   mine(miner);
@@ -84,7 +105,7 @@ function findTx(tx) {
   return t => t.input === tx.input && t.counter === tx.counter;
 }
 
-function clearFromBlock(miner, txs, blockTxs) {
+function clearFromBlock(txs, blockTxs) {
   for (const tx of blockTxs) {
     const foundIndex = txs.pool.findIndex(findTx(tx));
 
@@ -109,28 +130,13 @@ class Miner {
       }
     });
 
-    this.txs = {
-      payments: {
+    this.txs = {};
+    for (const type of Transaction.ALL_TYPES) {
+      this.txs[type.name()] = {
         pool: [],
         mining: []
-      },
-      integrations: {
-        pool: [],
-        mining: []
-      },
-      sensorRegistrations: {
-        pool: [],
-        mining: []
-      },
-      brokerRegistrations: {
-        pool: [],
-        mining: []
-      },
-      compensations: {
-        pool: [],
-        mining: []
-      }
-    };
+      };
+    }
 
     startMine(this);
   }
@@ -142,16 +148,7 @@ class Miner {
       return;
     }
 
-    let txs = null;
-
-    switch (tx.type) {
-      case Payment: txs = this.txs.payments; break;
-      case Integration: txs = this.txs.integrations; break;
-      case SensorRegistration: txs = this.txs.sensorRegistrations; break;
-      case BrokerRegistration: txs = this.txs.brokerRegistrations; break;
-      case Compensation: txs = this.txs.compensations; break;
-      default: throw new Error(`unknown tx type: ${tx.type.name()}`);
-    }
+    let txs = this.txs[tx.type.name()];
 
     const foundIndex = txs.pool.findIndex(findTx(tx.transaction));
 
@@ -166,11 +163,11 @@ class Miner {
   }
 
   onNewBlock(block) {
-    clearFromBlock(this, this.txs.payments, Block.getPayments(block));
-    clearFromBlock(this, this.txs.integrations, Block.getIntegrations(block));
-    clearFromBlock(this, this.txs.sensorRegistrations, Block.getSensorRegistrations(block));
-    clearFromBlock(this, this.txs.brokerRegistrations, Block.getBrokerRegistrations(block));
-    clearFromBlock(this, this.txs.compensations, Block.getCompensations(block));
+    clearFromBlock(this.txs[Payment.name()], Block.getPayments(block));
+    clearFromBlock(this.txs[Integration.name()], Block.getIntegrations(block));
+    clearFromBlock(this.txs[SensorRegistration.name()], Block.getSensorRegistrations(block));
+    clearFromBlock(this.txs[BrokerRegistration.name()], Block.getBrokerRegistrations(block));
+    clearFromBlock(this.txs[Compensation.name()], Block.getCompensations(block));
 
     this.state = STATE_INTERRUPTED;
 

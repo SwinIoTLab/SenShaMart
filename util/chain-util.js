@@ -100,13 +100,26 @@ class ChainUtil {
     return returning;
   }
 
-  static validateAlways(_) {
+  static validateExists(t) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
+
     return {
       result: true
     };
   }
 
   static validateIsObject(t) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (typeof t !== 'object') {
       return {
         result: false,
@@ -120,6 +133,12 @@ class ChainUtil {
   }
 
   static validateIsString(t) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (typeof t === 'string') {
       return {
         result: true
@@ -132,7 +151,31 @@ class ChainUtil {
     }
   }
 
+  static validateIsNumber(t) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
+    if (typeof t !== 'number') {
+      return {
+        result: false,
+        reason: "Is not number"
+      };
+    }
+    return {
+      result: true
+    };
+  }
+
   static validateIsInteger(t) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (typeof t !== 'number') {
       return {
         result: false,
@@ -152,6 +195,12 @@ class ChainUtil {
 
   //includes minimum
   static validateIsIntegerWithMin(t, minimum) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (typeof t !== 'number') {
       return {
         result: false,
@@ -195,6 +244,12 @@ class ChainUtil {
   }
 
   static validateArray(t, memberValidator) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (!(t instanceof Array)) {
       return {
         result: false,
@@ -222,6 +277,12 @@ class ChainUtil {
   }
 
   static validateObject(t, memberValidator) {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
     if (!(t instanceof Object)) {
       return {
         result: false,
@@ -232,12 +293,13 @@ class ChainUtil {
     for (const key in memberValidator) {
       const validator = memberValidator[key];
 
-      if (!(key in t)) {
-        return {
-          result: false,
-          reason: "Couldn't find key: " + key
-        };
-      }
+      //ALLOW OPTIONAL KEYS
+      //if (!(key in t)) {
+      //  return {
+      //    result: false,
+      //    reason: "Couldn't find key: " + key
+      //  };
+      //}
 
       const res = validator(t[key]);
 
@@ -266,7 +328,19 @@ class ChainUtil {
   static createValidateObject(memberValidator) {
     return function (t) {
       return ChainUtil.validateObject(t, memberValidator);
-    }
+    };
+  }
+
+  static createValidateOptional(validator) {
+    return function (t) {
+      if (typeof t === "undefined") {
+        return {
+          result: true
+        };
+      }
+
+      return validator(t);
+    };
   }
 }
 

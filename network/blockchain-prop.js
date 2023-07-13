@@ -1,19 +1,37 @@
 const Websocket = require('ws');
-const Assert = require('assert');
-const ChainUtil = require('../chain-util');
+const ChainUtil = require('../util/chain-util');
 const Block = require('../blockchain/block');
-const Blockchain = require('../blockchain/blockchain');
+const BrokerRegistration = require('../blockchain/broker-registration');
+const SensorRegistration = require('../blockchain/sensor-registration');
+const Integration = require('../blockchain/integration');
+const Payment = require('../blockchain/payment');
+const Compensation = require('../blockchain/compensation');
+const Transaction = require('../blockchain/transaction');
 
 const STATE_INIT = 0;
 const STATE_CONNECTING = 1;
-const STATE_RUNNING = 2;
+const STATE_WAITING = 2;
+const STATE_READY = 3;
 
 const PEER_OK = 0;
 const PEER_DEAD = 1;
 
 const chainValidation = {
-  start: ChainUtil.createValidateIsIntegerWithMin(0),
-  blocks: ChainUtil.createValidateArray(Block.validateIsBlock)
+  start: ChainUtil.createValidateIsIntegerWithMin(1),
+  blocks: ChainUtil.createValidateArray(Block.verify)
+};
+
+const txsValidation = {
+  SensorRegistration: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(SensorRegistration.verify)),
+  BrokerRegistration: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(BrokerRegistration.verify)),
+  Integration: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Integration.verify)),
+  Compensation: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Compensation.verify)),
+  Payment: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Payment.verify))
 };
 
 class Connection {
@@ -26,7 +44,8 @@ class Connection {
     this.prev = null;
     this.next = null;
 
-    this.blockIndex = null;
+    this.differing = null;
+    this.lastBlockHash = "";
 
     this.queue = null;
     this.queueTimer = null;
@@ -40,23 +59,18 @@ class Connection {
   }
 
   accepted(socket) {
-    console.log(`${this.logName} accepted`);
     this.socket = socket;
-    this.state = STATE_RUNNING;
 
-    this.socket.addEventListener("error", () => {
-      this.onError();
+    this.socket.addEventListener("error", (err) => {
+      this.onError("Error event");
     });
 
-    this.socket.addEventListener("open", () => {
-      this.onConnection();
-    });
 
     this.socket.addEventListener("message", (data) => {
       this.onMessage(data);
     });
 
-    this.onConnection();
+    this.onConnection(false);
   }
 
   connect(address) {
@@ -70,12 +84,12 @@ class Connection {
   reconnect() {
     console.log(`${this.logName} connecting`);
     this.socket = new Websocket(this.address);
-    this.socket.addEventListener("error", () => {
-      this.onError();
+    this.socket.addEventListener("error", (err) => {
+      this.onError("Error event");
     });
 
     this.socket.addEventListener("open", () => {
-      this.onConnection();
+      this.onConnection(true);
     });
 
     this.socket.addEventListener("message", (data) => {
@@ -87,7 +101,8 @@ class Connection {
 
   }
 
-  onError() {
+  onError(message) {
+    console.log(this.logName + ": " + message);
     switch (this.state) {
       case STATE_CONNECTING:
         //this.reconnectWait seconds + random [0,1000] ms
@@ -98,7 +113,7 @@ class Connection {
           this.reconnectWait = 64;
         }
         break;
-      case STATE_RUNNING:
+      default:
         this.socket.close();
         this.next.prev = this.prev;
         this.prev.next = this.next;
@@ -115,129 +130,248 @@ class Connection {
     }
   }
 
-  onConnection() {
-    this.state = STATE_RUNNING;
+  onConnection(weInitiated) {
+    console.log(`${this.logName} connected, initiated: ${weInitiated}`);
 
+    if (weInitiated) {
+      this.state = STATE_WAITING;
+    } else {
+      this.state = STATE_READY;
+    }
     this.prev = this.parent.connected;
     this.next = this.parent.connected.next;
     this.next.prev = this;
     this.prev.next = this;
 
-    const sending = {
+    this.queue = {
       sub: {
-        txs: this.parent.subTxs
+        txs: this.parent.txsCallback !== null
       },
       address: this.parent.myAddress
     };
 
-    const blocks = this.parent.blockchain.blocks();
+    this.differing = 1;
+    this.lastBlockHash = "";
 
-    if (blocks.length > 1) {
-      sending.chain = {
-        blocks: blocks.slice(1),
-        start: 1
-      }
-    }
-
-    this.socket.send(JSON.stringify(sending));
-
-    this.blockIndex = blocks.length;
+    this.checkSend();
   }
 
   onQueueTimer() {
     this.queueTimer = null;
-    if (this.state !== STATE_RUNNING) {
-      return;
+    this.checkSend();
+  }
+
+  handleChain(chain) {
+    const validationRes = ChainUtil.validateObject(chain, chainValidation);
+    if (!validationRes.result) {
+      this.onError("Couldn't validate chain message: " + validationRes.reason);
+      return false;
     }
 
-    this.checkSend();
+    const ourChain = this.parent.blockchain.blocks();
 
-    // we don't retimer as we wait for external to send
+    if (chain.start > ourChain.length) {
+      this.onError("Recved start that's out of bounds of our current chain");
+      return false;
+    }
+
+    if (this.differing < chain.start) {
+      return true;
+    } else if (chain.start < this.differing) {
+      this.differing = chain.start;
+    }
+
+    if (chain.start + chain.blocks.length <= ourChain.length) {
+      for (let i = 0; i < chain.blocks.length; i++) {
+        const newBlock = chain.blocks[i];
+        const oldBlock = ourChain[chain.start + i];
+        if (newBlock.hash !== oldBlock.hash) {
+          this.differing = chain.start + i;
+          return true;
+        }
+      }
+      this.differing = chain.start + chain.blocks.length;
+      return true;
+    }
+
+    const newBlocks = ourChain.slice(0, chain.start).concat(chain.blocks);
+
+    this.parent.updatingConnection = this;
+    const replaceRes = this.parent.blockchain.replaceChain(newBlocks);
+    this.parent.updatingConnection = null;
+
+    if (replaceRes.result === true) {
+      this.differing = newBlocks.length;
+    }
+
+    return true;
+  }
+
+  handleTxs(txs) {
+    console.log("Recved msg with txs:");
+    const validationRes = ChainUtil.validateObject(txs, txsValidation);
+    if (!validationRes.result) {
+      this.onError("Couldn't validate txs message: " + validationRes.reason);
+      return false;
+    }
+
+    for (const type of Transaction.ALL_TYPES) {
+      const key = type.name();
+      if (key in txs) {
+        console.log(`${key} txs found`);
+        for (const tx of txs[key]) {
+          if (!this.parent.txsSeen.has(type.hashToSign(tx))) {
+            const newTx = new Transaction(tx, type);
+
+            this.parent.updatingConnection = this;
+            this.parent.sendTx(newTx);
+            this.parent.updatingConnection = null;
+
+            if (this.parent.txsCallback !== null) {
+              this.parent.txsCallback(newTx);
+            }
+          }
+        }
+      }
+    }
+    return true;
   }
 
   onMessage(event) {
-    var recved = null;
-    try {
-      recved = JSON.parse(event);
-    } catch (ex) {
-      console.log(`Bad message on ${this.logName}, not a json object`);
-      this.onError();
+    if (this.state !== STATE_WAITING || this.socket.bufferedAmount !== 0) {
+      //how did we recv, if we haven't finished sending?
+      //our partner isn't waiting for a recv before sending, error
+      this.onError("Partner isn't following simplex protocol");
       return;
     }
 
+    this.state = STATE_READY;
+
+    let recved = null;
+    try {
+      recved = JSON.parse(event.data);
+    } catch (ex) {
+      this.onError("Bad message, not a json object: " + ex.message);
+      return;
+    }
+
+    if ("sub" in recved) {
+      if ("txs" in recved.sub) {
+        this.sub.txs = recved.sub.txs === true;
+        console.log(`${this.logName} set sub to txs to ${this.sub.txs}`);
+      }
+    }
+
     if ("chain" in recved) {
-      const validationRes = ChainUtil.validateObject(recved.chain, chainValidation);
-      if (!validationRes.result) {
-        console.log(`${this.logName} couldn't validate chain message: ${validationRes.reason}`);
-        this.onError();
+      if (!this.handleChain(recved.chain)) {
         return;
       }
-
-      console.log(`${this.logName} recved chain with start: ${recved.chain.start}`);
-
-      var newBlocks = this.parent.blockchain.blocks().slice(0, recved.chain.start + 1);
-      newBlocks = newBlocks.concat(recved.chain.blocks);
-
-      this.parent.updatingConnection = this;
-      this.parent.blockchain.replaceChain(newBlocks);
-      this.parent.updatingConnection = null;
     }
+
+    if (this.parent.txsCallback !== null && "txs" in recved) {
+      if (!this.handleTxs(recved.txs)) {
+        return;
+      }
+    }
+
+    this.checkSend();
   }
 
-  sendChain(oldBlocks, blocks) {
+  newChain(oldBlocks, blocks, difference) {
+    if (difference < this.differing) {
+      this.differing = difference;
+    }
+
+    this.checkSend();
+  }
+
+  sendTx(transaction) {
+    if (!this.sub.txs) {
+      return;
+    }
+
     if (this.queue === null) {
       this.queue = {};
     }
 
-    var startIndex = this.blockIndex - 1;
-
-    while (oldBlocks[startIndex].hash !== blocks[startIndex].hash) {
-      startIndex--;
+    if (!("txs" in this.queue)) {
+      this.queue.txs = {};
     }
 
-    this.queue.chain = {
-      blocks: blocks.slice(startIndex + 1),
-      start: startIndex + 1
-    };
+    const key = transaction.type.name();
+
+    if (!(key in this.queue.txs)) {
+      this.queue.txs[key] = [];
+    }
+    this.queue.txs[key].push(transaction.transaction);
 
     this.checkSend();
   }
 
+  setTimer() {
+    if (this.queueTimer !== null) {
+      return;
+    } else {
+      this.queueTimer = setTimeout(() => {
+        this.onQueueTimer();
+      }, 1000);
+    }
+  }
+
   checkSend() {
-    if (this.queue === null) {
+    if (this.state !== STATE_READY) {
       return;
     }
 
-    if (this.socket.bufferedAmount === 0) {
-      this.socket.send(JSON.stringify(this.queue));
+    const blocks = this.parent.blockchain.blocks();
 
-      if ("chain" in this.queue) {
-        this.blockIndex = this.queue.chain.start + this.queue.chain.blocks.length;
+    const lastBlock = blocks[blocks.length - 1];
+
+    if ((this.differing < blocks.length && this.lastBlockHash !== lastBlock.hash) || this.queue !== null) {
+      if (this.queue === null) {
+        this.queue = {};
       }
 
-      this.queue = null;
-    } else if (this.queueTimer === null) {
-      this.queueTimer = setTimeout(this.onQueueTimer, 1000);
+      this.queue.chain = {
+        start: this.differing,
+        blocks: blocks.slice(this.differing)
+      };
+
+      this.differing = blocks.length;
+      this.lastBlockHash = lastBlock.hash;
     }
+
+    if (this.queue === null) {
+      this.setTimer();
+      //set queue to force a send the next time we check (either naturally or due to timer)
+      this.queue = {};
+      return;
+    }
+
+    const sending = JSON.stringify(this.queue);
+    this.socket.send(sending);
+
+    this.state = STATE_WAITING;
+    this.queue = null;
   }
 }
 
-function updateBlocksImpl(server, newBlocks, oldBlocks) {
+function updateBlocksImpl(server, newBlocks, oldBlocks, difference) {
   if (server.updatingConnection !== null) {
-    server.updatingConnection.blockIndex = blocks.length;
+    server.updatingConnection.blockIndex = newBlocks.length;
   }
 
   for (var connection = server.connected.next; connection !== server.connected; connection = connection.next) {
     if (connection === server.updatingConnection) {
       continue;
     }
-    connection.sendChain(oldBlocks, newBlocks);
+    connection.newChain(oldBlocks, newBlocks, difference);
   }
 }
 
 //this acts as a publisher, and subscriber
 class PropServer {
-  constructor(logName, subTxs, blockchain) {
+  constructor(logName, blockchain, txsCallback) {
     this.logName = logName;
     this.peerState = new Map();
     this.connected = {
@@ -248,13 +382,18 @@ class PropServer {
     this.connected.prev = this.connected;
     this.blockchain = blockchain;
     this.blockchain.addListener((newBlocks, oldBlocks, difference) => {
-      updateBlocksImpl(this, newBlocks, oldBlocks);
+      updateBlocksImpl(this, newBlocks, oldBlocks, difference);
     });
+    this.txsSeen = new Set();
     this.port = null;
     this.myAddress = null;
     this.server = null;
     this.connectionCounter = 0;
-    this.subTxs = subTxs;
+    if (typeof txsCallback === "undefined") {
+      this.txsCallback = null;
+    } else {
+      this.txsCallback = txsCallback;
+    }
     this.updatingConnection = null;
   }
 
@@ -280,6 +419,22 @@ class PropServer {
       const connection = new Connection(this);
       connection.accepted(socket);
     });
+  }
+
+  sendTx(transaction) {
+    const hash = transaction.type.hashToSign(transaction.transaction);
+
+    if (this.txsSeen.has(hash)) {
+      return;
+    }
+    this.txsSeen.add(hash);
+
+    for (let connection = this.connected.next; connection !== this.connected; connection = connection.next) {
+      if (connection === this.updatingConnection) {
+        continue;
+      }
+      connection.sendTx(transaction);
+    }
   }
 }
 

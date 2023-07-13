@@ -1,0 +1,14 @@
+[Unit]
+Description=Senshamart camera demo
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=garbo
+ExecStart=camera_client/camer_demo
+WorkingDirectory=/home/garbo/Downloads/senshamart_demo
+
+[Install]
+WantedBy=multi-user.target

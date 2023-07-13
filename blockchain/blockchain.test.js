@@ -1,4 +1,4 @@
-const Blockchain = require('./index');
+const Blockchain = require('./blockchain');
 const Block = require('./block');
 
 describe('Blockchain', () => {
@@ -15,13 +15,13 @@ describe('Blockchain', () => {
 
   it('adds a new block', () => {
     const reward = 'test-reward-key';
-    expect(bc.addBlock(Block.debugMine(bc.lastBlock(),reward,[],[]))).toBe(true);
+    expect(bc.addBlock(Block.debugMine(bc.lastBlock(),reward))).toBe(true);
 
     expect(bc.lastBlock().reward).toEqual(reward);
   });
 
   it('validates a valid chain', () => {
-    expect(bc2.addBlock(Block.debugMine(bc2.lastBlock(), 'test-reward-key', [], []))).toBe(true);
+    expect(bc2.addBlock(Block.debugMine(bc2.lastBlock(), 'test-reward-key'))).toBe(true);
 
     expect(Blockchain.isValidChain(bc2.chain)).toBe(true);
   });

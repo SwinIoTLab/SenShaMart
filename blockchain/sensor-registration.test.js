@@ -1,109 +1,205 @@
-const Transaction = require('./transaction');
-const Metadata    = require('./metadata');
-const Wallet = require('./index');
-const { MINING_REWARD } = require('../constants');
+const SensorRegistration = require('./sensor-registration');
+const ChainUtil = require('../util/chain-util');
+const SENSHAMART_URI_PREFIX = require('../util/constants').SENSHAMART_URI_PREFIX;
 
-describe('Transaction & Metadata', () => {
-  let transaction, metadata, wallet, recipient, amount,
-    senderWallet,Name,Geo ,IP_URL , Topic_Token, Permission,
-    RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
-    PaymentPerMinute, Protocol, MessageAttributes, Interval, 
-    FurtherDetails, SSNmetadata;
+describe('Sensor Registration', () => {
+  let keyPair;
 
   beforeEach(() => {
-    wallet = new Wallet();
-    amount = 50;
-    recipient = 'r3c1p13nt';
-    senderWallet = new Wallet();
-    Name = 'IoT_Lab_Temp_Sensor'
-    Geo = [1.045,0.0135]
-    IP_URL = 'www.IoT-locationbar.com/sensors/temp'
-    Topic_Token = 'ACCESS_TOKEN'
-    Permission = 'Public'
-    RequestDetail = 'Null' 
-    OrgOwner = 'Swinburne_University'
-    DepOwner = 'Computer_Science'
-    PrsnOwner = 'Anas_Dawod'
-    PaymentPerKbyte = 10
-    PaymentPerMinute = 5
-    Protocol = 'MQTT'
-    MessageAttributes  = 'null'
-    Interval = 10
-    FurtherDetails = 'null'
-    SSNmetadata = 'null'
-    transaction = Transaction.newTransaction(wallet, recipient, amount);
-    metadata    = Metadata.newMetadata(senderWallet,Name,Geo ,IP_URL , Topic_Token, Permission,
-      RequestDetail, OrgOwner, DepOwner,PrsnOwner, PaymentPerKbyte, 
-      PaymentPerMinute, Protocol, MessageAttributes, Interval, 
-      FurtherDetails, SSNmetadata)
+    keyPair = ChainUtil.genKeyPair();
   });
 
-  it('outputs the `amount` subtracted from the wallet balance', () => {
-    expect(transaction.outputs.find(output => output.address === wallet.publicKey).amount)
-      .toEqual(wallet.balance - amount);
+  it("Construct a sensor", () => {
+    new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [], 0);
   });
 
-  it('outputs the `amount` added to the recipient', () => {
-    expect(transaction.outputs.find(output => output.address === recipient).amount)
-      .toEqual(amount);
+  it("Construct a sensor with invalid counter", () => {
+    expect(() => new SensorRegistration(keyPair, "hello", "test", 0, 0, "test", null, 0)).toThrow();
   });
 
-  it('inputs the balance of the wallet', () => {
-    expect(transaction.input.amount).toEqual(wallet.balance);
+  it("Construct a sensor with invalid name", () => {
+    expect(() => new SensorRegistration(keyPair, 1, 5, 0, 0, "test", null, 0)).toThrow();
   });
 
-  it('validates a valid transaction', () => {
-    expect(Transaction.verifyTransaction(transaction)).toBe(true);
+  it("Construct a sensor with negative costPerMinute", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", -1, 0, "test", null, 0)).toThrow();
   });
 
-  it('validates a valid metadata', () => {
-    expect(Metadata.verifyMetadata(metadata)).toBe(true);
+  it("Construct a sensor with invalid costPerMinute", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 1.5, 0, "test", null, 0)).toThrow();
   });
 
-  it('invalidates a corrupt transaction', () => {
-    transaction.outputs[0].amount = 50000;
-    expect(Transaction.verifyTransaction(transaction)).toBe(false);
+  it("Construct a sensor with negative costPerKB", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, -1, "test", null, 0)).toThrow();
   });
 
-  describe('transacting with an amount that exceeds the balance', () => {
-    beforeEach(() => {
-      amount = 50000;
-      transaction = Transaction.newTransaction(wallet, recipient, amount);
-    });
-
-    it('does not create the transaction', () => {
-      expect(transaction).toEqual(undefined);
-    });
+  it("Construct a sensor with invalid costPerKB", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, "hello", "test", null, 0)).toThrow();
   });
 
-  describe('and updating a transaction', () => {
-    let nextAmount, nextRecipient;
-
-    beforeEach(() => {
-      nextAmount = 20;
-      nextRecipient = 'n3xt-4ddr355';
-      transaction = transaction.update(wallet, nextRecipient, nextAmount);
-    });
-
-    it(`subtracts the next amount from the sender's output`, () => {
-      expect(transaction.outputs.find(output => output.address === wallet.publicKey).amount)
-        .toEqual(wallet.balance - amount - nextAmount);
-    });
-
-    it('outputs an amount for the next recipient', () => {
-      expect(transaction.outputs.find(output => output.address === nextRecipient).amount)
-        .toEqual(nextAmount);
-    });
+  it("Construct a sensor with invalid broker", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, 5, null, 0)).toThrow();
   });
 
-  describe('creating a reward transaction', () => {
-    beforeEach(() => {
-      transaction = Transaction.rewardTransaction(wallet, Wallet.blockchainWallet());
-    });
+  it("Construct a sensor with negative rewardAmount", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", null, -1)).toThrow();
+  });
 
-    it(`reward the miner's wallet`, () => {
-      expect(transaction.outputs.find(output => output.address === wallet.publicKey).amount)
-        .toEqual(MINING_REWARD);
-    });
+  it("Construct a sensor with invalid rewardAmount", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", null, "0")).toThrow();
+  });
+
+  it("Construct a sensor with extra metadata", () => {
+    new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+  });
+
+  it("Construct a sensor invalid subject in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: 0,
+      p: "and",
+      o: "something else"
+    }], 0)).toThrow();
+  });
+
+  it("Construct a sensor reserved subject in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: SENSHAMART_URI_PREFIX + "something",
+      p: "and",
+      o: "something else"
+    }], 0)).toThrow();
+  });
+
+  it("Construct a sensor with invalid predicate in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: {},
+      o: "something else"
+    }], 0)).toThrow();
+  });
+
+  it("Construct a sensor with reserved predicate in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: SENSHAMART_URI_PREFIX + "and",
+      o: "something else"
+    }], 0)).toThrow();
+  });
+
+  it("Construct a sensor with invalid object in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: []
+    }], 0)).toThrow();
+  });
+
+  it("Construct a sensor with reserved object in extra metadata", () => {
+    expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: SENSHAMART_URI_PREFIX + "something else"
+    }], 0)).toThrow();
+  });
+
+  it("Changing input fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.input = ChainUtil.genKeyPair();
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing counter fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.counter++;
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing rewardAmount fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.rewardAmount++;
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing metadata name fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.metadata.name = "else";
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing metadata costPerMinute fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.metadata.costPerMinute++;
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing metadata costPerKB fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.metadata.costPerKB++;
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
+  });
+
+  it("Changing metadata integrationBroker fails verify", () => {
+    const changing = new SensorRegistration(keyPair, 1, "test", 0, 0, "test", [{
+      s: "something",
+      p: "and",
+      o: "something else"
+    }], 0);
+
+    expect(SensorRegistration.verify(changing).result).toBe(true);
+
+    changing.metadata.integrationBroker += "a";
+
+    expect(SensorRegistration.verify(changing).result).toBe(false);
   });
 });

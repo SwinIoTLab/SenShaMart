@@ -1,0 +1,14 @@
+[Unit]
+Description=Senshamart miner
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=ubuntu
+ExecStart=node miner/miner-app
+WorkingDirectory=/home/ubuntu/miner/
+
+[Install]
+WantedBy=multi-user.target
