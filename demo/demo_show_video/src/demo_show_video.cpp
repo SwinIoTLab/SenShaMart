@@ -36,13 +36,14 @@ int main(int argc, const char** argv) {
   auto connOpts = mqtt::connect_options_builder()
     .keep_alive_interval(std::chrono::seconds(30))
     .automatic_reconnect(std::chrono::seconds(2), std::chrono::seconds(30))
-    .clean_session(false)
+    .clean_session(true)
     .finalize();
 
   for (;;) {
     mqtt::connect_response rsp = mqtt_client.connect(connOpts);
 
     if (!rsp.is_session_present()) {
+      fprintf(stderr, "Subscribing to %s\n", channel_name);
       mqtt_client.subscribe(channel_name);
     }
 
