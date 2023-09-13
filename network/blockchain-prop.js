@@ -1,4 +1,3 @@
-const Websocket = require('ws');
 const ChainUtil = require('../util/chain-util');
 const Block = require('../blockchain/block');
 const BrokerRegistration = require('../blockchain/broker-registration');
@@ -83,7 +82,7 @@ class Connection {
 
   reconnect() {
     console.log(`${this.logName} connecting`);
-    this.socket = new Websocket(this.address);
+    this.socket = new this.parent.websocket(this.address);
     this.socket.addEventListener("error", (err) => {
       this.onError("Error event");
     });
@@ -371,7 +370,7 @@ function updateBlocksImpl(server, newBlocks, oldBlocks, difference) {
 
 //this acts as a publisher, and subscriber
 class PropServer {
-  constructor(logName, blockchain, txsCallback) {
+  constructor(logName, blockchain, txsCallback, wsProvider) {
     this.logName = logName;
     this.peerState = new Map();
     this.connected = {
@@ -395,6 +394,11 @@ class PropServer {
       this.txsCallback = txsCallback;
     }
     this.updatingConnection = null;
+    if (typeof wsProvider === "undefined" || wsProvider === null) {
+      this.websocket = require('ws');
+    } else {
+      this.websocket = wsProvider;
+    }
   }
 
   start(port, myAddress, peers) {
@@ -414,11 +418,13 @@ class PropServer {
       }
     }
 
-    this.server = new Websocket.Server({ port: port });
-    this.server.on('connection', socket => {
-      const connection = new Connection(this);
-      connection.accepted(socket);
-    });
+    if ("Server" in this.websocket) {
+      this.server = new this.websocket.Server({ port: port });
+      this.server.on('connection', socket => {
+        const connection = new Connection(this);
+        connection.accepted(socket);
+      });
+    }
   }
 
   sendTx(transaction) {
