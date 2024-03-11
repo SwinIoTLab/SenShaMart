@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://unpkg.com/n3/browser/n3.min.js"></script>
+  <script src="/provider.js"></script>
+</head>
+<body>
+  <div>
+    <span>Provider</span><button id="refresh" disabled>Refresh</button>
+  </div>
+  <div id="status">LOADING</div>
+  <div>
+    <span>Wallet public key: </span><span id="publicKey">LOADING</span>
+  </div>
+  <div>
+    <span>Current wallet balance: </span><span id="coinCount">0</span>
+  </div>
+  <div>
+    <span>Current chain length: </span><span id="chainDepth">LOADING</span>
+  </div>
+  <div>
+    <button id="brokersButton">Registered Brokers</button>
+    <button id="registerSensorButton">Register a Sensor</button>
+    <button id="sensorsButton">Our Sensors</button>
+    <button id="integrationsButton">Our Integrations</button>
+  </div>
+  <div id="brokersTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Broker:
+      </div>
+      <div>
+        <div>
+          <select id="brokerBrokers" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="brokerInfo" style="display:block">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Name: </span>
+        <input id="brokerInfoName" disabled />
+        <span>Endpoint: </span>
+        <input id="brokerEndpoint" disabled />
+        <span>Owner: </span>
+        <input id="brokerOwner" disabled />
+      </div>
+      <div>Extra Metadata</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Subject</th>
+              <th>Predicate</th>
+              <th>Object</th>
+            </tr>
+          </thead>
+          <tbody id="brokerInfoRDFBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div id="registerSensorTab">
+    <div style="display:grid; grid-template-columns: auto 1fr">
+      <span>Name:</span><input id="registerName" required />
+      <span>Cost Per Minute:</span><input id="registerCPM" type="number" min="0" value="1" required />
+      <span>Cost Per KB:</span><input id="registerCPKB" type="number" min="0" value="1" required />
+      <span>Broker:</span><select id="registerBroker" required></select>
+      <span>Extra metadata:</span><span><button id="registerClearMetadata">Clear</button><input id="registerMetadata" type="file" value="" /></span>
+      <span>Reward amount:</span><input id="registerReward" type="number" min="0" value="0" required />
+      <button id="registerGo">Create</button>
+    </div>
+    <h1>
+      Raw Sensor Registration Transaction:
+    </h1>
+    <label id="registerResult"></label>
+  </div>
+  <div id="sensorsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Sensor:
+      </div>
+      <div>
+        <div>
+          <select id="sensorSensors" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="sensorInfo" style="display:block">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Name: </span>
+        <input id="sensorInfoName" disabled />
+        <span>Cost Per Minute: </span>
+        <input id="sensorInfoCPM" disabled />
+        <span>Cost Per KB: </span>
+        <input id="sensorInfoCPKB" disabled />
+        <span>Broker: </span>
+        <input id="sensorInfoBroker" disabled />
+      </div>
+      <div>Extra Metadata</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Subject</th>
+              <th>Predicate</th>
+              <th>Object</th>
+            </tr>
+          </thead>
+          <tbody id="sensorInfoRDFBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div id="integrationsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Integrations:
+      </div>
+      <div>
+        <div>
+          <select id="integrationIntegrations" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="integrationInfo" style="display:block">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Started: </span>
+        <input id="integrationInfoStarted" disabled />
+        <span>Hash: </span>
+        <input id="integrationInfoHash" disabled />
+        <span>Witness Count: </span>
+        <input id="integrationInfoWitnessCount" disabled />
+      </div>
+      <div>Sensors</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Sensor Name</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="integrationOutputBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+<script>
+  startUI();
+</script>

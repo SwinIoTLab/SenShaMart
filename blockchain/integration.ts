@@ -1,5 +1,6 @@
-const ChainUtil = require('../util/chain-util');
-const SeedRandom = require('seedrandom');
+import { ChainUtil, type KeyPair, type ResultFailure, type Result, isFailure } from '../util/chain-util.js';
+import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
+import SeedRandom from 'seedrandom';
 
 const outputValidation = {
   sensorName: ChainUtil.validateIsString,
@@ -8,7 +9,14 @@ const outputValidation = {
   brokerHash: ChainUtil.validateIsString
 };
 
-function validateOutputs(t) {
+type Output = {
+  amount: number,
+  sensorName: string,
+  sensorHash: string,
+  brokerHash: string
+}
+
+function validateOutputs(t: unknown): Result {
   const validateArrayRes = ChainUtil.validateArray(t, (output) => {
     return ChainUtil.validateObject(output, outputValidation);
   });
@@ -17,7 +25,9 @@ function validateOutputs(t) {
     return validateArrayRes;
   }
 
-  if (t.length <= 0) {
+  const t_array = t as Output[];
+
+  if (t_array.length <= 0) {
     return {
       result: false,
       reason: "Integration must have at least 1 output"
@@ -38,23 +48,34 @@ const baseValidation = {
   signature: ChainUtil.validateIsSignature
 };
 
-class Integration {
-  constructor(senderKeyPair, counter, outputs, witnessCount, rewardAmount) {
-    this.input = senderKeyPair.getPublic().encode('hex');
+type ResultWitnesses = {
+  result: true;
+  witnesses: string[];
+}
+
+class Integration implements RepeatableTransaction {
+  input: string;
+  counter: number;
+  rewardAmount: number;
+  outputs: Output[];
+  witnessCount: number;
+  signature: string;
+  constructor(senderKeyPair: KeyPair, counter: number, outputs: Output[], witnessCount: number, rewardAmount: number) {
+    this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
     this.outputs = outputs;
     this.witnessCount = witnessCount;
 
-    this.signature = senderKeyPair.sign(Integration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Integration.hashToSign(this));
 
     const verification = Integration.verify(this);
-    if (!verification.result) {
+    if (isFailure(verification)) {
       throw new Error(verification.reason);
     }
   }
 
-  static createOutput(amount, sensorName, sensorRegistrationHash, brokerRegistrationHash) {
+  static createOutput(amount: number, sensorName: string, sensorRegistrationHash: string, brokerRegistrationHash: string): Output {
     return {
       amount: amount,
       sensorName: sensorName,
@@ -63,15 +84,22 @@ class Integration {
     };
   }
 
-  static hashToSign(integration) {
+  static hashToSign(integration:Integration):string {
     return ChainUtil.hash([
       integration.counter,
       integration.rewardAmount,
-      integration.witnesses,
+      integration.witnessCount,
       integration.outputs]);
   }
 
-  static verify(integration) {
+  static wrap(tx: Integration): TransactionWrapper<Integration> {
+    return {
+      tx: tx,
+      type: this
+    };
+  }
+
+  static verify(integration:Integration):Result {
     const validationRes = ChainUtil.validateObject(integration, baseValidation);
     if (!validationRes.result) {
       return validationRes;
@@ -90,7 +118,7 @@ class Integration {
     };
   }
 
-  static chooseWitnesses(integration, brokerList) {
+  static chooseWitnesses(integration: Integration, brokerList: string[]): ResultWitnesses | ResultFailure{
     const brokerListCopy = [...brokerList];
     brokerListCopy.sort();
 
@@ -110,11 +138,11 @@ class Integration {
       };
     }
 
-    const rng = new SeedRandom.alea(integration.signature, Integration.hashToSign(integration));
+    const rng = SeedRandom.alea(integration.signature + Integration.hashToSign(integration)) as SeedRandom.PRNG;
 
     const witnesses = [];
 
-    for (var i = 0; i < witnessCount; ++i) {
+    for (let i = 0; i < witnessCount; ++i) {
       const chosen = Math.floor(rng() * brokerListCopy.length);
 
       witnesses.push(brokerListCopy[chosen]);
@@ -129,9 +157,9 @@ class Integration {
     };
   }
 
-  static name() {
+  static txName(): string {
     return "Integration";
   }
 }
-
-module.exports = Integration;
+export { Integration, type Output };
+export default Integration;

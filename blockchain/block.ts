@@ -1,25 +1,25 @@
-const ChainUtil = require('../util/chain-util');
-const { DIFFICULTY, MINE_RATE } = require('../util/constants');
-const BrokerRegistration = require('./broker-registration');
-const SensorRegistration = require('./sensor-registration');
-const Integration = require('./integration');
-const Payment = require('./payment');
-const Compensation = require('./compensation');
+import { ChainUtil, type Result } from '../util/chain-util.js';
+import { MINE_DIFFICULTY, MINE_RATE } from '../util/constants.js';
+import { type Transaction } from './transaction_base.js';
+import BrokerRegistration from './broker-registration.js';
+import SensorRegistration from './sensor-registration.js';
+import Integration from './integration.js';
+import Payment from './payment.js';
+import Compensation from './compensation.js';
 
-function concatIfNotUndefined(concatTo, prefix, concatting) {
-  if (typeof concatting !== "undefined" && concatting.length !== 0) {
-    return concatTo + `${prefix}${concatting.signature}`;
-  } else {
-    return concatTo;
+function concatIfNotUndefined(concatTo: string, prefix: string, concatting: Transaction[] | null): string {
+  if (typeof concatting !== "undefined" && concatting !== null && concatting.length > 0) {
+    concatTo += prefix;
+    for (const tx of concatting) {
+      concatTo += tx.signature;
+    }
   }
+  return concatTo;
 }
 
-function getData(block, key) {
-
-  const got = block[key];
-
-  if (typeof got !== "undefined" && got !== null) {
-    return got;
+function getData<T>(map?:T[]): T[] {
+  if (typeof map !== "undefined" && map !== null) {
+    return map;
   } else {
     return [];
   }
@@ -45,7 +45,19 @@ const baseValidation = {
 }
 
 class Block {
-  constructor(timestamp, lastHash, hash, reward, payments, sensorRegistrations, brokerRegistrations, integrations, compensations, nonce, difficulty) {
+  timestamp: number;
+  lastHash: string;
+  hash: string;
+  reward: string;
+  nonce: number;
+  difficulty: number;
+  payments?: Payment[];
+  sensorRegistrations?: SensorRegistration[];
+  brokerRegistrations?: BrokerRegistration[];
+  integrations?: Integration[];
+  compensations?: Compensation[];
+
+  constructor(timestamp: number, lastHash: string, hash: string, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, compensations: Compensation[] | null, nonce: number, difficulty: number) {
     this.timestamp = timestamp;
     this.lastHash = lastHash;
     this.hash = hash;
@@ -67,49 +79,37 @@ class Block {
     }
     this.nonce = nonce;
     if (difficulty === undefined) {
-      this.difficulty = DIFFICULTY;
+      this.difficulty = MINE_DIFFICULTY;
     } else {
       this.difficulty = difficulty;
     }
   }
 
-  static getPayments(block) {
-    return getData(block, "payments");
+  static getPayments(block: Block): Payment[] {
+    return getData(block.payments);
   }
 
-  static getSensorRegistrations(block) {
-    return getData(block, "sensorRegistrations");
+  static getSensorRegistrations(block: Block): SensorRegistration[] {
+    return getData(block.sensorRegistrations);
   }
 
-  static getBrokerRegistrations(block) {
-    return getData(block, "brokerRegistrations");
+  static getBrokerRegistrations(block: Block): BrokerRegistration[] {
+    return getData(block.brokerRegistrations);
   }
 
-  static getIntegrations(block) {
-    return getData(block, "integrations");
+  static getIntegrations(block: Block): Integration[] {
+    return getData(block.integrations);
   }
 
-  static getCompensations(block) {
-    return getData(block, "compensations");
+  static getCompensations(block: Block): Compensation[] {
+    return getData(block.compensations);
   }
 
-  toString() {
-    return `Block -
-      Timestamp    : ${this.timestamp}
-      Last Hash    : ${this.lastHash.substring(0, 10)}
-      Hash         : ${this.hash.substring(0, 10)}
-      Nonce        : ${this.nonce}
-      Difficulty   : ${this.difficulty}
-      Reward       : ${this.reward}
-      Transactions : ${this.transactions}
-      Metadatas    : ${this.metadatas}`;
+  static genesis(): Block {
+    return new this(0, '-----', 'f1r57-h45h', '', null, null, null, null, null, 0, MINE_DIFFICULTY);
   }
 
-  static genesis() {
-    return new this('Genesis time', '-----', 'f1r57-h45h', null, null, null, null, null, 0, DIFFICULTY);
-  }
-
-  static hash(timestamp, lastHash, reward, payments, sensorRegistrations, brokerRegistrations, integrations, compensations, nonce, difficulty) {
+  static hash(timestamp: number, lastHash: string, reward: string, payments: Payment[]|null, sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations:Integration[], compensations:Compensation[] | null, nonce: number, difficulty: number): string {
     //backwards compatible hashing:
     //if we add a new type of thing to the chain, the hash of previous blocks won't change as it will be undefined
     let hashing = `${timestamp}${lastHash}${nonce}${difficulty}${reward}`;
@@ -122,7 +122,7 @@ class Block {
     return ChainUtil.hash(hashing).toString();
   }
 
-  static blockHash(block) {
+  static blockHash(block: Block): string {
     return Block.hash(
       block.timestamp,
       block.lastHash,
@@ -137,21 +137,29 @@ class Block {
   }
 
   //returns false if block's hash doesn't match internals
-  static checkHash(block) {
+  static checkHash(block: Block): Result {
     const computedHash = Block.blockHash(block);
 
     if (computedHash !== block.hash) {
-      return false;
+      return {
+        result: false,
+        reason: "Computed hash doesn't match stored hash"
+      };
     }
 
     if (block.hash.substring(0, block.difficulty) !== '0'.repeat(block.difficulty)) {
-      return false;
+      return {
+        result: false,
+        reason: "Stored hash doesn't match stored difficulty"
+      }
     }
 
-    return true;
+    return {
+      result: true
+    };
   }
 
-  static adjustDifficulty(lastBlock, currentTime) {
+  static adjustDifficulty(lastBlock: Block, currentTime: number): number {
     let prevDifficulty = lastBlock.difficulty;
     if (lastBlock.timestamp + MINE_RATE > currentTime) {
       return prevDifficulty + 1;
@@ -160,8 +168,8 @@ class Block {
     }
   }
 
-  static debugMine(lastBlock, reward, payments, sensorRegistrations,brokerRegistrations,integrations,compensations) {
-    const timestamp = Date.now();
+  static debugMine(lastBlock: Block, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, compensations: Compensation[] | null): Block {
+    const timestamp = lastBlock.timestamp + MINE_RATE;
     const difficulty = Block.adjustDifficulty(lastBlock, timestamp);
 
     let nonce = 0;
@@ -196,7 +204,7 @@ class Block {
       difficulty);
   }
 
-  static verify(block) {
+  static verify(block: Block): Result {
     const validationRes = ChainUtil.validateObject(block, baseValidation);
 
     if (!validationRes.result) {
@@ -216,4 +224,4 @@ class Block {
   }
 }
 
-module.exports = Block;
+export default Block;

@@ -9,3 +9,8 @@
 /demo/camera_client/out/build
 /demo/camera_client/lib64
 /demo/out/build
+/testing
+**.js
+**.js.map
+/miner_blockchain
+/out

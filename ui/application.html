@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://unpkg.com/n3/browser/n3.min.js"></script>
+  <script src="/application.js"></script>
+</head>
+<body>
+  <div>
+    <span>IoT Application UI</span><button id="refresh" disabled>Refresh</button>
+  </div>
+  <div id="status">LOADING</div>
+  <div>
+    <span>Wallet public key: </span><span id="publicKey">LOADING</span>
+  </div>
+  <div>
+    <span>Current wallet balance: </span><span id="coinCount">0</span>
+  </div>
+  <div>
+    <span>Current chain length: </span><span id="chainDepth">LOADING</span>
+  </div>
+  <div>
+    <button id="freeformQueryButton">Query Sensors</button>
+    <button id="integrateButton">Integrate with Sensors</button>
+    <button id="pastIntegrationsButton">Past Integrations</button>
+    <button id="currentIntegrationsButton">Current Integrations</button>
+  </div>
+  <div id="freeformQueryTab">
+    <div>Query:</div>
+    <select id="freeformSelect" style="width:100%">
+    </select>
+    <div id="freeformQuery"></div>
+    <div>
+      <button id="freeformGo">Go!</button>
+    </div>
+    <div>
+      <table style="border-collapse: collapse">
+        <thead id="freeformHead"></thead>
+        <tbody id="freeformBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="integrateTab">
+    <div style="display:grid;grid-template-columns:1fr 1fr">
+      <div>
+        <span>Selected Sensors: </span>
+        <select id="integrateSensors" style="width:100%" size="10"></select>
+      </div>
+      <div id="integrateInfo" style="display:block">
+        <div style="display:grid;grid-template-columns: auto 1fr">
+          <span>Name: </span>
+          <input id="integrateInfoName" disabled />
+          <span>Cost Per Minute: </span>
+          <input id="integrateInfoCPM" disabled />
+          <span>Cost Per KB: </span>
+          <input id="integrateInfoCPKB" disabled />
+          <span>Broker: </span>
+          <input id="integrateInfoBroker" disabled />
+          <span id="integrateInfoAmountLabel">Amount: </span>
+          <input id="integrateInfoAmount" type="number" min="1" value="1" />
+        </div>
+        <button style="width:100%" id="integrateDeselect">Deselect This Sensor</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:auto 1fr">
+      <span>Reward Amount:</span>
+      <input id="integrateReward" type="number" min="0" value="0" />
+    </div>
+    <button id="integrateGo">Integrate</button>
+    <div>
+      <h1>
+        Connection Info:
+      </h1>
+      <table style="border-collapse: collapse; width: 100%; table-layout: fixed">
+        <thead>
+          <tr>
+            <th>SensorName</th>
+            <th>Broker ip</th>
+            <th>MQTT topic</th>
+          </tr>
+        </thead>
+        <tbody id="integrateConnectInfoBody"></tbody>
+      </table>
+    </div>
+    <h1>
+      Raw Integration Transaction:
+    </h1>
+    <div id="integrateResult">
+
+    </div>
+  </div>
+  <div id="pastIntegrationsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Past Integrations:
+      </div>
+      <div>
+        <div>
+          <select id="pastIntegrationIntegrations" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="pastIntegrationInfo" style="display:block">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Started: </span>
+        <input id="pastIntegrationInfoStarted" disabled />
+        <span>Finished: </span>
+        <input id="pastIntegrationInfoFinished" disabled />
+        <span>Result: </span>
+        <input id="pastIntegrationInfoResult" disabled />
+        <span>Hash: </span>
+        <input id="pastIntegrationInfoHash" disabled />
+        <span>Witness Count: </span>
+        <input id="pastIntegrationInfoWitnessCount" disabled />
+      </div>
+      <div>Sensors</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Sensor Name</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="pastIntegrationOutputBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div id="currentIntegrationsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+    <div style="border: 1px">
+      <div>
+        Current Integrations:
+      </div>
+      <div>
+        <div>
+          <select id="currentIntegrationIntegrations" style="width:100%" size="10">
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="currentIntegrationInfo" style="display:block">
+      <div style="display: grid; grid-template-columns: auto 1fr">
+        <span>Started: </span>
+        <input id="currentIntegrationInfoStarted" disabled />
+        <span>Hash: </span>
+        <input id="currentIntegrationInfoHash" disabled />
+        <span>Witness Count: </span>
+        <input id="currentIntegrationInfoWitnessCount" disabled />
+      </div>
+      <div>Sensors</div>
+      <div style="height:50vh;overflow:hidden;overflow-y:scroll">
+        <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+          <thead style="top:0;position:sticky;background-color:white;z-index:2">
+            <tr>
+              <th>Sensor Name</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="currentIntegrationOutputBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+<script>
+  startUI();
+</script>

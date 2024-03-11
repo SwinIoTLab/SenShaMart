@@ -1,53 +1,16 @@
-const ChainUtil = require('../util/chain-util');
-const SENSHAMART_URI_PREFIX = require('../util/constants').SENSHAMART_URI_PREFIX;
-
-function validateTerm(t) {
-  const stringRes = ChainUtil.validateIsString(t);
-
-  if (!stringRes.result) {
-    return stringRes;
-  }
-
-  if (t.startsWith(SENSHAMART_URI_PREFIX)) {
-    return {
-      result: false,
-      reason: "Starts with reserved prefix"
-    };
-  }
-
-  return {
-    result: true
-  };
-}
-
-function validateLiteral(t) {
-  const termRes = validateTerm(t);
-  if (termRes.result) {
-    return termRes;
-  }
-
-  const numberRes = ChainUtil.validateIsNumber(t);
-
-  if (numberRes.result) {
-    return numberRes;
-  }
-
-  return {
-    result: false,
-    reason: "Wasn't a string or a number"
-  };
-}
+import { ChainUtil, type KeyPair, type Result, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
-  s: validateTerm,
-  p: validateTerm,
-  o: validateTerm
+  s: ChainUtil.validateTerm,
+  p: ChainUtil.validateTerm,
+  o: ChainUtil.validateTerm
 };
 
 const literalValidator = {
-  s: validateTerm,
-  p: validateTerm,
-  o: validateLiteral
+  s: ChainUtil.validateTerm,
+  p: ChainUtil.validateTerm,
+  o: ChainUtil.validateLiteral
 };
 
 const metadataValidation = {
@@ -73,9 +36,25 @@ const baseValidation = {
   signature: ChainUtil.validateIsSignature
 };
 
-class SensorRegistration {
-  constructor(senderKeyPair, counter, sensorName, costPerMinute, costPerKB, integrationBroker, nodeMetadata, literalMetadata, rewardAmount) {
-    this.input = senderKeyPair.getPublic().encode('hex');
+type SensorRegistrationMetadata = {
+  name: string;
+  costPerMinute: number;
+  costPerKB: number;
+  integrationBroker: string;
+  extraNodes?: NodeMetadata[],
+  extraLiterals?: LiteralMetadata[]
+}
+
+
+class SensorRegistration implements RepeatableTransaction {
+  input: string;
+  counter: number;
+  rewardAmount: number;
+  metadata: SensorRegistrationMetadata;
+  signature: string;
+
+  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, rewardAmount?: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+    this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
     this.metadata = {
@@ -84,37 +63,37 @@ class SensorRegistration {
       costPerKB: costPerKB,
       integrationBroker: integrationBroker,
     };
-    if (typeof nodeMetadata !== undefined && nodeMetadata !== null) {
+    if (nodeMetadata !== undefined && nodeMetadata !== null) {
       this.metadata.extraNodes = nodeMetadata;
     }
-    if (typeof literalMetadata !== undefined && literalMetadata !== null) {
+    if (literalMetadata !== undefined && literalMetadata !== null) {
       this.metadata.extraLiterals = literalMetadata;
     }
-    this.signature = senderKeyPair.sign(SensorRegistration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, SensorRegistration.hashToSign(this));
 
     const verification = SensorRegistration.verify(this);
-    if (!verification.result) {
-      throw new Error(verification.reason);
+    if (isFailure(verification)) {
+      throw new Error((verification as ResultFailure).reason);
     }
   }
 
-  static getSensorName(registration) {
+  static getSensorName(registration: SensorRegistration):string {
     return registration.metadata.name;
   }
 
-  static getCostPerMinute(registration) {
+  static getCostPerMinute(registration: SensorRegistration):number {
     return registration.metadata.costPerMinute;
   }
 
-  static getCostPerKB(registration) {
+  static getCostPerKB(registration: SensorRegistration):number {
     return registration.metadata.costPerKB;
   }
 
-  static getIntegrationBroker(registration) {
+  static getIntegrationBroker(registration: SensorRegistration):string {
     return registration.metadata.integrationBroker;
   }
 
-  static getExtraNodeMetadata(registration) {
+  static getExtraNodeMetadata(registration: SensorRegistration): NodeMetadata[] {
     if ("extraNodes" in registration.metadata) {
       return registration.metadata.extraNodes;
     } else {
@@ -122,7 +101,7 @@ class SensorRegistration {
     }
   }
 
-  static getExtraLiteralMetadata(registration) {
+  static getExtraLiteralMetadata(registration: SensorRegistration): LiteralMetadata[] {
     if ("extraLiterals" in registration.metadata) {
       return registration.metadata.extraLiterals;
     } else {
@@ -130,14 +109,14 @@ class SensorRegistration {
     }
   }
 
-  static hashToSign(registration) {
+  static hashToSign(registration: SensorRegistration):string {
     return ChainUtil.hash([
       registration.counter,
       registration.rewardAmount,
       registration.metadata]);
   }
 
-  static verify(registration) {
+  static verify(registration: SensorRegistration):Result {
     const validationResult = ChainUtil.validateObject(registration, baseValidation);
     if (!validationResult.result) {
       return validationResult;
@@ -156,9 +135,16 @@ class SensorRegistration {
     };
   }
 
-  static name() {
+  static wrap(tx: SensorRegistration): TransactionWrapper<SensorRegistration> {
+    return {
+      tx: tx,
+      type: this
+    };
+  }
+
+  static txName() : string {
     return "SensorRegistration";
   }
 }
 
-module.exports = SensorRegistration;
+export default SensorRegistration;

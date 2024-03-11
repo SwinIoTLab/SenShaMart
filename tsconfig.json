@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "verbatimModuleSyntax": true,
+    "sourceMap": true,
+    "target": "ES2015"
+  },
+  "include": [
+    "blockchain/*.ts",
+    "util/*.ts",
+    "network/*.ts",
+    "wallet/*.ts",
+    "miner/*.ts",
+    "broker/*.ts"
+  ]
+}

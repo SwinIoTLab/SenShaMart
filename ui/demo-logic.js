@@ -498,7 +498,7 @@ function startSenshamartDemoUI() {
       }
     } else {
       if (integrateSelectedSensor === key) {
-        integrateSetInfo({ name: key });
+        integrateSetInfo({ sensor: key });
       }
     }
 

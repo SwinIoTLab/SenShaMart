@@ -1,53 +1,16 @@
-const ChainUtil = require('../util/chain-util');
-const SENSHAMART_URI_PREFIX = require('../util/constants').SENSHAMART_URI_PREFIX;
-
-function validateTerm(t) {
-  const stringRes = ChainUtil.validateIsString(t);
-
-  if (!stringRes.result) {
-    return stringRes;
-  }
-
-  if (t.startsWith(SENSHAMART_URI_PREFIX)) {
-    return {
-      result: false,
-      reason: "Starts with reserved prefix"
-    };
-  }
-
-  return {
-    result: true
-  };
-}
-
-function validateLiteral(t) {
-  const termRes = validateTerm(t);
-  if (termRes.result) {
-    return termRes;
-  }
-
-  const numberRes = ChainUtil.validateIsNumber(t);
-
-  if (numberRes.result) {
-    return numberRes;
-  }
-
-  return {
-    result: false,
-    reason: "Wasn't a string or a number"
-  };
-}
+import { ChainUtil, type KeyPair, type Result, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
-  s: validateTerm,
-  p: validateTerm,
-  o: validateTerm
+  s: ChainUtil.validateTerm,
+  p: ChainUtil.validateTerm,
+  o: ChainUtil.validateTerm
 };
 
 const literalValidator = {
-  s: validateTerm,
-  p: validateTerm,
-  o: validateLiteral
+  s: ChainUtil.validateTerm,
+  p: ChainUtil.validateTerm,
+  o: ChainUtil.validateLiteral
 };
 
 const metadataValidation = {
@@ -71,9 +34,21 @@ const baseValidation = {
   signature: ChainUtil.validateIsSignature
 };
 
-class BrokerRegistration {
-  constructor(senderKeyPair, counter, brokerName, endpoint, nodeMetadata, literalMetadata, rewardAmount) {
-    this.input = senderKeyPair.getPublic().encode('hex');
+type BrokerRegistrationMetadata = {
+  name: string;
+  endpoint: string;
+  extraNodes?: NodeMetadata[],
+  extraLiterals?: LiteralMetadata[]
+}
+
+class BrokerRegistration implements RepeatableTransaction {
+  input: string;
+  counter: number;
+  rewardAmount: number;
+  metadata: BrokerRegistrationMetadata;
+  signature: string;
+  constructor(senderKeyPair: KeyPair, counter: number, brokerName: string, endpoint: string, rewardAmount: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+    this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
     this.metadata = {
@@ -86,23 +61,23 @@ class BrokerRegistration {
     if (typeof literalMetadata !== undefined && literalMetadata !== null) {
       this.metadata.extraLiterals = literalMetadata;
     };
-    this.signature = senderKeyPair.sign(BrokerRegistration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, BrokerRegistration.hashToSign(this));
 
     const verification = BrokerRegistration.verify(this);
-    if (!verification.result) {
+    if (isFailure(verification)) {
       throw new Error(verification.reason);
     }
   }
 
-  static getBrokerName(registration) {
+  static getBrokerName(registration: BrokerRegistration): string {
     return registration.metadata.name;
   }
 
-  static getEndpoint(registration) {
+  static getEndpoint(registration: BrokerRegistration): string {
     return registration.metadata.endpoint;
   }
 
-  static getExtraNodeMetadata(registration) {
+  static getExtraNodeMetadata(registration: BrokerRegistration): NodeMetadata[] {
     if ("extraNodes" in registration.metadata) {
       return registration.metadata.extraNodes;
     } else {
@@ -110,7 +85,7 @@ class BrokerRegistration {
     }
   }
 
-  static getExtraLiteralMetadata(registration) {
+  static getExtraLiteralMetadata(registration: BrokerRegistration): LiteralMetadata[] {
     if ("extraLiterals" in registration.metadata) {
       return registration.metadata.extraLiterals;
     } else {
@@ -118,14 +93,21 @@ class BrokerRegistration {
     }
   }
 
-  static hashToSign(registration) {
+  static hashToSign(registration: BrokerRegistration):string {
     return ChainUtil.hash([
       registration.counter,
       registration.rewardAmount,
       registration.metadata]);
   }
 
-  static verify(registration) {
+  static wrap(tx: BrokerRegistration): TransactionWrapper<BrokerRegistration> {
+    return {
+      type: this,
+      tx: tx
+    };
+  }
+
+  static verify(registration: BrokerRegistration): Result {
     const validationRes = ChainUtil.validateObject(registration, baseValidation);
     if (!validationRes.result) {
       return validationRes;
@@ -145,9 +127,9 @@ class BrokerRegistration {
     };
   }
 
-  static name() {
+  static txName(): string {
     return "BrokerRegistration";
   }
 }
 
-module.exports = BrokerRegistration;
+export default BrokerRegistration;
