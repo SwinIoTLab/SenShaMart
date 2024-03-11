@@ -14,3 +14,10 @@
 **.js.map
 /miner_blockchain
 /out
+/senshamartVS.njsproj
+/senshamartVS.njsproj.user
+/demo/camera_client/dependencies/libvisiontransfer/doc
+/demo/camera_client/dependencies/libvisiontransfer/examples
+/demo/camera_client/dependencies/libvisiontransfer/python/examples
+/obj
+/bin

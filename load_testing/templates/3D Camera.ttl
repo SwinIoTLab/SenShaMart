@@ -1,0 +1,37 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix qudt-1-1: <http://qudt.org/1.1/schema/qudt#> .
+@prefix qudt-unit-1-1: <http://qudt.org/1.1/vocab/unit#> .
+@prefix schema: <http://schema.org/>.
+@prefix ex: <http://example.org/>.
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix ssn-system: <http://www.w3.org/ns/ssn/systems/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix cdt: <http://w3id.org/lindt/custom_datatypes#>.
+@prefix juso: <http://rdfs.co/juso/>.
+
+@prefix rdfp: <https://w3id.org/rdfp/>.
+
+@base <SSMS://> .
+
+<> sosa:observes <#CameraSensorVideo> ;
+  sosa:hasFeatureOfInterest <#CameraSensorLocation> .
+
+  ################ Observation Instances #################
+
+ <#CameraSensorVideo> rdfs:label "video"@en .
+
+################ Location Instances ########################
+
+<#CameraSensorLocation> geo:lat -37.821658  ;
+  geo:long 145.03904 ;
+  geo:alt 12.75 ;
+  juso:country "Australia";
+  juso:Provenance "Queensland";
+  juso:City "Brisbane";
+  juso:Suburb "Stafford";
+  juso:Address "9 Webster street";
+  juso:Postcode 4053 .

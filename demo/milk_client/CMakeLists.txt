@@ -32,7 +32,6 @@ target_include_directories(etl PRIVATE
 
 target_link_libraries(etl PRIVATE
   ${OPENSSL_LIBRARIES}
-  core
   spdlog::spdlog
   date::date
   senshamart_client)

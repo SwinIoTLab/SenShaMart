@@ -139,14 +139,9 @@ namespace {
 
   //cumulocity stuff
 
-  const auto data_refresh_period = boost::posix_time::seconds{ 10 };
+  const auto data_refresh_period = boost::posix_time::minutes{ 5 };
   const auto reconnect_period = boost::posix_time::minutes{ 1 };
-  const auto resend_period = boost::posix_time::minutes{ 5 };
-
-  struct Send_info {
-    senshamart::Client* sending_to;
-    std::string sending;
-  };
+  const auto resend_period = boost::posix_time::seconds{ 10 };
 
   struct Refresh_info {
     std::int64_t iot_device_id;
@@ -208,7 +203,7 @@ namespace {
       auth_.append(to_base64(combined));
 
       refresh_info_.iot_device_id = device_id;
-      refresh_info_.last_read_time = Clock::now();
+      refresh_info_.last_read_time = Clock::now() - std::chrono::minutes{15};
 
     }
 
@@ -257,8 +252,6 @@ namespace {
     }
 
     void do_refresh_() {
-      //clear prev state
-      resend_info_.clear();
       //generate request
       sending_.method(boost::beast::http::verb::get);
       sending_.version(11);
@@ -422,9 +415,8 @@ namespace {
               "\"time\":\"" << found_time->value.GetString() << "\","
               "\"value\":" << value <<
               "}";
-            resend_info_.push_back(Send_info{
-              sending_to,
-              sending.str() });
+         
+            resend_info_[sending_to] = sending.str();
           }
         }
       }
@@ -463,10 +455,6 @@ namespace {
         }
       } while (false);
 
-      for (auto const& sending : resend_info_) {
-        sending.sending_to->send(sending.sending);
-      }
-
       set_timer_();
     }
 
@@ -489,9 +477,8 @@ namespace {
     }
 
     void resend_() {
-
-      for (auto const& resending : resend_info_) {
-        resending.sending_to->send(resending.sending);
+      for (auto const& [to,data] : resend_info_) {
+        to->send(data);
       }
 
       set_resend_timer_();
@@ -511,7 +498,7 @@ namespace {
     boost::asio::deadline_timer reconnect_timer_;
     boost::asio::deadline_timer refresh_timer_;
     boost::asio::deadline_timer resend_timer_;
-    std::vector<Send_info> resend_info_;
+    std::unordered_map<senshamart::Client*, std::string> resend_info_;
     std::string auth_;
 
     Refresh_info refresh_info_;

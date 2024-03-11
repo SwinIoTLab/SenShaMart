@@ -151,13 +151,15 @@ namespace {
       codec_ = avcodec_find_encoder_by_name("libvpx-vp9");
 
       if (codec_ == nullptr) {
-        throw std::runtime_error{ "Couldn't find codec" };
+        fprintf(stderr, "Couldn't find codec");
+        std::exit(-1);
       }
 
       codec_ctx_.reset(avcodec_alloc_context3(codec_));
 
       if (codec_ctx_ == nullptr) {
-        throw std::runtime_error{ "Couldn't open codec context" };
+        fprintf(stderr, "Couldn't open codec context");
+        std::exit(-1);
       }
 
       codec_ctx_->time_base = AVRational{ 1,25 };
@@ -170,13 +172,15 @@ namespace {
       codec_ctx_->pix_fmt = AVPixelFormat::AV_PIX_FMT_YUV420P;
 
       if (avcodec_open2(codec_ctx_.get(), codec_, nullptr) < 0) {
-        throw std::runtime_error{ "Couldn't open codec" };
+        fprintf(stderr, "Couldn't open codec");
+        std::exit(-1);
       }
 
       out_frame_.reset(av_frame_alloc());
 
       if (out_frame_ == nullptr) {
-        throw std::runtime_error{ "Couldn't open frame" };
+        fprintf(stderr, "Couldn't open frame");
+        std::exit(-1);
       }
 
       out_frame_->width = width_;
@@ -184,7 +188,8 @@ namespace {
       out_frame_->format = codec_ctx_->pix_fmt;
 
       if (av_frame_get_buffer(out_frame_.get(), 0) < 0) {
-        throw std::runtime_error{ "Couldn't make frame buffer" };
+        fprintf(stderr, "Couldn't make frame buffer");
+        std::exit(-1);
       }
 
       //muxing
@@ -236,6 +241,10 @@ namespace {
       }
 
       FILE* header = fopen("./video_header", "wb");
+      if (header == nullptr) {
+        fprintf(stderr, "Couldn't open file for header\n");
+        std::exit(-1);
+      }
       for (char c : buffer_) {
         fputc(c, header);
       }

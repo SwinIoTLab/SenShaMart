@@ -1,0 +1,16 @@
+{
+  "templates": [
+    "./templates/AirHumidSensor.ttl",
+    "./templates/AirTempSensor.ttl",
+    "./templates/AirTempSensor2.ttl",
+    "./templates/AirTempSensor3.ttl",
+    "./templates/AirTempSensor4.ttl",
+    "./templates/MilkSensor.ttl",
+    "./templates/MilkTempSensor.ttl",
+    "./templates/3D Camera.ttl"
+  ],
+  "counts": [
+    1
+  ],
+  "gen-prefix": "load_testing"
+}

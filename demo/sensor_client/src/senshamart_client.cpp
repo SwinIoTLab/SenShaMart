@@ -9,10 +9,9 @@ namespace {
       mqtt_client_(std::move(broker_endpoint), sensor_name) {
 
       auto connOpts = mqtt::connect_options_builder()
-        .clean_session()
         .keep_alive_interval(std::chrono::seconds(30))
         .automatic_reconnect(std::chrono::seconds(2), std::chrono::seconds(30))
-        .max_inflight(2)
+        .clean_session(true)
         .finalize();
 
       mqtt_client_.connect(connOpts);
@@ -26,6 +25,7 @@ namespace {
       msg->set_retained(false);
 
       try {
+        mqtt_client_.
         mqtt_client_.publish(std::move(msg));
       } catch (mqtt::exception const& ex) {
 #if _DEBUG

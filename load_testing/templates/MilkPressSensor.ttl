@@ -1,0 +1,71 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix qudt-1-1: <http://qudt.org/1.1/schema/qudt#> .
+@prefix qudt-unit-1-1: <http://qudt.org/1.1/vocab/unit#> .
+@prefix schema: <http://schema.org/>.
+@prefix ex: <http://example.org/>.
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix ssn-system: <http://www.w3.org/ns/ssn/systems/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix cdt: <http://w3id.org/lindt/custom_datatypes#> .
+@prefix juso: <http://rdfs.co/juso/> .
+
+@prefix rdfp: <https://w3id.org/rdfp/> .
+
+@base <SSMS://> .
+
+############# System ################
+<> a ssn:System ;
+  ssn:hasSubSystem  <#MilkPressureSensor> .
+
+
+########## Sensors #################
+
+<#MilkPressureSensor> a sosa:Sensor , ssn:System ;
+  ssn-system:hasSystemCapability <#MilkPressureSensorCapability> ;
+  sosa:observes <#MilkTemperatureSensorTemperature> ;
+  sosa:hasFeatureOfInterest <#MilkTemperatureSensor#location> .
+  ############## Operating Ranges ####################
+
+################ Capabilities #################################
+
+<#MilkPressureSensorCapability> a ssn:Property , ssn-system:SystemCapability , schema:PropertyValue ;
+  ssn-system:hasSystemProperty <#MilkPressureSensorAccuracy> , <#MilkPressureSensorSensitivity> .
+
+
+################ Capability Instances #####################
+
+  ######### For Milk Pressure Sensor ##################
+
+<#MilkPressureSensorAccuracy> a ssn:Property , ssn-system:Accuracy , schema:PropertyValue ;
+  rdfs:comment "The accuracy of the Milk Pressure sensor is +-0.5 °C in normal Pressure and humidity conditions."@en ;
+  schema:minValue -60 ;
+  schema:maxValue 60 ;
+  schema:unitCode qudt-unit-1-1:Pascal .
+
+<#MilkPressureSensorSensitivity> a ssn:Property , ssn-system:Sensitivity , ssn-system:Resolution , schema:PropertyValue ;
+  rdfs:comment "The sensitivity and resolution of the Milk Pressure sensor is 0.1 °C in normal Pressure and humidity conditions."@en ;
+  schema:value 100;
+  schema:unitCode qudt-unit-1-1:Pascal .
+
+
+  ################ Observation Instances #################
+
+ <#MilkPressureSensorPressure> a sosa:ObservableProperty ;
+   rdfs:label "Milk Pressure"@en .
+
+################ Location Instances ########################
+
+<#MilkPressureSensor#location> rdf:type sosa:FeatureOfInterest ;
+  geo:lat -37.821658  ;
+  geo:long 145.03904 ;
+  geo:alt 12.75 ;
+  juso:country "Australia";
+  juso:Provenance "Victoria";
+  juso:City "Melbourne";
+  juso:Suburb "Hawthorn";
+  juso:Address "1 John street";
+  juso:Postcode 3122 .

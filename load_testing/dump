@@ -1,0 +1,279 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+@prefix qudt-1-1: <http://qudt.org/1.1/schema/qudt#>.
+
+@prefix qudt-unit-1-1: <http://qudt.org/1.1/vocab/unit#>.
+
+@prefix schema: <http://schema.org/>.
+
+@prefix ex: <http://example.org/>.
+
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
+
+@prefix sosa: <http://www.w3.org/ns/sosa/>.
+
+@prefix ssn: <http://www.w3.org/ns/ssn/>.
+
+@prefix ssn-system: <http://www.w3.org/ns/ssn/systems/>.
+
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+@prefix cdt: <http://w3id.org/lindt/custom_datatypes#>.
+
+@prefix juso: <http://rdfs.co/juso/>.
+
+<sensor0#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor0#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor0#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor0#AirTemperatureSensor#location> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "11.11";
+    juso:country "Australia";
+    juso:Provenance "Victoria";
+    juso:City "Melbourne";
+    juso:Suburb "Hawthorn";
+    juso:Address "1 John street";
+    juso:Postcode "3122".
+<sensor0> a ssn:System;
+    ssn:hasSubSystem <sensor0#AirTemperatureSensor>.
+<sensor0#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor0#AirTemperatureSensorCapability>;
+    sosa:observes <sensor0AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor0#AirTemperatureSensor#location>.
+<sensor0#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor0#AirTemperatureSensorAccuracy>, <sensor0#AirTemperatureSensorSensitivity>.
+<sensor0#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor0#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor0#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor0#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor1#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor1#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor1#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor1#AirTemperatureSensor#location> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "11.11";
+    juso:country "Australia";
+    juso:Provenance "Victoria";
+    juso:City "Melbourne";
+    juso:Suburb "Hawthorn";
+    juso:Address "1 John street";
+    juso:Postcode "3122".
+<sensor1> a ssn:System;
+    ssn:hasSubSystem <sensor1#AirTemperatureSensor>.
+<sensor1#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor1#AirTemperatureSensorCapability>;
+    sosa:observes <sensor1AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor1#AirTemperatureSensor#location>.
+<sensor1#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor1#AirTemperatureSensorAccuracy>, <sensor1#AirTemperatureSensorSensitivity>.
+<sensor1#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor1#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor1#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor1#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor2#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor2#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor2#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor2#AirTemperatureSensor#location> geo:lat "-27.416756";
+    geo:long "153.015941";
+    geo:alt "10.7";
+    juso:country "Australia";
+    juso:Provenance "Queensland";
+    juso:City "Brisbane";
+    juso:Suburb "Stafford";
+    juso:Address "9 Webster street";
+    juso:Postcode "4053".
+<sensor2> a ssn:System;
+    ssn:hasSubSystem <sensor2#AirTemperatureSensor>.
+<sensor2#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor2#AirTemperatureSensorCapability>;
+    sosa:observes <sensor2#AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor2#AirTemperatureSensor#location>.
+<sensor2#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor2#AirTemperatureSensorAccuracy>, <sensor2#AirTemperatureSensorSensitivity>.
+<sensor2#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor2#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor2#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor2#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor3#MilkTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor3#MilkTemperatureSensorSensitivity> schema:value "0.1".
+<sensor3#MilkTemperatureSensorTemperature> rdfs:label "Milk Temperature".
+<sensor3#MilkTemperatureSensor#location> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "12.75".
+<sensor3> a ssn:System;
+    ssn:hasSubSystem <sensor3#MilkTemperatureSensor>.
+<sensor3#MilkTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor3#MilkTemperatureSensorCapability>;
+    sosa:observes <sensor3#MilkTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor3#MilkTemperatureSensor#location>.
+<sensor3#MilkTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor3#MilkTemperatureSensorAccuracy>, <sensor3#MilkTemperatureSensorSensitivity>.
+<sensor3#MilkTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor3#MilkTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor3#MilkTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor3#MilkTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor4#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor4#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor4#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor4#AirTemperatureSensor#location> geo:lat "-33.870796";
+    geo:long "151.205889";
+    geo:alt "15.87";
+    juso:country "Australia";
+    juso:Provenance "New South Wales";
+    juso:City "Sydney";
+    juso:Suburb "Sydney";
+    juso:Address "22 market street";
+    juso:Postcode "2000".
+<sensor4> a ssn:System;
+    ssn:hasSubSystem <sensor4#AirTemperatureSensor>.
+<sensor4#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor4#AirTemperatureSensorCapability>;
+    sosa:observes <sensor4#AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor4#AirTemperatureSensor#location>.
+<sensor4#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor4#AirTemperatureSensorAccuracy>, <sensor4#AirTemperatureSensorSensitivity>.
+<sensor4#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor4#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor4#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor4#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor5#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor5#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor5#MilkTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor5#MilkTemperatureSensorSensitivity> schema:value "0.1".
+<sensor5#MilkPresureSensorAccuracy> schema:minValue "-60";
+    schema:maxValue "60".
+<sensor5#MilkPresureSensorSensitivity> schema:value "100".
+<sensor5> a ssn:System;
+    ssn:hasSubSystem <sensor5#AirTemperatureSensor>, <sensor5#AirHumiditySensor>, <sensor5#MilkTemperatureSensor>, <sensor5#MilkPresureSensor>.
+<sensor5#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor5#AirTemperatureSensorCapability>.
+<sensor5#MilkTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor5#MilkTemperatureSensorCapability>.
+<sensor5#MilkPresureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor5#MilkPresureSensorCapability>.
+<sensor5#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor5#AirTemperatureSensorAccuracy>, <sensor5#AirTemperatureSensorSensitivity>.
+<sensor5#MilkTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor5#MilkTemperatureSensorAccuracy>, <sensor5#MilkTemperatureSensorSensitivity>.
+<sensor5#MilkPresureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor5#MilkPresureSensorAccuracy>, <sensor5#MilkPresureSensorSensitivity>.
+<sensor5#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor5#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor5#MilkTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor5#MilkTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor5#MilkPresureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:Pascal.
+<sensor5#MilkPresureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:Pascal.
+<sensor6#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor6#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor6#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor6#AirTemperatureSensor#location> geo:lat "-27.416756";
+    geo:long "153.015941";
+    geo:alt "10.7";
+    juso:country "Australia";
+    juso:Provenance "Queensland";
+    juso:City "Brisbane";
+    juso:Suburb "Stafford";
+    juso:Address "9 Webster street";
+    juso:Postcode "4053".
+<sensor6> a ssn:System;
+    ssn:hasSubSystem <sensor6#AirTemperatureSensor>.
+<sensor6#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor6#AirTemperatureSensorCapability>;
+    sosa:observes <sensor6#AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor6#AirTemperatureSensor#location>.
+<sensor6#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor6#AirTemperatureSensorAccuracy>, <sensor6#AirTemperatureSensorSensitivity>.
+<sensor6#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor6#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor6#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor6#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor7#AirTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor7#AirTemperatureSensorSensitivity> schema:value "0.1".
+<sensor7#AirTemperatureSensorTemperature> rdfs:label "Air Temperature".
+<sensor7#AirTemperatureSensor#location> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "11.11";
+    juso:country "Australia";
+    juso:Provenance "Victoria";
+    juso:City "Melbourne";
+    juso:Suburb "Hawthorn";
+    juso:Address "1 John street";
+    juso:Postcode "3122".
+<sensor7> a ssn:System;
+    ssn:hasSubSystem <sensor7#AirTemperatureSensor>.
+<sensor7#AirTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor7#AirTemperatureSensorCapability>;
+    sosa:observes <sensor7AirTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor7#AirTemperatureSensor#location>.
+<sensor7#AirTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor7#AirTemperatureSensorAccuracy>, <sensor7#AirTemperatureSensorSensitivity>.
+<sensor7#AirTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor7#AirTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeFahrenheit.
+<sensor7#AirTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor7#AirTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor8#MilkTemperatureSensorAccuracy> schema:minValue "-0.5";
+    schema:maxValue "0.5".
+<sensor8#MilkTemperatureSensorSensitivity> schema:value "0.1".
+<sensor8#MilkTemperatureSensorTemperature> rdfs:label "Milk Temperature".
+<sensor8#MilkTemperatureSensor#location> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "12.75".
+<sensor8> a ssn:System;
+    ssn:hasSubSystem <sensor8#MilkTemperatureSensor>.
+<sensor8#MilkTemperatureSensor> a sosa:Sensor, ssn:System;
+    ssn-system:hasSystemCapability <sensor8#MilkTemperatureSensorCapability>;
+    sosa:observes <sensor8#MilkTemperatureSensorTemperature>;
+    sosa:hasFeatureOfInterest <sensor8#MilkTemperatureSensor#location>.
+<sensor8#MilkTemperatureSensorCapability> a ssn:Property, ssn-system:SystemCapability, schema:PropertyValue;
+    ssn-system:hasSystemProperty <sensor8#MilkTemperatureSensorAccuracy>, <sensor8#MilkTemperatureSensorSensitivity>.
+<sensor8#MilkTemperatureSensorAccuracy> a ssn:Property, ssn-system:Accuracy, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor8#MilkTemperatureSensorSensitivity> a ssn:Property, ssn-system:Sensitivity, ssn-system:Resolution, schema:PropertyValue;
+    schema:unitCode qudt-unit-1-1:DegreeCelsius.
+<sensor8#MilkTemperatureSensorTemperature> a sosa:ObservableProperty.
+<sensor8#MilkTemperatureSensor#location> a sosa:FeatureOfInterest.
+<sensor9#CameraSensorVideo> rdfs:label "video".
+<sensor9#CameraSensorLocation> geo:lat "-37.821658";
+    geo:long "145.03904";
+    geo:alt "12.75";
+    juso:country "Australia";
+    juso:Provenance "Queensland";
+    juso:City "Brisbane";
+    juso:Suburb "Stafford";
+    juso:Address "9 Webster street";
+    juso:Postcode "4053".
+<sensor9> sosa:observes <sensor9#CameraSensorVideo>;
+    sosa:hasFeatureOfInterest <sensor9#CameraSensorLocation>.

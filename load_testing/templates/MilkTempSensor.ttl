@@ -1,0 +1,60 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix qudt-1-1: <http://qudt.org/1.1/schema/qudt#> .
+@prefix qudt-unit-1-1: <http://qudt.org/1.1/vocab/unit#> .
+@prefix schema: <http://schema.org/>.
+@prefix ex: <http://example.org/>.
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix ssn-system: <http://www.w3.org/ns/ssn/systems/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix cdt: <http://w3id.org/lindt/custom_datatypes#>.
+
+@prefix juso: <http://rdfs.co/juso/>.
+@prefix rdfp: <https://w3id.org/rdfp/>.
+
+@base <SSMS://> .
+############# System ################
+<> a ssn:System ;
+  ssn:hasSubSystem  <#MilkTemperatureSensor> .
+
+
+########## Sensors #################
+
+<#MilkTemperatureSensor> a sosa:Sensor , ssn:System ;
+  ssn-system:hasSystemCapability <#MilkTemperatureSensorCapability> ;
+  sosa:observes <#MilkTemperatureSensorTemperature> ;
+  sosa:hasFeatureOfInterest <#MilkTemperatureSensor#location> .
+
+################ Capabilities #################################
+
+<#MilkTemperatureSensorCapability> a ssn:Property , ssn-system:SystemCapability , schema:PropertyValue ;
+  ssn-system:hasSystemProperty <#MilkTemperatureSensorAccuracy> , <#MilkTemperatureSensorSensitivity> .
+
+
+################ Capability Instances #####################
+
+  ######### For Milk Temperature Sensor ##################
+
+<#MilkTemperatureSensorAccuracy> a ssn:Property , ssn-system:Accuracy , schema:PropertyValue ;
+  schema:minValue -0.5 ;
+  schema:maxValue 0.5 ;
+  schema:unitCode qudt-unit-1-1:DegreeCelsius .
+
+<#MilkTemperatureSensorSensitivity> a ssn:Property , ssn-system:Sensitivity , ssn-system:Resolution , schema:PropertyValue ;
+  schema:value 0.1 ;
+  schema:unitCode qudt-unit-1-1:DegreeCelsius .
+
+  ################ Observation Instances #################
+
+ <#MilkTemperatureSensorTemperature> a sosa:ObservableProperty ;
+   rdfs:label "Milk Temperature"@en .
+
+################ Location Instances ########################
+
+<#MilkTemperatureSensor#location> rdf:type sosa:FeatureOfInterest ;
+  geo:lat -37.821658  ;
+  geo:long 145.03904 ;
+  geo:alt 12.75 .
