@@ -39,6 +39,11 @@ const broker_name = config.get({
   key: "broker-name",
   default: pubKey
 });
+
+const fusekiLocation = config.get({
+  key: "wallet-fuseki",
+  default: null
+});
 const apiPort = config.get({
   key: "broker-api-port",
   default: DEFAULT_PORT_BROKER_API
@@ -263,12 +268,80 @@ app.get('/Balance', (req, res) => {
   res.json(balance);
 });
 
+//TODO: probably want to move query logic into blockchain
+type FusekiQueryRes = {
+  head: {
+    vars: string[];
+  };
+  results: {
+    bindings: {
+      [index: string]: {
+        type: string;
+        value: string | number;
+      };
+    }[];
+  }
+};
+
+type QueryResult = {
+  headers: string[];
+  values: (string | number)[][];
+}
+
+app.post('/sparql', (req, res) => {
+  if (blockchain.fuseki_location === null) {
+    res.json({
+      result: false,
+      reason: "We aren't connected to an RDF DB instance"
+    });
+    return;
+  }
+
+  if (isFailure(ChainUtil.validateIsString(req.body.query))) {
+    res.json({
+      result: false,
+      reason: "Body missing a query field that is a string"
+    });
+    return;
+  }
+
+  fetch(blockchain.fuseki_location + "/query", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+    },
+    body: 'query=' + encodeURIComponent(req.body.query)
+  }).then(res => {
+    return res.json();
+  }).then((fusekiRes: FusekiQueryRes) => {
+    const returning: QueryResult = {
+      headers: fusekiRes.head.vars,
+      values: []
+    };
+
+    for (const row of Object.values(fusekiRes.results.bindings)) {
+      const adding = [];
+      for (const k of returning.headers) {
+        adding.push(row[k].value);
+      }
+      returning.values.push(adding);
+    }
+
+    res.json(returning);
+  }).catch((err) => {
+    res.json({
+      result: false,
+      reason: err
+    });
+  });
+});
+
 const persistence = new Persistence(blockchainPrefix, (err) => {
   if (err) {
     console.log(`Couldn't init persistence: ${err}`);
     return;
   }
-  blockchain = new Blockchain(persistence, null, (err) => {
+  blockchain = new Blockchain(persistence, fusekiLocation, (err) => {
     if (err) {
       console.log(`Couldn't init blockchain: ${err}`);
       return;
