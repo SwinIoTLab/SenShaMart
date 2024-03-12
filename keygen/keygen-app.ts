@@ -1,8 +1,8 @@
-const ChainUtil = require('../util/chain-util');
+import { ChainUtil } from '../util/chain-util.js';
 
 const gennedKey = ChainUtil.genKeyPair();
 
-const publicKey = gennedKey.getPublic().encode('hex');
+const publicKey = ChainUtil.serializePublicKey(gennedKey.pub);
 const privateKey = ChainUtil.serializeKeyPair(gennedKey);
 
 console.log("Generated key:");
