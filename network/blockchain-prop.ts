@@ -53,8 +53,7 @@ interface Listener {
 interface ListenerConstructor {
   new(options: object): Listener;
 }
-interface Provider {
-  Server?: ListenerConstructor;
+interface SocketConstructor {
   new(address:string): Socket;
 }
 
@@ -199,7 +198,7 @@ class Connection implements ConnectionListNode{
 
   reconnect() {
     console.log(`${this.logName} connecting`);
-    this.socket = new this.parent.provider(this.address);
+    this.socket = new this.parent.socketConstructor(this.address);
     this.socket.addEventListener("error", (err) => {
       this.onError("Error event: " + err.message);
     });
@@ -526,9 +525,10 @@ class PropServer {
   server: Listener | null;
   connectionCounter: number;
   txsCallback: null | ((tx: AnyTransaction) => void);
-  provider: Provider;
+  socketConstructor: SocketConstructor;
+  listenerConstructor: ListenerConstructor;
 
-  constructor(logName: string, blockchain: Blockchain, provider: Provider, txsCallback?: (tx: AnyTransaction)=>void) {
+  constructor(logName: string, blockchain: Blockchain, socketConstructor: SocketConstructor, listenerConstructor: ListenerConstructor, txsCallback?: (tx: AnyTransaction) => void) {
     this.logName = logName;
     this.peerState = new Map<string, Peer_state>();
     this.connected = {
@@ -551,7 +551,8 @@ class PropServer {
     } else {
       this.txsCallback = txsCallback;
     }
-    this.provider = provider;
+    this.socketConstructor = socketConstructor;
+    this.listenerConstructor = listenerConstructor;
   }
 
   start(port: number, myAddress: string, peers: string[]) {
@@ -566,8 +567,9 @@ class PropServer {
       this.connect(peer);
     }
 
-    if ("Server" in this.provider) {
-      this.server = new this.provider.Server({ port: port });
+    if (port !== null && this.listenerConstructor !== null) {
+      console.log
+      this.server = new this.listenerConstructor({ port: port });
       this.server.on('connection', socket => {
         const connection = new Connection(this);
         connection.accepted(socket);
@@ -598,5 +600,5 @@ class PropServer {
   }
 }
 
-export { PropServer, type Provider };
+export { PropServer, type SocketConstructor, type ListenerConstructor };
 export default PropServer;

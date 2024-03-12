@@ -127,7 +127,7 @@ class ChainUtil {
     }) as string;
   }
   static serializeKeyPair(keyPair: KeyPair): string {
-    return this.serializePrivateKey(keyPair.priv);
+    return ChainUtil.serializePrivateKey(keyPair.priv);
   }
   static serializePublicKey(pub: KeyObject): string {
     return pub.export({
@@ -319,11 +319,11 @@ class ChainUtil {
 
   static validateIsPublicKey(t: unknown):Result {
     //TODO
-    return this.validateIsString(t);
+    return ChainUtil.validateIsString(t);
   }
 
   static validateIsSignature(t: unknown): Result {
-    return this.validateIsString(t);
+    return ChainUtil.validateIsString(t);
   }
 
   static validateArray(t: unknown, memberValidator:ValidatorI): Result {
@@ -448,12 +448,12 @@ class ChainUtil {
   }
 
   static validateLiteral(t: unknown) : Result {
-    const termRes = this.validateTerm(t);
+    const termRes = ChainUtil.validateTerm(t);
     if (termRes.result) {
       return termRes;
     }
 
-    const numberRes = this.validateIsNumber(t);
+    const numberRes = ChainUtil.validateIsNumber(t);
 
     if (numberRes.result) {
       return numberRes;

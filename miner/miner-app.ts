@@ -30,7 +30,7 @@
 
 import express from 'express';
 import bodyParser from 'body-parser';
-import { PropServer, type Provider as WsProvider } from '../network/blockchain-prop.js';
+import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
 import Blockchain from '../blockchain/blockchain.js';
 import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 import Miner from './miner.js';
@@ -46,7 +46,7 @@ import BrokerRegistration from '../blockchain/broker-registration.js';
 import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
 import Compensation from '../blockchain/compensation.js';
 import fs from 'fs';
-import ws from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 import {
   DEFAULT_PORT_MINER_API,
@@ -235,7 +235,7 @@ const persistence = new Persistence(persistencePrefix, (err) => {
     }
 
     miner = new Miner(blockchain, minerPublicKey);
-    chainServer = new PropServer("Chain-server", blockchain, ws as unknown as WsProvider, newTxCb);
+    chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
     chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
     app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));

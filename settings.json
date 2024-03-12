@@ -1,4 +1,7 @@
 {
+  "miner-public-key": "MFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAEXcpuIfwaht3uDUUy3Fi3DCgeNAFSYUFoBL/WzS69x2X9NvTokJ/uXU4y34FuKwbrG8HnRLiMdCGWS4FaRqpbfg==",
+  "miner-priv-key": "-----BEGIN EC PRIVATE KEY-----\nMHQCAQEEIKBeA7fgcO5Vti7WE2oWHLd2Q4XFvPuwad7Pek66IzBYoAcGBSuBBAAK\noUQDQgAEXcpuIfwaht3uDUUy3Fi3DCgeNAFSYUFoBL/WzS69x2X9NvTokJ/uXU4y\n34FuKwbrG8HnRLiMdCGWS4FaRqpbfg==\n-----END EC PRIVATE KEY-----\n",
+  "miner-keypair": "-----BEGIN EC PRIVATE KEY-----\nMHQCAQEEIKBeA7fgcO5Vti7WE2oWHLd2Q4XFvPuwad7Pek66IzBYoAcGBSuBBAAK\noUQDQgAEXcpuIfwaht3uDUUy3Fi3DCgeNAFSYUFoBL/WzS69x2X9NvTokJ/uXU4y\n34FuKwbrG8HnRLiMdCGWS4FaRqpbfg==\n-----END EC PRIVATE KEY-----\n",
   "broker-keypair": "edfb811d963164da2c37de34ae6c30fd36b87551ffb8c1dba98dd63d1926a90a",
   "broker-name": "broker1",
   "wallet-chain-server-peers": [

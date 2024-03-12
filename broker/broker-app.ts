@@ -1,7 +1,7 @@
 //BROKER
 import express from 'express';
 import bodyParser from 'body-parser';
-import { PropServer, type Provider as WsProvider } from '../network/blockchain-prop.js';
+import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
 //import Broker from './broker.js';
 
 import Aedes from 'aedes';
@@ -13,7 +13,7 @@ import { Blockchain, type UpdaterChanges } from '../blockchain/blockchain.js';
 import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';
 import Block from '../blockchain/block.js';
 import Net from 'net';
-import ws from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import fs from 'fs';
 
 'use strict';
@@ -274,7 +274,7 @@ const persistence = new Persistence(blockchainPrefix, (err) => {
       return;
     }
 
-    chainServer = new PropServer("Chain-server", blockchain, ws as unknown as WsProvider);
+    chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
     chainServer.start(chainServerPort, publicAddress, chainServerPeers);
 
     app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));

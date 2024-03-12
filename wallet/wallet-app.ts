@@ -1,7 +1,7 @@
 //WALLET
 import express from 'express';
 import bodyParser from 'body-parser';
-import { PropServer as BlockchainProp, type Provider as WsProvider } from '../network/blockchain-prop.js';
+import { PropServer as BlockchainProp, type SocketConstructor } from '../network/blockchain-prop.js';
 
 import Wallet from './wallet.js';
 import Config from '../util/config.js';
@@ -10,7 +10,7 @@ import { ChainUtil, isFailure } from '../util/chain-util.js';
 import Blockchain from '../blockchain/blockchain.js';
 import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 import fs from 'fs';
-import ws from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 import {
   DEFAULT_UI_HTML,
@@ -371,7 +371,7 @@ const persistence = new Persistence(persistencePrefix, (err) => {
       console.log(`Couldn't load blockchain: ${err}`);
       return;
     }
-    chainServer = new BlockchainProp("Wallet-chain-server", blockchain, ws as unknown as WsProvider);
+    chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
     chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
 
     app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
