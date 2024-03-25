@@ -200,48 +200,29 @@ app.get('/MyBalance', (_req, res) => {
 app.get('/chain-length', (_req, res) => {
   res.json(blockchain.length());
 });
+type BalanceGetRes = {
+  [index: string]: number
+};
 app.get('/Balance', (req, res) => {
   const balance = blockchain.getBalanceCopy(req.body.publicKey);
   res.json(balance);
 });
+app.get('/Balance/Ours', (_req, res) => {
+  const returning: BalanceGetRes = {};
+
+  returning[wallet.publicKey] = blockchain.getBalanceCopy(wallet.publicKey);
+
+  res.json(returning);
+});
 app.get('/Balances', (_req, res) => {
-  const returning: { [index: string]: number } = {};
+  const returning: BalanceGetRes = {};
   for (const [key, amount] of blockchain.data.BALANCE) {
     returning[key] = amount;
   }
   res.json(returning);
 });
-app.get('/Sensors', (_req, res) => {
-  const returning: {
-    [index: string]: { [index: string]: unknown }
-  } = {};
-  for (const [key, value] of Object.entries(blockchain.data.SENSOR)) {
-    returning[key] = Object.assign({}, value);
-    returning[key].hash = SensorRegistration.hashToSign(value);
-  }
-  res.json(returning);
-  console.log("/Sensors called");
-  console.log(`Returned ${Object.entries(returning).length} sensors`);
-});
-app.get('/Brokers', (_req, res) => {
-  const returning: {
-    [index: string]: { [index: string]: unknown }
-  } = {};
-  for (const [key, value] of Object.entries(blockchain.data.BROKER)) {
-    returning[key] = Object.assign({}, value);
-    returning[key].hash = BrokerRegistration.hashToSign(value);
-  }
-  res.json(returning);
-});
-app.get('/Integrations', (_req, res) => {
-  const returning: { [index: string]: Integration } = {};
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    returning[key] = integration;
-  }
-  res.json(returning);
-});
 
-app.post('/Payment', (req, res) => {
+app.post('/Payment/Register', (req, res) => {
   console.log(JSON.stringify(req.body));
   const rewardAmount = req.body.rewardAmount;
   const outputs = req.body.outputs;
@@ -256,7 +237,25 @@ app.post('/Payment', (req, res) => {
   res.json(payment.tx);
 });
 
-app.post('/Integration', (req, res) => {
+//const integrationRegisterValidators = {
+//  rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
+//  witnessCount: ChainUtil.createValidateIsIntegerWithMin(0),
+//  outputs: ChainUtil.createValidateObject(
+//};
+
+//Integration
+type IntegrationAllRes = {
+  [index: string]: Integration;
+}
+app.get('/Integration/All', (_req, res) => {
+  const returning: IntegrationAllRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    returning[key] = integration;
+  }
+  res.json(returning);
+});
+
+app.post('/Integration/Register', (req, res) => {
   try {
     const integration = wallet.createIntegrationAsTransaction(
       blockchain,
@@ -280,7 +279,53 @@ app.post('/Integration', (req, res) => {
   }
 });
 
-const brokerRegistrationValidators = {
+const integrationUsesOwnedByValidators = {
+  owner: ChainUtil.validateIsPublicKey
+} as const;
+type IntegrationUsesOwnedByRes = {
+  [index: string]: Integration;
+}
+app.post('/Integration/UsesOwnedBy', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, integrationUsesOwnedByValidators);
+
+  if (isFailure(validateRes)) {
+    res.json({
+      result: false,
+      reason: validateRes.reason
+    });
+    return;
+  }
+
+  const returning: IntegrationUsesOwnedByRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    for (const output of integration.outputs) {
+      const foundSensor = blockchain.getSensorInfo(output.sensorName);
+      if (foundSensor !== null && foundSensor.input === req.body.owner) {
+        returning[key] = integration;
+        break;
+      }
+    }
+  }
+  res.json(returning);
+});
+
+//BrokerRegistration
+type BrokerRegistrationGetRes = {
+  [index: string]: BrokerRegistration & {
+    hash: string;
+  };
+}
+app.get('/BrokerRegistration/All', (_req, res) => {
+  const returning: BrokerRegistrationGetRes = {};
+  for (const [key, value] of blockchain.data.BROKER) {
+    returning[key] = Object.assign({
+      hash: BrokerRegistration.hashToSign(value)
+    }, value);
+  }
+  res.json(returning);
+});
+
+const brokerRegistrationRegisterValidators = {
   brokerName: ChainUtil.validateIsString,
   endpoint: ChainUtil.validateIsString,
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
@@ -290,8 +335,8 @@ const brokerRegistrationValidators = {
     ChainUtil.validateIsObject)
 };
 
-app.post('/BrokerRegistration', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, brokerRegistrationValidators);
+app.post('/BrokerRegistration/Register', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, brokerRegistrationRegisterValidators);
 
   if (isFailure(validateRes)) {
     res.json(validateRes.reason);
@@ -316,7 +361,54 @@ app.post('/BrokerRegistration', (req, res) => {
   }
 });
 
-const sensorRegistrationValidators = {
+const brokerRegistrationOwnedByValidators = {
+  owner: ChainUtil.validateIsPublicKey
+} as const;
+app.post('/BrokerRegistration/OwnedBy', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, brokerRegistrationOwnedByValidators);
+
+  if (isFailure(validateRes)) {
+    res.json({
+      result: false,
+      reason: validateRes.reason
+    });
+    return;
+  }
+
+  const returning: BrokerRegistrationGetRes = {};
+
+  for (const [key, value] of blockchain.data.BROKER) {
+    if (value.input !== req.body.owner) {
+      continue;
+    }
+    returning[key] = Object.assign({
+      hash: BrokerRegistration.hashToSign(value)
+    }, value);
+  }
+  res.json(returning);
+  console.log("/BrokerRegistration/OwnedBy called");
+  console.log(`Returned ${Object.entries(returning).length} brokers`);
+});
+
+//SensorRegistration
+type SensorRegistrationGetRes = {
+  [index: string]: SensorRegistration & {
+    hash: string;
+  };
+}
+app.get('/SensorRegistration/All', (_req, res) => {
+  const returning: SensorRegistrationGetRes = {};
+  for (const [key, value] of blockchain.data.SENSOR) {
+    returning[key] = Object.assign({
+      hash: SensorRegistration.hashToSign(value)
+    }, value);
+  }
+  res.json(returning);
+  console.log("/SensorRegistration/All called");
+  console.log(`Returned ${Object.entries(returning).length} sensors`);
+});
+
+const sensorRegistrationRegisterValidators = {
   sensorName: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
@@ -326,10 +418,9 @@ const sensorRegistrationValidators = {
     ChainUtil.validateIsObject),
   extraLiteralMetadata: ChainUtil.createValidateOptional(
     ChainUtil.validateIsObject)
-};
-
-app.post('/SensorRegistration', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationValidators);
+} as const;
+app.post('/SensorRegistration/Register', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationRegisterValidators);
 
   if (isFailure(validateRes)) {
     res.json({
@@ -363,6 +454,51 @@ app.post('/SensorRegistration', (req, res) => {
       reason: err.message
     });
   }
+});
+
+const sensorRegistrationOwnedByValidators = {
+  owner: ChainUtil.validateIsPublicKey
+} as const;
+app.post('/SensorRegistration/OwnedBy', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationOwnedByValidators);
+
+  if (isFailure(validateRes)) {
+    res.json({
+      result: false,
+      reason: validateRes.reason
+    });
+    return;
+  }
+
+  const returning: SensorRegistrationGetRes = {};
+
+  for (const [key, value] of blockchain.data.SENSOR) {
+    if (value.input !== req.body.owner) {
+      continue;
+    }
+    returning[key] = Object.assign({
+      hash: SensorRegistration.hashToSign(value)
+    }, value);
+  }
+  res.json(returning);
+  console.log("/SensorRegistration/OwnedBy called");
+  console.log(`Returned ${Object.entries(returning).length} sensors`);
+});
+
+app.get('/SensorRegistration/Ours', (_req, res) => {
+  const returning: SensorRegistrationGetRes = {};
+
+  for (const [key, value] of blockchain.data.SENSOR) {
+    if (value.input !== wallet.publicKey) {
+      continue;
+    }
+    returning[key] = Object.assign({
+      hash: SensorRegistration.hashToSign(value)
+    }, value);
+  }
+  res.json(returning);
+  console.log("/SensorRegistration/Ours called");
+  console.log(`Returned ${Object.entries(returning).length} sensors`);
 });
 
 //TODO: probably want to move query logic into blockchain

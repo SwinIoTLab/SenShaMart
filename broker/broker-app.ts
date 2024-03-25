@@ -7,7 +7,7 @@ import { PropServer, type SocketConstructor } from '../network/blockchain-prop.j
 import Aedes from 'aedes';
 
 import Config from '../util/config.js';
-import { ChainUtil } from '../util/chain-util.js';
+import { ChainUtil, isFailure } from '../util/chain-util.js';
 
 import { Blockchain, type UpdaterChanges } from '../blockchain/blockchain.js';
 import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';

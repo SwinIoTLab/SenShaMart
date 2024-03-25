@@ -38,7 +38,7 @@ import Miner from './miner.js';
               With strict mode, you can not, for example, use undeclared variables.*/
 
 import Config from '../util/config.js';
-import { isFailure } from '../util/chain-util.js';
+import { ChainUtil, isFailure } from '../util/chain-util.js';
 import Payment from '../blockchain/payment.js';
 import Integration from '../blockchain/integration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
