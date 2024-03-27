@@ -7,9 +7,9 @@ import Wallet from './wallet.js';
 import Config from '../util/config.js';
 import { ChainUtil, isFailure } from '../util/chain-util.js';
 
-import Blockchain from '../blockchain/blockchain.js';
-import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
-import fs from 'fs';
+import { Blockchain, type IntegrationExpanded } from '../blockchain/blockchain.js';
+//import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
+//import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import {
@@ -46,9 +46,9 @@ const apiPort = config.get({
   key: "wallet-api-port",
   default: DEFAULT_PORT_WALLET_API
 });
-const persistencePrefix = config.get({
-  key: "wallet-persistence-prefix",
-  default: "./wallet_blockchain/"
+const persistenceLocation = config.get({
+  key: "wallet-blockchain",
+  default: "./wallet_blockchain.db"
 });
 const chainServerPort = config.get({
   key: "wallet-chain-server-port",
@@ -216,8 +216,8 @@ app.get('/Balance/Ours', (_req, res) => {
 });
 app.get('/Balances', (_req, res) => {
   const returning: BalanceGetRes = {};
-  for (const [key, amount] of blockchain.data.BALANCE) {
-    returning[key] = amount;
+  for (const [key, amount] of blockchain.data.WALLET) {
+    returning[key] = amount.base.balance;
   }
   res.json(returning);
 });
@@ -250,7 +250,7 @@ type IntegrationAllRes = {
 app.get('/Integration/All', (_req, res) => {
   const returning: IntegrationAllRes = {};
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    returning[key] = integration;
+    returning[key] = integration.base;
   }
   res.json(returning);
 });
@@ -283,7 +283,7 @@ const integrationUsesOwnedByValidators = {
   owner: ChainUtil.validateIsPublicKey
 } as const;
 type IntegrationUsesOwnedByRes = {
-  [index: string]: Integration;
+  [index: string]: IntegrationExpanded;
 }
 app.post('/Integration/UsesOwnedBy', (req, res) => {
   const validateRes = ChainUtil.validateObject(req.body, integrationUsesOwnedByValidators);
@@ -298,10 +298,65 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
 
   const returning: IntegrationUsesOwnedByRes = {};
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (const output of integration.outputs) {
+    for (const output of integration.base.outputs) {
       const foundSensor = blockchain.getSensorInfo(output.sensorName);
       if (foundSensor !== null && foundSensor.input === req.body.owner) {
-        returning[key] = integration;
+        returning[key] = integration.base;
+        break;
+      }
+    }
+  }
+  res.json(returning);
+});
+
+app.get('/Integration/Ours', (_req, res) => {
+  const returning: IntegrationUsesOwnedByRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    if (integration.base.input === wallet.publicKey) {
+      returning[key] = integration.base;
+    }
+  }
+  res.json(returning);
+});
+
+app.get('/Integration/UsesOurSensors', (_req, res) => {
+
+  const returning: IntegrationUsesOwnedByRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    for (const output of integration.base.outputs) {
+      const foundSensor = blockchain.getSensorInfo(output.sensorName);
+      if (foundSensor !== null && foundSensor.input === wallet.publicKey) {
+        returning[key] = integration.base;
+        break;
+      }
+    }
+  }
+  res.json(returning);
+});
+
+app.get('/Integration/OurBrokersBrokering', (_req, res) => {
+
+  const returning: IntegrationUsesOwnedByRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    for (const output of integration.base.outputsExtra) {
+      const foundBroker = blockchain.getBrokerInfo(output.broker);
+      if (foundBroker !== null && foundBroker.input === wallet.publicKey) {
+        returning[key] = integration.base;
+        break;
+      }
+    }
+  }
+  res.json(returning);
+});
+
+app.get('/Integration/OurBrokersWitnessing', (_req, res) => {
+
+  const returning: IntegrationUsesOwnedByRes = {};
+  for (const [key, integration] of blockchain.data.INTEGRATION) {
+    for (const witness of Object.keys(integration.base.witnesses)) {
+      const foundBroker = blockchain.getBrokerInfo(witness);
+      if (foundBroker !== null && foundBroker.input === wallet.publicKey) {
+        returning[key] = integration.base;
         break;
       }
     }
@@ -319,8 +374,8 @@ app.get('/BrokerRegistration/All', (_req, res) => {
   const returning: BrokerRegistrationGetRes = {};
   for (const [key, value] of blockchain.data.BROKER) {
     returning[key] = Object.assign({
-      hash: BrokerRegistration.hashToSign(value)
-    }, value);
+      hash: BrokerRegistration.hashToSign(value.base)
+    }, value.base);
   }
   res.json(returning);
 });
@@ -354,10 +409,16 @@ app.post('/BrokerRegistration/Register', (req, res) => {
 
     chainServer.sendTx(reg);
 
-    res.json(reg.tx);
+    res.json({
+      result: true,
+      tx: reg.tx
+    });
   } catch (err) {
     console.log(err);
-    res.json(err.message);
+    res.json({
+      result: false,
+      reason: err.message
+    });
   }
 });
 
@@ -378,12 +439,28 @@ app.post('/BrokerRegistration/OwnedBy', (req, res) => {
   const returning: BrokerRegistrationGetRes = {};
 
   for (const [key, value] of blockchain.data.BROKER) {
-    if (value.input !== req.body.owner) {
+    if (value.base.input !== req.body.owner) {
       continue;
     }
     returning[key] = Object.assign({
-      hash: BrokerRegistration.hashToSign(value)
-    }, value);
+      hash: BrokerRegistration.hashToSign(value.base)
+    }, value.base);
+  }
+  res.json(returning);
+  console.log("/BrokerRegistration/OwnedBy called");
+  console.log(`Returned ${Object.entries(returning).length} brokers`);
+});
+app.get('/BrokerRegistration/Ours', (_req, res) => {
+
+  const returning: BrokerRegistrationGetRes = {};
+
+  for (const [key, value] of blockchain.data.BROKER) {
+    if (value.base.input !== wallet.publicKey) {
+      continue;
+    }
+    returning[key] = Object.assign({
+      hash: BrokerRegistration.hashToSign(value.base)
+    }, value.base);
   }
   res.json(returning);
   console.log("/BrokerRegistration/OwnedBy called");
@@ -400,8 +477,8 @@ app.get('/SensorRegistration/All', (_req, res) => {
   const returning: SensorRegistrationGetRes = {};
   for (const [key, value] of blockchain.data.SENSOR) {
     returning[key] = Object.assign({
-      hash: SensorRegistration.hashToSign(value)
-    }, value);
+      hash: SensorRegistration.hashToSign(value.base)
+    }, value.base);
   }
   res.json(returning);
   console.log("/SensorRegistration/All called");
@@ -473,12 +550,12 @@ app.post('/SensorRegistration/OwnedBy', (req, res) => {
   const returning: SensorRegistrationGetRes = {};
 
   for (const [key, value] of blockchain.data.SENSOR) {
-    if (value.input !== req.body.owner) {
+    if (value.base.input !== req.body.owner) {
       continue;
     }
     returning[key] = Object.assign({
-      hash: SensorRegistration.hashToSign(value)
-    }, value);
+      hash: SensorRegistration.hashToSign(value.base)
+    }, value.base);
   }
   res.json(returning);
   console.log("/SensorRegistration/OwnedBy called");
@@ -489,12 +566,12 @@ app.get('/SensorRegistration/Ours', (_req, res) => {
   const returning: SensorRegistrationGetRes = {};
 
   for (const [key, value] of blockchain.data.SENSOR) {
-    if (value.input !== wallet.publicKey) {
+    if (value.base.input !== wallet.publicKey) {
       continue;
     }
     returning[key] = Object.assign({
-      hash: SensorRegistration.hashToSign(value)
-    }, value);
+      hash: SensorRegistration.hashToSign(value.base)
+    }, value.base);
   }
   res.json(returning);
   console.log("/SensorRegistration/Ours called");
@@ -569,20 +646,14 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-const persistence = new Persistence(persistencePrefix, (err) => {
-  if (err) {
-    console.log(`Couldn't load persistence: ${err}`);
+blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
+  if (isFailure(err)) {
+    console.log(`Couldn't load blockchain: ${err.reason}`);
     return;
   }
-  blockchain = new Blockchain(persistence, fusekiLocation, (err) => {
-    if (err) {
-      console.log(`Couldn't load blockchain: ${err}`);
-      return;
-    }
-    chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
-    chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
+  chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
+  chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
 
-    app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
-  });
-}, fs as UnderlyingPersistence);
+  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
+});
 

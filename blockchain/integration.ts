@@ -106,7 +106,7 @@ class Integration implements RepeatableTransaction {
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      integration.input,
+      ChainUtil.deserializePublicKey(integration.input),
       integration.signature,
       Integration.hashToSign(integration));
     if (!verifyRes.result) {

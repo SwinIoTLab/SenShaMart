@@ -1,7 +1,7 @@
 import { generateKeyPairSync, createPublicKey, type KeyObject, createPrivateKey, createSign, createVerify, createHash } from 'node:crypto';
 import { SENSHAMART_URI_PREFIX } from './constants.js';
 
-export { ChainUtil, type ResultSuccess, type ResultFailure, type Result, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure };
+export { ChainUtil, type ResultSuccess, type ResultFailure, type Result, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure, resultFromError };
 
 //function convertJsonKeyValueToRDFImpl(key, object) {
 //  const returning = [];
@@ -55,6 +55,19 @@ function isFailure(res: ResultSuccess | ResultFailure): res is ResultFailure {
 
 type Result = ResultSuccess | ResultFailure;
 
+function resultFromError(err: Error | null): Result {
+  if (err === null) {
+    return {
+      result: true
+    };
+  } else {
+    return {
+      result: false,
+      reason: err.message + '\n' + err.stack
+    };
+  }
+}
+
 interface KeyPair {
   priv: KeyObject,
   pub: KeyObject
@@ -81,17 +94,17 @@ class ChainUtil {
   }
 
   static createSignature(privateKey: KeyObject, dataHash: string) : string {
-    const sign = createSign('SHA256');
+    const sign = createSign(SIGN_ALG);
     sign.update(dataHash, 'hex');
     sign.end();
     return sign.sign(privateKey, 'base64');
   }
 
-  static verifySignature(publicKey: string, signature: string, dataHash: string): Result {
+  static verifySignature(publicKey: KeyObject, signature: string, dataHash: string): Result {
     const verify = createVerify(SIGN_ALG);
     verify.update(dataHash, 'hex');
     verify.end();
-    if (verify.verify( signature, 'hex')) {
+    if (verify.verify(publicKey, signature, 'base64')) {
       return {
         result: true
       };

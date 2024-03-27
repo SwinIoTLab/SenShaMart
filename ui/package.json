@@ -10,7 +10,6 @@
   "jest": {
     "testEnvironment": "node"
   },
-  "type": "module",
   "keywords": [],
   "author": "Anas Dawod",
   "license": "ISC",

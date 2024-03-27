@@ -57,7 +57,7 @@ class Compensation implements Transaction {
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      transaction.input,
+      ChainUtil.deserializePublicKey(transaction.input),
       transaction.signature,
       Compensation.hashToSign(transaction));
     if (!verifyRes.result) {

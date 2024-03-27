@@ -55,12 +55,12 @@ class BrokerRegistration implements RepeatableTransaction {
       name: brokerName,
       endpoint: endpoint
     };
-    if (typeof nodeMetadata !== undefined && nodeMetadata !== null) {
+    if (nodeMetadata !== undefined && nodeMetadata !== null) {
       this.metadata.extraNodes = nodeMetadata;
-    };
-    if (typeof literalMetadata !== undefined && literalMetadata !== null) {
+    }
+    if (literalMetadata !== undefined && literalMetadata !== null) {
       this.metadata.extraLiterals = literalMetadata;
-    };
+    }
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, BrokerRegistration.hashToSign(this));
 
     const verification = BrokerRegistration.verify(this);
@@ -114,7 +114,7 @@ class BrokerRegistration implements RepeatableTransaction {
     }
 
     const signatureRes = ChainUtil.verifySignature(
-      registration.input,
+      ChainUtil.deserializePublicKey(registration.input),
       registration.signature,
       BrokerRegistration.hashToSign(registration));
 

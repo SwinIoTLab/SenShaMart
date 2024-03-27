@@ -123,7 +123,7 @@ class SensorRegistration implements RepeatableTransaction {
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      registration.input,
+      ChainUtil.deserializePublicKey(registration.input),
       registration.signature,
       SensorRegistration.hashToSign(registration));
     if (!verifyRes.result) {

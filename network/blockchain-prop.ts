@@ -568,7 +568,6 @@ class PropServer {
     }
 
     if (port !== null && this.listenerConstructor !== null) {
-      console.log
       this.server = new this.listenerConstructor({ port: port });
       this.server.on('connection', socket => {
         const connection = new Connection(this);

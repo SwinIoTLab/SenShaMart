@@ -10,11 +10,11 @@ import Config from '../util/config.js';
 import { ChainUtil, isFailure } from '../util/chain-util.js';
 
 import { Blockchain, type UpdaterChanges } from '../blockchain/blockchain.js';
-import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';
+//import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';
 import Block from '../blockchain/block.js';
 import Net from 'net';
 import { WebSocket, WebSocketServer } from 'ws';
-import fs from 'fs';
+//import fs from 'fs';
 
 'use strict';
 
@@ -48,9 +48,9 @@ const apiPort = config.get({
   key: "broker-api-port",
   default: DEFAULT_PORT_BROKER_API
 });
-const blockchainPrefix = config.get({
-  key: "broker-blockchain-prefix",
-  default: "./broker_blockchain/"
+const persistenceLocation = config.get({
+  key: "broker-blockchain",
+  default: "./broker_blockchain.db"
 });
 const chainServerPort = config.get({
   key: "broker-chain-server-port",
@@ -242,8 +242,6 @@ MQTTServer.listen(MQTTPort, () => {
 const app = express();
 app.use(bodyParser.json());
 
-app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
-
 app.get('/ChainServer/sockets', (_req, res) => {
   res.json('NYI');
 });
@@ -336,36 +334,30 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-const persistence = new Persistence(blockchainPrefix, (err) => {
-  if (err) {
-    console.log(`Couldn't init persistence: ${err}`);
+
+blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
+  if (isFailure(err)) {
+    console.log(`Couldn't init blockchain: ${err.reason}`);
     return;
   }
-  blockchain = new Blockchain(persistence, fusekiLocation, (err) => {
-    if (err) {
-      console.log(`Couldn't init blockchain: ${err}`);
-      return;
-    }
 
-    chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
-    chainServer.start(chainServerPort, publicAddress, chainServerPeers);
+  chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
+  chainServer.start(chainServerPort, publicAddress, chainServerPeers);
 
-    app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
+  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
 
-    blockchain.addListener(onBlockchainChange);
+  blockchain.addListener(onBlockchainChange);
 
-    const fakeChanges: UpdaterChanges = {
-      SENSOR: new Set<string>(),
-      BALANCE: new Set<string>(),
-      BROKER: new Set<string>(),
-      COUNTER: new Set<string>(),
-      INTEGRATION: new Set<string>()
-    };
+  const fakeChanges: UpdaterChanges = {
+    SENSOR: new Set<string>(),
+    WALLET: new Set<string>(),
+    BROKER: new Set<string>(),
+    INTEGRATION: new Set<string>()
+  };
 
-    const currentIntegrations = blockchain.getIntegrations();
-    for (const integrationKey of currentIntegrations.keys()) {
-      fakeChanges.INTEGRATION.add(integrationKey);
-    }
-    onBlockchainChange(null, fakeChanges, 0);
-  });
-}, fs as FsProvider);
+  const currentIntegrations = blockchain.getIntegrations();
+  for (const integrationKey of currentIntegrations.keys()) {
+    fakeChanges.INTEGRATION.add(integrationKey);
+  }
+  onBlockchainChange(null, fakeChanges, 0);
+});

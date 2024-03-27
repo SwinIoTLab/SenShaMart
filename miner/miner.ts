@@ -149,7 +149,7 @@ type Txs = {
   compensation: TxInfo<Compensation>
 };
 
-function addImpl<Tx extends Transaction>(miner: Miner, tx: Tx, txClass: TransactionClass<Tx>, txInfo: TxInfo<Tx>): Result {
+function addImpl<Tx extends Transaction>(_miner: Miner, tx: Tx, txClass: TransactionClass<Tx>, txInfo: TxInfo<Tx>): Result {
   const verifyRes = txClass.verify(tx);
   if (isFailure(verifyRes)) {
     return {

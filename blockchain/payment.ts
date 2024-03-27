@@ -84,7 +84,7 @@ class Payment implements RepeatableTransaction {
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      transaction.input,
+      ChainUtil.deserializePublicKey(transaction.input),
       transaction.signature,
       Payment.hashToSign(transaction));
     if (!verifyRes.result) {

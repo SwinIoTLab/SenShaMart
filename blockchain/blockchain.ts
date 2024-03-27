@@ -4,36 +4,72 @@ import SensorRegistration from './sensor-registration.js';
 import BrokerRegistration from './broker-registration.js';
 import { Integration } from './integration.js';
 import Compensation from './compensation.js';
-import { type Result, type ResultFailure, type ResultSuccess, isFailure, type LiteralMetadata, type NodeMetadata } from '../util/chain-util.js';
+import { type Result, type ResultFailure, type ResultSuccess, isFailure, resultFromError, type LiteralMetadata, type NodeMetadata } from '../util/chain-util.js';
 import {
   MINING_REWARD,
   SENSHAMART_URI_REPLACE,
   MINE_RATE } from '../util/constants.js';
 
+import { default as sqlite3, type Statement, type Database } from 'sqlite3';
+
 import URIS from './uris.js';
-import type Persistence from './persistence.js';
+
+const DB_EXPECTED_VERSION = '1' as const;
+
+const DB_CREATE_QUERY = 
+"CREATE TABLE Configs(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ name TEXT NOT NULL,\
+ value TEXT NOT NULL);\
+INSERT INTO Configs(name,value) VALUES\
+ ('version','1');\
+CREATE TABLE Blocks(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ parseable TEXT NOT NULL);\
+CREATE TABLE Wallet(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ key TEXT NOT NULL,\
+ balance INTEGER NOT NULL,\
+ counter INTEGER NOT NULL);\
+CREATE TABLE Broker(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ parseable TEXT NOT NULL);\
+CREATE TABLE Sensor(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ parseable TEXT NOT NULL);\
+CREATE TABLE Integration(\
+ id INTEGER NOT NULL PRIMARY KEY,\
+ parseable TEXT NOT NULL);";
 
 function makeIntegrationKey(input: string, counter: number) {
   return input + '/' + String(counter);
 }
 
 const DATA_TYPE = {
-  BALANCE: "BALANCE",
+  WALLET: "WALLET",
   SENSOR: "SENSOR",
   BROKER: "BROKER",
   INTEGRATION: "INTEGRATION",
-  COUNTER: "COUNTER"
 } as const;
 
 type Data_type = typeof DATA_TYPE[keyof typeof DATA_TYPE];
 
 const ALL_DATA_TYPES = [
-  DATA_TYPE.BALANCE,
+  DATA_TYPE.WALLET,
   DATA_TYPE.SENSOR,
   DATA_TYPE.BROKER,
   DATA_TYPE.INTEGRATION,
-  DATA_TYPE.COUNTER
 ] as const;
+
+interface WithDbId<Base> {
+  dbId: number
+  base: Base
+}
+
+interface Wallet {
+  counter: number;
+  balance: number;
+}
 
 interface IntegrationOutputExtra {
   sensorCostPerMin: number;
@@ -42,18 +78,27 @@ interface IntegrationOutputExtra {
 }
 
 interface IntegrationExpanded extends Integration {
-  witnesses: Map<string,boolean>;
+  startTime: number;
+  witnesses: {
+    [index: string]: boolean
+  };
   compensationCount: number;
   outputsExtra: IntegrationOutputExtra[];
 }
 
+type DatasWithDbId = {
+  WALLET: Map<string, WithDbId<Wallet>>;
+  SENSOR: Map<string, WithDbId<SensorRegistration>>;
+  BROKER: Map<string, WithDbId<BrokerRegistration>>;
+  INTEGRATION: Map<string, WithDbId<IntegrationExpanded>>;
+  //[index: Data_type]: Map<string, unknown>;
+}
+
 type Datas = {
-  BALANCE: Map<string, number>;
+  WALLET: Map<string, Wallet>;
   SENSOR: Map<string, SensorRegistration>;
   BROKER: Map<string, BrokerRegistration>;
   INTEGRATION: Map<string, IntegrationExpanded>;
-  COUNTER: Map<string, number>;
-  //[index: Data_type]: Map<string, unknown>;
 }
 
 const ERROR_REPLACECHAIN = {
@@ -88,13 +133,21 @@ function genTripleCounts(): TripleCounts {
 
 type Error_replacechain = typeof ERROR_REPLACECHAIN[keyof typeof ERROR_REPLACECHAIN];
 
+function genDatasWithDbId(): DatasWithDbId {
+  return {
+    WALLET: new Map<string, WithDbId<Wallet>>(),
+    SENSOR: new Map<string, WithDbId<SensorRegistration>>(),
+    BROKER: new Map<string, WithDbId<BrokerRegistration>>(),
+    INTEGRATION: new Map<string, WithDbId<IntegrationExpanded>>()
+  };
+}
+
 function genDatas(): Datas {
   return {
-    BALANCE: new Map<string, number>(),
+    WALLET: new Map<string, Wallet>(),
     SENSOR: new Map<string, SensorRegistration>(),
     BROKER: new Map<string, BrokerRegistration>(),
-    INTEGRATION: new Map<string, IntegrationExpanded>(),
-    COUNTER: new Map<string, number>()
+    INTEGRATION: new Map<string, IntegrationExpanded>()
   };
 }
 
@@ -113,39 +166,65 @@ class ChainLink {
   }
 }
 
-function mergeDatas(from: Datas, to:Datas) {
-  for (const data of ALL_DATA_TYPES) {
-    for (const [key, value] of Object.entries(from[data])) {
-      if (value === null) {
-        to[data].delete(key);
-      } else {
-        to[data].set(key, value);
-      }
+function mergeDatas(from: Datas, to: Datas) {
+  for (const [key, value] of from.WALLET.entries()) {
+    if (value === null) {
+      to.WALLET.delete(key);
+    } else {
+      to.WALLET.set(key, value);
+    }
+  }
+  for (const [key, value] of from.SENSOR.entries()) {
+    if (value === null) {
+      to.SENSOR.delete(key);
+    } else {
+      to.SENSOR.set(key, value);
+    }
+  }
+  for (const [key, value] of from.BROKER.entries()) {
+    if (value === null) {
+      to.BROKER.delete(key);
+    } else {
+      to.BROKER.set(key, value);
+    }
+  }
+  for (const [key, value] of from.INTEGRATION.entries()) {
+    if (value === null) {
+      to.INTEGRATION.delete(key);
+    } else {
+      to.INTEGRATION.set(key, value);
     }
   }
 }
 
-function getDatas<T>(type: Data_type, key: string, _default: T, datas: Datas[]):T {
+function makeCopy<T>(v: T): T {
+  if (v instanceof Object) {
+    return Object.assign({}, v);
+  } else {
+    return v;
+  }
+}
+
+function getDatas<T>(type: Data_type, key: string, _default: T, datas: Datas[], parent: DatasWithDbId): T {
   for (const data of datas) {
     if (data[type].has(key)) {
-      const gotten = data[type].get(key);
-      if (gotten === null) {
-        return _default;
-      } else if (gotten instanceof Object) {
-        return Object.assign({}, gotten) as T;
-      } else {
-        return gotten as T;
-      }
+      return makeCopy(data[type].get(key) as T);
     }
+  }
+  if (parent[type].has(key)) {
+    return makeCopy(parent[type].get(key).base as T);
   }
   return _default;
 }
 
-function forEveryData<T>(type: Data_type, datas: Datas[], transform: (k:string, v:T)=>void) {
+function forEveryData<T>(type: Data_type, datas: Datas[], parent: DatasWithDbId, transform: (k:string, v:T)=>void) {
   for (const data of datas) {
     for (const [key, value] of data[type]) {
       transform(key, value as T);
     }
+  }
+  for (const [key, value] of parent[type]) {
+    transform(key, value.base as T);
   }
 }
 
@@ -155,17 +234,16 @@ type UpdaterChanges = {
 
 function genChanges(): UpdaterChanges {
   return {
-    BALANCE: new Set<string>(),
+    WALLET: new Set<string>(),
     SENSOR: new Set<string>(),
     BROKER: new Set<string>(),
-    INTEGRATION: new Set<string>(),
-    COUNTER: new Set<string>()
+    INTEGRATION: new Set<string>()
   };
 }
 
 function addDataToChanges(data: Datas, changes: UpdaterChanges) {
-  for (const key in data.BALANCE) {
-    changes.BALANCE.add(key);
+  for (const key in data.WALLET) {
+    changes.WALLET.add(key);
   }
   for (const key in data.SENSOR) {
     changes.SENSOR.add(key);
@@ -176,19 +254,302 @@ function addDataToChanges(data: Datas, changes: UpdaterChanges) {
   for (const key in data.INTEGRATION) {
     changes.INTEGRATION.add(key);
   }
-  for (const key in data.COUNTER) {
-    changes.COUNTER.add(key);
-  }
 }
 
-type UpdateCb = (err: Error, newBlocks: ChainLink[], changes: UpdaterChanges) => void;
+type UpdateCb = (err: Result, newBlocks: ChainLink[], changes: UpdaterChanges) => void;
 
 const CREATE_QUERY_INITIAL = "INSERT DATA {" as const;
 const DELETE_QUERY_INITIAL = "DELETE DATA {" as const;
 
-function onUpdateFinish(updater: Updater, persist: boolean, err: Error, cb: UpdateCb) {
-  if (err) {
-    cb(err, null, null);
+type Insert_result = {
+  id: number;
+};
+
+type DbUpdates = {
+  insertingWallets: { key: string; balance: number; counter: number }[];
+  updatingWallets: { id: number; balance: number; counter: number }[];
+  insertingBrokers: BrokerRegistration[];
+  updatingBrokers: { id: number; broker: BrokerRegistration }[];
+  insertingSensors: SensorRegistration[];
+  updatingSensors: { id: number; sensor: SensorRegistration }[];
+  insertingIntegration: IntegrationExpanded[];
+  updatingIntegration: { id: number; integration: IntegrationExpanded; }[];
+};
+
+function rollbackRes(chain: Blockchain, res: Result, cb: UpdateCb) {
+  chain.persistence.db.exec("ROLLBACK;", (err: Error) => {
+    if (err) {
+      console.error("COULD NOT ROLLBACK: " + err.message);
+      process.exit(-1);
+    }
+    cb(res, null, null);
+  });
+}
+
+function rollbackErr(chain: Blockchain, res: Error, cb: UpdateCb) {
+  rollbackRes(chain, resultFromError(res), cb);
+}
+
+function finishUpdate(changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  //start creating update statements for fuseki
+  let create_query = CREATE_QUERY_INITIAL;
+  let delete_query = DELETE_QUERY_INITIAL;
+  for (const [triple, count] of updater.store.nodes) {
+    let existing = updater.parent.store.nodes.get(triple);
+    if (existing === undefined) {
+      existing = 0;
+    }
+    if (existing + count < 0) {
+      console.error("Negative rdf reached during update");
+      process.exit(-1);
+    }
+    if (persist) {
+      if (existing === 0 && existing + count > 0) {
+        create_query += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
+      }
+      if (existing > 0 && existing + count === 0) {
+        delete_query += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
+      }
+    }
+    updater.parent.store.nodes.set(triple, existing + count);
+  }
+  for (const [triple, count] of updater.store.literals) {
+    let existing = updater.parent.store.literals.get(triple);
+    if (existing === undefined) {
+      existing = 0;
+    }
+    if (existing + count < 0) {
+      console.error("Negative rdf reached during update");
+      process.exit(-1);
+    }
+    if (persist) {
+      if (existing === 0 && existing + count > 0) {
+        if (typeof triple.o === "string") {
+          create_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
+        } else {
+          create_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
+        }
+      }
+      if (existing > 0 && existing + count === 0) {
+        if (typeof triple.o === "string") {
+          delete_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
+        } else {
+          delete_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
+        }
+      }
+    }
+    updater.parent.store.literals.set(triple, existing + count);
+  }
+
+  if (persist) {
+    let sending = "";
+    if (create_query.length > CREATE_QUERY_INITIAL.length) {
+      sending += create_query + "};";
+    }
+    if (delete_query.length > DELETE_QUERY_INITIAL.length) {
+      sending += delete_query + "};";
+    }
+
+    fetch(updater.parent.fuseki_location + "/update", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: 'update=' + encodeURIComponent(sending)
+    });
+  }
+
+  const newLinks = updater.links;
+  updater.links = [];
+  updater.parent.persistence.db.exec("COMMIT;", (err) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+    } else {
+      cb({ result: true }, newLinks, changes);
+    }
+  });
+}
+
+function runUpdateIntegrations(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.updatingIntegration.length) {
+    finishUpdate(changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.updatingIntegration[i];
+  const stmt = updater.parent.persistence.update_integration;
+
+  stmt.run(JSON.stringify(running.integration), running.id, (err: Error) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    runUpdateIntegrations(i + 1, updates, changes, updater, persist, cb);
+  });
+}
+
+function runInsertIntegrations(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.insertingIntegration.length) {
+    runUpdateIntegrations(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.insertingIntegration[i];
+  const stmt = updater.parent.persistence.insert_integration;
+
+  stmt.get(JSON.stringify(running), (err: Error, row: Insert_result) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    updater.parent.data.INTEGRATION.set(Integration.hashToSign(running), {
+      dbId: row.id,
+      base: running
+    });
+
+    stmt.reset(() => runInsertIntegrations(i + 1, updates, changes, updater, persist, cb));
+  });
+}
+
+function runUpdateSensors(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.updatingSensors.length) {
+    runInsertIntegrations(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.updatingSensors[i];
+  const stmt = updater.parent.persistence.update_sensor;
+
+  stmt.run(JSON.stringify(running.sensor), running.id, (err: Error) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    runUpdateSensors(i + 1, updates, changes, updater, persist, cb);
+  });
+}
+
+function runInsertSensors(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.insertingSensors.length) {
+    runUpdateSensors(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.insertingSensors[i];
+  const stmt = updater.parent.persistence.insert_sensor;
+
+  stmt.get(JSON.stringify(running), (err: Error, row: Insert_result) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    updater.parent.data.SENSOR.set(running.metadata.name, {
+      dbId: row.id,
+      base: running
+    });
+
+    stmt.reset(() => runInsertSensors(i + 1, updates, changes, updater, persist, cb));
+  });
+}
+
+function runUpdateBrokers(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.updatingBrokers.length) {
+    runInsertSensors(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.updatingBrokers[i];
+  const stmt = updater.parent.persistence.update_broker;
+
+  stmt.run(JSON.stringify(running.broker), running.id, (err: Error) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    runUpdateBrokers(i + 1, updates, changes, updater, persist, cb);
+  });
+}
+
+function runInsertBrokers(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.insertingBrokers.length) {
+    runUpdateBrokers(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.insertingBrokers[i];
+  const stmt = updater.parent.persistence.insert_broker;
+
+  stmt.get(JSON.stringify(running), (err: Error, row: Insert_result) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    updater.parent.data.BROKER.set(running.metadata.name, {
+      dbId: row.id,
+      base: running
+    });
+
+    stmt.reset(() => runInsertBrokers(i + 1, updates, changes, updater, persist, cb));
+  });
+}
+
+function runUpdateWallets(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.updatingWallets.length) {
+    runInsertBrokers(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.updatingWallets[i];
+  const stmt = updater.parent.persistence.update_wallet;
+
+  stmt.run(running.balance, running.counter, running.id, (err: Error) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    runUpdateWallets(i + 1, updates, changes, updater, persist, cb);
+  });
+}
+
+function runInsertWallets(i: number, updates: DbUpdates, changes: UpdaterChanges, updater: Updater, persist: boolean, cb: UpdateCb) {
+  if (i === updates.insertingWallets.length) {
+    runUpdateWallets(0, updates, changes, updater, persist, cb);
+    return;
+  }
+
+  const running = updates.insertingWallets[i];
+  const stmt = updater.parent.persistence.insert_wallet;
+
+  stmt.get(running.key, running.balance, running.counter, (err: Error, row: Insert_result) => {
+    if (err) {
+      rollbackErr(updater.parent, err, cb);
+      return;
+    }
+
+    console.log("New wallet with id: " + row.id);
+
+    updater.parent.data.WALLET.set(running.key, {
+      dbId: row.id,
+      base: {
+        counter: running.counter,
+        balance: running.balance
+      }
+    });
+
+    stmt.reset(() => runInsertWallets(i + 1, updates, changes, updater, persist, cb));
+  });
+}
+
+function onUpdateFinish(updater: Updater, persist: boolean, res: Result, cb: UpdateCb) {
+  if (isFailure(res)) {
+    rollbackRes(updater.parent, res, cb);
     return;
   }
 
@@ -257,85 +618,79 @@ function onUpdateFinish(updater: Updater, persist: boolean, err: Error, cb: Upda
 
   updater.startIndex = updater.parent.length(); //move the updater start index up to be where the blockchain now ends
 
+  mergeDatas(updater.curData, updater.prevData);
   addDataToChanges(updater.prevData, changes); //update data and changes
-  mergeDatas(updater.prevData, chain.data);
-  addDataToChanges(updater.curData, changes);
-  mergeDatas(updater.curData, chain.data);
+  const updates: DbUpdates = {
+    insertingWallets: [],
+    updatingWallets: [],
+    insertingBrokers: [],
+    updatingBrokers: [],
+    insertingSensors: [],
+    updatingSensors: [],
+    insertingIntegration: [],
+    updatingIntegration: []
+  };
+
+  for (const [key, value] of updater.prevData.WALLET.entries()) {
+    const foundParent = updater.parent.data.WALLET.get(key);
+    if (foundParent === undefined) {
+      updates.insertingWallets.push({
+        key: key,
+        balance: value.balance,
+        counter: value.counter
+      });
+    } else {
+      updates.updatingWallets.push({
+        id: foundParent.dbId,
+        balance: value.balance,
+        counter: value.counter
+      });
+      foundParent.base.balance = value.balance;
+      foundParent.base.counter = value.counter;
+    }
+  }
+  for (const [key, value] of updater.prevData.BROKER.entries()) {
+    const foundParent = updater.parent.data.BROKER.get(key);
+    if (foundParent === undefined) {
+      updates.insertingBrokers.push(value);
+    } else {
+      updates.updatingBrokers.push({
+        id: foundParent.dbId,
+        broker: value
+      });
+      foundParent.base = value;
+    }
+  }
+  for (const [key, value] of updater.prevData.SENSOR.entries()) {
+    const foundParent = updater.parent.data.SENSOR.get(key);
+    if (foundParent === undefined) {
+      updates.insertingSensors.push(value);
+    } else {
+      updates.updatingSensors.push({
+        id: foundParent.dbId,
+        sensor: value
+      });
+      foundParent.base = value;
+    }
+  }
+  for (const [key, value] of updater.prevData.INTEGRATION.entries()) {
+    const foundParent = updater.parent.data.INTEGRATION.get(key);
+    if (foundParent === undefined) {
+      updates.insertingIntegration.push(value);
+    } else {
+      updates.updatingIntegration.push({
+        id: foundParent.dbId,
+        integration: value
+      });
+      foundParent.base = value;
+    }
+  }
 
   updater.curData = genDatas(); //reset cur and prev data
   updater.prevData = genDatas();
 
-  //start creating update statements for fuseki
-  let create_query = CREATE_QUERY_INITIAL;
-  let delete_query = DELETE_QUERY_INITIAL;
-  for (const [triple, count] of updater.store.nodes) {
-    let existing = chain.store.nodes.get(triple);
-    if (existing === undefined) {
-      existing = 0;
-    }
-    if (existing + count < 0) {
-      console.error("Negative rdf reached during update");
-      process.exit(-1);
-    }
-    if (persist) {
-      if (existing === 0 && existing + count > 0) {
-        create_query += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
-      }
-      if (existing > 0 && existing + count === 0) {
-        delete_query += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
-      }
-    }
-    chain.store.nodes.set(triple, existing + count);
-  }
-  for (const [triple, count] of updater.store.literals) {
-    let existing = chain.store.literals.get(triple);
-    if (existing === undefined) {
-      existing = 0;
-    }
-    if (existing + count < 0) {
-      console.error("Negative rdf reached during update");
-      process.exit(-1);
-    }
-    if (persist) {
-      if(existing === 0 && existing + count > 0) {
-        if (typeof triple.o === "string") {
-          create_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
-        } else {
-          create_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
-        }
-      }
-      if (existing > 0 && existing + count === 0) {
-        if (typeof triple.o === "string") {
-          delete_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
-        } else {
-          delete_query += `<${triple.s}> <${triple.p}> "${triple.o}".`;
-        }
-      }
-    }
-    chain.store.literals.set(triple, existing + count);
-  }
-
-  if (persist) {
-    let sending = "";
-    if (create_query.length > CREATE_QUERY_INITIAL.length) {
-      sending += create_query + "};";
-    }
-    if (delete_query.length > DELETE_QUERY_INITIAL.length) {
-      sending += delete_query + "};";
-    }
-
-    fetch(updater.parent.fuseki_location + "/update", {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-      },
-      body: 'update=' + encodeURIComponent(sending)
-    });
-  }
-
-  const newLinks = updater.links;
-  updater.links = [];
-  cb(null, newLinks, changes);
+  console.log(`Updating with ${updates.insertingWallets.length}|${updates.updatingWallets.length}`);
+  runInsertWallets(0, updates, changes, updater, persist, cb);
 }
 
 function makeBlockName(block: Block): string {
@@ -459,12 +814,11 @@ class Updater {
   }
 
   get<T>(type: Data_type, key: string, _default: T): T {
-    return getDatas(type, key, _default, [this.curData, this.prevData, this.parent.data]);
+    return getDatas(type, key, _default, [this.curData, this.prevData], this.parent.data);
   }
 
   set<T>(type: Data_type, key: string, value: T): void {
-
-    const existing = getDatas(type, key, null, [this.prevData, this.parent.data]);
+    const existing = getDatas(type, key, null, [this.prevData], this.parent.data);
 
     (this.curData[type] as Map<string,T>).set(key, value);
 
@@ -491,7 +845,7 @@ class Updater {
   getBrokerPublicKeys(): string[] {
     const keys = new Set<string>();
 
-    forEveryData<BrokerRegistration>(DATA_TYPE.BROKER, [this.curData, this.prevData, this.parent.data], (_key, value) => {
+    forEveryData<BrokerRegistration>(DATA_TYPE.BROKER, [this.curData, this.prevData], this.parent.data, (_key, value) => {
       keys.add(value.input);
     });
 
@@ -501,9 +855,19 @@ class Updater {
   finish(persist: boolean, cb: UpdateCb) {
     //persist blockchain first
     if (persist) {
-      this.parent.persistence.writeBlocks(this.startIndex, this.links, (err:Error) => onUpdateFinish(this, persist, err, cb));
+      this.parent.persistence.db.exec("BEGIN;", (err) => {
+        if (err) {
+          cb({
+            result: false,
+            reason: err.message
+          }, null, null);
+          return;
+        }
+
+        writeBlocks(this.parent, this.startIndex, this.links, (err: Result) => onUpdateFinish(this, persist, err, cb));
+      });
     } else {
-      setImmediate(() => onUpdateFinish(this, persist, null, cb));
+      setImmediate(() => onUpdateFinish(this, persist, {result:true}, cb));
     }
   }
 }
@@ -587,41 +951,45 @@ function stepPayment(updater: Updater, reward:string, tx:Payment):Result {
     };
   }
 
-  if (tx.counter <= updater.get(DATA_TYPE.COUNTER, tx.input, 0)) {
+  const inputWallet = updater.get<Wallet>(DATA_TYPE.WALLET, tx.input, { counter: 0, balance: 0 });
+
+  if (tx.counter <= inputWallet.counter) {
     return {
       result: false,
       reason: "payment has invalid counter"
     };
   }
-  updater.set(DATA_TYPE.COUNTER, tx.input, tx.counter);
-
-  let inputBalance = updater.get(DATA_TYPE.BALANCE, tx.input, 0);
+  inputWallet.counter = tx.counter;
 
   //first loop is to check it can be payed, and spends, second loop does the paying
-  if (inputBalance < tx.rewardAmount) {
+  if (inputWallet.balance < tx.rewardAmount) {
     return {
       result: false,
       reason: "payment rewarding more than they have"
     };
   }
-  inputBalance -= tx.rewardAmount;
+  inputWallet.balance -= tx.rewardAmount;
 
   for (const output of tx.outputs) {
-    if (inputBalance < output.amount) {
+    if (inputWallet.balance < output.amount) {
       return {
         result: false,
         reason: "payment spending more than they have"
       };
     }
-    inputBalance -= output.amount;
+    inputWallet.balance -= output.amount;
   }
 
-  updater.set(DATA_TYPE.BALANCE, tx.input, inputBalance);
+  updater.set(DATA_TYPE.WALLET, tx.input, inputWallet);
 
   for (const output of tx.outputs) {
-    updater.plus(DATA_TYPE.BALANCE, output.publicKey, 0, output.amount);
+    const outputWallet = updater.get<Wallet>(DATA_TYPE.WALLET, output.publicKey, { counter: 0, balance: 0 });
+    outputWallet.balance += output.amount;
+    updater.set(DATA_TYPE.WALLET, output.publicKey, outputWallet);
   }
-  updater.plus(DATA_TYPE.BALANCE, reward, 0, tx.rewardAmount);
+  const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
+  rewardWallet.balance += tx.rewardAmount;
+  updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
   genPaymentRDF(updater.store, makeBlockName(updater.prevBlock()), tx);
 
@@ -658,7 +1026,7 @@ function genIntegrationRDF(triples: TripleCounts, blockName: string, tx: Integra
   }, count);
 }
 
-function stepIntegration(updater:Updater, reward:string, tx:Integration):Result {
+function stepIntegration(updater:Updater, reward:string, startTime: number, tx:Integration):Result {
   const verifyRes = Integration.verify(tx);
   if (isFailure(verifyRes)) {
     return {
@@ -667,25 +1035,25 @@ function stepIntegration(updater:Updater, reward:string, tx:Integration):Result 
     };
   }
 
-  if (tx.counter <= updater.get(DATA_TYPE.COUNTER, tx.input, 0)) {
+  const inputWallet = updater.get<Wallet>(DATA_TYPE.WALLET, tx.input, { counter: 0, balance: 0 });
+
+  if (tx.counter <= inputWallet.counter) {
     return {
       result: false,
       reason: "integration has invalid counter"
     };
   }
 
-  updater.set(DATA_TYPE.COUNTER, tx.input, tx.counter);
-
-  let inputBalance = updater.get(DATA_TYPE.BALANCE, tx.input, 0);
+  inputWallet.counter = tx.counter;
 
   //first loop is to check it can be payed, and spends, second loop does the paying
-  if (inputBalance < tx.rewardAmount) {
+  if (inputWallet.balance < tx.rewardAmount) {
     return {
       result: false,
       reason: "integration rewarding more than they have"
     };
   }
-  inputBalance -= tx.rewardAmount;
+  inputWallet.balance -= tx.rewardAmount;
 
   const outputsExtra: IntegrationOutputExtra[] = [];
 
@@ -721,13 +1089,13 @@ function stepIntegration(updater:Updater, reward:string, tx:Integration):Result 
       };
     }
 
-    if (inputBalance < output.amount) {
+    if (inputWallet.balance < output.amount) {
       return {
         result: false,
         reason: "integration spending more than they have"
       };
     }
-    inputBalance -= output.amount;
+    inputWallet.balance -= output.amount;
 
     outputsExtra.push({
       sensorCostPerKB: SensorRegistration.getCostPerKB(foundSensor),
@@ -735,12 +1103,17 @@ function stepIntegration(updater:Updater, reward:string, tx:Integration):Result 
       broker: SensorRegistration.getIntegrationBroker(foundSensor)
     });
   }
-  updater.set(DATA_TYPE.BALANCE, tx.input, inputBalance);
 
-  updater.plus(DATA_TYPE.BALANCE, reward, 0, tx.rewardAmount);
+  updater.set(DATA_TYPE.WALLET, tx.input, inputWallet);
+
+
+  const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
+  rewardWallet.balance += tx.rewardAmount;
+  updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
   const txCopy: IntegrationExpanded = Object.assign({
-    witnesses: new Map<string,boolean>,
+    startTime: startTime,
+    witnesses: {},
     compensationCount: 0,
     outputsExtra: outputsExtra
   }, tx);
@@ -756,7 +1129,7 @@ function stepIntegration(updater:Updater, reward:string, tx:Integration):Result 
   }
 
   for (const witness of witnesses.witnesses) {
-    txCopy.witnesses.set(witness, false);
+    txCopy.witnesses[witness] = false;
   }
 
   updater.set(DATA_TYPE.INTEGRATION, makeIntegrationKey(txCopy.input, txCopy.counter), txCopy);
@@ -827,29 +1200,29 @@ function stepCompensation(updater: Updater, tx: Compensation): Result {
     };
   }
 
-  if (!foundIntegration.witnesses.has(tx.brokerName)) {
+  if (!foundIntegration.witnesses[tx.brokerName] !== undefined) {
     return {
       result: false,
       reason: "Broker that is compensating isn't a witness for the integration"
     };
   }
 
-  if (foundIntegration.witnesses.get(tx.brokerName)) {
+  if (foundIntegration.witnesses[tx.brokerName]) {
     return {
       result: false,
       reason: "Broker that is compensating has already compensated"
     };
   }
 
-  foundIntegration.witnesses.set(tx.brokerName, true);
+  foundIntegration.witnesses[tx.brokerName] = true;
   ++foundIntegration.compensationCount;
 
   if (foundIntegration.compensationCount === Math.ceil(foundIntegration.witnessCount / 2)) {
-    let integrateeBalance = updater.get(DATA_TYPE.BROKER, foundIntegration.input, 0);
+    const integrateeWallet = updater.get<Wallet>(DATA_TYPE.WALLET, foundIntegration.input, { counter: 0, balance: 0 });
     for (const output of foundIntegration.outputs) {
-      integrateeBalance += output.amount;
+      integrateeWallet.balance += output.amount;
     }
-    updater.set(DATA_TYPE.BALANCE, foundIntegration.input, integrateeBalance);
+    updater.set(DATA_TYPE.WALLET, foundIntegration.input, integrateeWallet);
   }
 
   updater.set(DATA_TYPE.INTEGRATION, integrationKey, foundIntegration);
@@ -954,24 +1327,29 @@ function stepSensorRegistration(updater: Updater, reward: string, tx: SensorRegi
     };
   }
 
-  if (tx.counter <= updater.get(DATA_TYPE.COUNTER, tx.input, 0)) {
+  const inputWallet = updater.get<Wallet>(DATA_TYPE.WALLET, tx.input, { balance: 0, counter: 0 });
+
+  if (tx.counter <= inputWallet.counter) {
     return {
       result: false,
       reason: "Sensor registration has invalid counter"
     };
   }
-  updater.set(DATA_TYPE.COUNTER, tx.input, tx.counter);
+  inputWallet.counter = tx.counter;
 
-  const inputBalance = updater.get(DATA_TYPE.BALANCE, tx.input, 0);
-  if (inputBalance < tx.rewardAmount) {
+  if (inputWallet.balance < tx.rewardAmount) {
     return {
       result: false,
       reason: "Sensor registration rewarding more than they have"
     };
   }
-  updater.set(DATA_TYPE.BALANCE, tx.input, inputBalance - tx.rewardAmount);
+  inputWallet.balance -= tx.rewardAmount;
 
-  updater.plus(DATA_TYPE.BALANCE, reward, 0, tx.rewardAmount);
+  updater.set(DATA_TYPE.WALLET, tx.input, inputWallet);
+
+  const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
+  rewardWallet.balance += tx.rewardAmount;
+  updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
   const sensorName = SensorRegistration.getSensorName(tx);
 
@@ -1069,24 +1447,28 @@ function stepBrokerRegistration(updater: Updater, reward: string, tx: BrokerRegi
     };
   }
 
-  if (tx.counter <= updater.get(DATA_TYPE.COUNTER, tx.input, 0)) {
+  const inputWallet = updater.get<Wallet>(DATA_TYPE.WALLET, tx.input, { counter: 0, balance: 0 });
+
+  if (tx.counter <= inputWallet.counter) {
     return {
       result: false,
       reason: "Broker registration has invalid counter"
     };
   }
-  updater.set(DATA_TYPE.COUNTER, tx.input, tx.counter);
+  inputWallet.counter = tx.counter;
 
-  const inputBalance = updater.get(DATA_TYPE.BALANCE, tx.input, 0);
-  if (inputBalance < tx.rewardAmount) {
+  if (inputWallet.balance < tx.rewardAmount) {
     return {
       result: false,
       reason: "Broker registration rewarding more than they have"
     };
   }
-  updater.set(DATA_TYPE.BALANCE, tx.input, inputBalance - tx.rewardAmount);
+  inputWallet.balance -= tx.rewardAmount;
+  updater.set(DATA_TYPE.WALLET, tx.input, inputWallet);
 
-  updater.plus(DATA_TYPE.BALANCE, reward, 0, tx.rewardAmount);
+  const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
+  rewardWallet.balance += tx.rewardAmount;
+  updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
   const brokerName = BrokerRegistration.getBrokerName(tx);
 
@@ -1132,8 +1514,10 @@ function genBlockRDF(triples: TripleCounts, block: Block, prevBlock: Block) : vo
     genBrokerRegistrationRDF(triples, blockName, tx, -1);
   }
 }
-function verifyTxs(updater: Updater, reward: string, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[]): Result {
-  updater.plus(DATA_TYPE.BALANCE, reward, 0, MINING_REWARD);
+function verifyTxs(updater: Updater, reward: string, timestamp: number, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[]): Result {
+  const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
+  rewardWallet.balance += MINING_REWARD;
+  updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
   for (const payment of payments) {
     const res = stepPayment(updater, reward, payment);
@@ -1143,7 +1527,7 @@ function verifyTxs(updater: Updater, reward: string, payments: Payment[], sensor
   }
 
   for (const integration of integrations) {
-    const res = stepIntegration(updater, reward, integration);
+    const res = stepIntegration(updater, reward, timestamp, integration);
     if (!res.result) {
       return res;
     }
@@ -1210,7 +1594,7 @@ function verifyBlock(updater: Updater, verifyingBlock: Block): Result {
 
   updater.newBlock(verifyingBlock);
 
-  return verifyTxs(updater, verifyingBlock.reward,
+  return verifyTxs(updater, verifyingBlock.reward, verifyingBlock.timestamp,
     Block.getPayments(verifyingBlock),
     Block.getSensorRegistrations(verifyingBlock),
     Block.getBrokerRegistrations(verifyingBlock),
@@ -1248,72 +1632,39 @@ function onChange(blockchain: Blockchain, newBlocks: Block[], changes: UpdaterCh
   }
 }
 
-function onInitFinish(updater: Updater, i: number, maxI: number, err: Error, cb: (err: Error)=>void): void {
-  if (err) {
-    cb(err);
-    return;
-  }
-  if (i % 100 === 0) {
-    //require('v8').writeHeapSnapshot();
-  }
-
-  if (i + 1 < maxI) {
-    updater.parent.persistence.readBlock(i + 1, (err: Error, data:object) => onInitRead(updater, i + 1, maxI, err, data, cb));
-  } else {
-    cb(null);
-  }
-}
-
-function onInitRead(updater: Updater, i: number, maxI: number, err: Error, data: object, cb: (err:Error)=>void) {
-  if (err) {
-    cb(err);
+function writeBlocks(chain: Blockchain, startIndex: number, links: ChainLink[], cb: (res: Result) => void) {
+  if (links.length === 0) {
+    cb({ result: true });
     return;
   }
 
-  const res = verifyBlock(updater, (data as ChainLink).block);
-  if (isFailure(res)) {
-    cb(new Error(res.reason));
-  } else {
-    updater.finish(false, (err) => onInitFinish(updater, i, maxI, err, cb));
-  }
-}
-
-type CheckForDivergenceCb = (err: Error, i: number)=>void;
-
-function handleCheckForDivergenceImplRead(chain: Blockchain, i: number, blocks: Block[], startIndex: number, cb: CheckForDivergenceCb, err: Error, data: ChainLink) {
-  if (err) {
-    cb(err, null);
-    return;
-  }
-
-  if (data.block.hash !== blocks[i].hash) {
-    cb(null, i);
-  } else {
-    checkForDivergenceImpl(chain, i + 1, blocks, startIndex, cb);
-  }
-}
-
-function checkForDivergenceImpl(chain: Blockchain, i: number, blocks: Block[], startIndex: number, cb: CheckForDivergenceCb) {
-  if (i >= blocks.length) {
-    setImmediate(() => cb(null, blocks.length));
-    return;
-  }
-  if (i + startIndex >= chain.linksStartI + chain.links.length) {
-    setImmediate(() => cb(null, i));
-    return;
-  }
-  if (i + startIndex >= chain.linksStartI) {
-    while (i < blocks.length && i + startIndex < chain.linksStartI + chain.links.length) {
-      if (chain.links[i + startIndex - chain.linksStartI].block.hash !== blocks[i].hash) {
-        setImmediate(() => cb(null, i));
-        return;
-      }
-      i++;
+  chain.persistence.update_block.run(startIndex, JSON.stringify(links[0]), (err: Error) => {
+    if (err) {
+      rollbackErr(chain, err, cb);
     }
-    setImmediate(() => cb(null, i));
-  } else {
-    chain.persistence.readBlock(startIndex + i, (err, data) => handleCheckForDivergenceImplRead(chain, i, blocks, startIndex, cb, err, data as ChainLink));
-  }
+
+    console.log("wrote block " + startIndex);
+
+    writeBlocks(chain, startIndex + 1, links.slice(1), cb);
+  });
+}
+
+function readBlock(chain: Blockchain, i: number, cb: (res: Result, link: ChainLink | null) => void) {
+  chain.persistence.get_block.get(i, (err, row: ReadBlock_result) => {
+    if (err) {
+      cb({
+        result: false,
+        reason: err.message
+      }, null);
+      return;
+    }
+
+    const as_link = JSON.parse(row.parseable) as ChainLink;
+
+    chain.persistence.get_block.reset(() => cb({
+      result: true
+    }, as_link));
+  });
 }
 
 interface OpResultFailure extends ResultFailure {
@@ -1322,28 +1673,28 @@ interface OpResultFailure extends ResultFailure {
 
 type OpResult = ResultSuccess | OpResultFailure;
 
-type OpCb = (result: OpResult) => void;
+type OpCb = (result: OpResult, data?:unknown) => void;
 
 type OpFunc = (chain: Blockchain) => void;
 interface Op {
   op: OpFunc;
+  cb: OpCb;
 }
 
-class ReplaceChainOp implements Op {
-  op: OpFunc;
-  newChain: Block[];
-  startI: number;
-  cb: OpCb;
-  accumulatedUndos: Datas;
-  constructor(newChain: Block[], startI: number, cb: OpCb) {
-    this.op = replaceImpl;
-    this.newChain = newChain;
-    this.startI = startI;
-    this.cb = cb;
-    this.accumulatedUndos = genDatas();
+function addOp(blockchain: Blockchain, op: Op) {
+  const original_cb = op.cb;
+
+  op.cb = (result, data?) => {
+    original_cb(result, data);
+    opFinish(blockchain);
+  };
+
+  blockchain.queue.push(op);
+
+  if (blockchain.queue.length === 1) {
+    op.op(blockchain);
   }
 }
-
 function opFinish(blockchain: Blockchain): void {
   blockchain.queue.shift();
   if (blockchain.queue.length > 0) {
@@ -1405,11 +1756,11 @@ function replaceImpl(blockchain: Blockchain): void {
         }
 
         updater.finish(true, (err, newLinks, changes) => { //finish the update
-          if (err) { //if the update errored
+          if (isFailure(err)) { //if the update errored
             op.cb({ //error
               result: false,
               code: ERROR_REPLACECHAIN.UPDATER,
-              reason: err.message
+              reason: err.reason
             });
             return;
           }
@@ -1420,7 +1771,7 @@ function replaceImpl(blockchain: Blockchain): void {
 
 
 
-          const newBlocks : Block[] = []; //make blocks array
+          const newBlocks: Block[] = []; //make blocks array
           for (const link of newLinks) { //for every link
             newBlocks.push(link.block); //add it to newBlocks
           }
@@ -1445,7 +1796,7 @@ function replaceImpl(blockchain: Blockchain): void {
   }
 
   //if we get here, we're diverging at genesis
-  
+
   const res = verifyBlocks(updater, op.newChain); //verify blocks
   if (isFailure(res)) {
     setImmediate(() => op.cb({
@@ -1456,11 +1807,11 @@ function replaceImpl(blockchain: Blockchain): void {
     return;
   }
   updater.finish(true, (err, newLinks, changes) => { //update
-    if (err) {
+    if (isFailure(err)) {
       op.cb({
         result: false,
         code: ERROR_REPLACECHAIN.UPDATER,
-        reason: err.message
+        reason: err.reason
       });
       return;
     }
@@ -1477,14 +1828,18 @@ function replaceImpl(blockchain: Blockchain): void {
   });
 }
 
-class AddBlockOp implements Op {
+class ReplaceChainOp implements Op {
   op: OpFunc;
-  newBlock: Block;
+  newChain: Block[];
+  startI: number;
   cb: OpCb;
-  constructor(newBlock: Block, cb: OpCb) {
-    this.op = addBlockImpl;
-    this.newBlock = newBlock;
+  accumulatedUndos: Datas;
+  constructor(newChain: Block[], startI: number, cb: OpCb) {
+    this.op = replaceImpl;
+    this.newChain = newChain;
+    this.startI = startI;
     this.cb = cb;
+    this.accumulatedUndos = genDatas();
   }
 }
 
@@ -1504,18 +1859,18 @@ function addBlockImpl(blockchain: Blockchain): void {
     return;
   }
 
-  updater.finish(true, (err: Error, newLinks: ChainLink[], changes) => {
-    if (err) {
+  updater.finish(true, (err: Result, newLinks: ChainLink[], changes) => {
+    if (isFailure(err)) {
       op.cb({
         result: false,
         code: ERROR_REPLACECHAIN.UPDATER,
-        reason: err.message
+        reason: err.reason
       });
       return;
     }
 
 
-    const newBlocks : Block[] = [];
+    const newBlocks: Block[] = [];
     for (const link of newLinks) {
       const block = link.block;
       newBlocks.push(block);
@@ -1530,46 +1885,506 @@ function addBlockImpl(blockchain: Blockchain): void {
   return;
 }
 
+class AddBlockOp implements Op {
+  op: OpFunc;
+  newBlock: Block;
+  cb: OpCb;
+  constructor(newBlock: Block, cb: OpCb) {
+    this.op = addBlockImpl;
+    this.newBlock = newBlock;
+    this.cb = cb;
+  }
+}
+
+type ReadBlock_result = {
+  parseable: string;
+};
+
+function readBlockImpl(blockchain: Blockchain): void {
+  const op = blockchain.queue[0] as ReadBlockOp;
+
+  readBlock(blockchain, op.i, (res, link) => {
+    if (isFailure(res)) {
+      op.cb({
+        result: false,
+        reason: res.reason,
+        code: ERROR_REPLACECHAIN.BAD_ARG
+      });
+    } else {
+      op.cb(res, link.block);
+    }
+  });
+}
+
+class ReadBlockOp implements Op {
+  op: OpFunc;
+  i: number;
+  cb: OpCb;
+
+  constructor(i: number, cb: OpCb) {
+    this.op = readBlockImpl;
+    this.i = i;
+    this.cb = cb;
+  }
+}
+
+function checkForDivergenceImpl(blockchain: Blockchain): void {
+  const op = blockchain.queue[0] as CheckForDivergenceOp;
+
+  if (op.i >= op.blocks.length) {
+    setImmediate(() => op.cb({
+      result: true
+    }, op.blocks.length));
+    return;
+  }
+  if (op.i + op.startIndex >= blockchain.linksStartI + blockchain.links.length) {
+    setImmediate(() => op.cb({
+      result: true
+    }, op.i));
+    return;
+  }
+  if (op.i + op.startIndex >= blockchain.linksStartI) {
+    while (op.i < op.blocks.length && op.i + op.startIndex < blockchain.linksStartI + blockchain.links.length) {
+      if (blockchain.links[op.i + op.startIndex - blockchain.linksStartI].block.hash !== op.blocks[op.i].hash) {
+        setImmediate(() => op.cb({
+          result: true
+        }, op.i));
+        return;
+      }
+      op.i++;
+    }
+    setImmediate(() => op.cb({
+      result: true
+    }, op.i));
+  } else {
+    readBlock(blockchain, op.startIndex + op.i, (res, link) => {
+      if (isFailure(res)) {
+        op.cb({
+          result: false,
+          reason: res.reason,
+          code: ERROR_REPLACECHAIN.BAD_ARG
+        }, null);
+        return;
+      }
+
+      if (link.block.hash !== op.blocks[op.i].hash) {
+        op.cb({
+          result: true
+        }, op.i);
+      } else {
+        op.i++;
+        checkForDivergenceImpl(blockchain);
+      }
+    });
+  }
+}
+
+class CheckForDivergenceOp implements Op {
+  op: OpFunc;
+  i: number;
+  startIndex: number;
+  blocks: Block[];
+  cb: OpCb;
+
+
+  constructor(i: number, startIndex: number, blocks: Block[], cb: OpCb) {
+    this.op = checkForDivergenceImpl;
+    this.i = i;
+    this.startIndex = startIndex;
+    this.blocks = blocks;
+    this.cb = cb;
+  }
+}
+
 type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number) => void;
+
+function after_prepares(err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  cb({
+    result: true
+  });
+}
+
+function after_prepare_insert_integration(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.update_integration = chain.persistence.db.prepare(
+    "UPDATE Integration SET parseable = ? WHERE id = ?;",
+    (err) => {
+      after_prepares(err, cb);
+    });
+}
+
+function after_prepare_update_sensor(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.insert_integration = chain.persistence.db.prepare(
+    "INSERT INTO Integration(parseable) VALUES(?) RETURNING id;",
+    (err) => {
+      after_prepare_insert_integration(chain, err, cb);
+    });
+}
+
+function after_prepare_insert_sensor(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.update_sensor = chain.persistence.db.prepare(
+    "UPDATE Sensor SET parseable = ? WHERE id = ?;",
+    (err) => {
+      after_prepare_update_sensor(chain, err, cb);
+    });
+}
+
+function after_prepare_update_broker(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.insert_sensor = chain.persistence.db.prepare(
+    "INSERT INTO Sensor(parseable) VALUES(?) RETURNING id;",
+    (err) => {
+      after_prepare_insert_sensor(chain, err, cb);
+    });
+}
+
+function after_prepare_insert_broker(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.update_broker = chain.persistence.db.prepare(
+    "UPDATE Broker SET parseable = ? WHERE id = ?;",
+    (err) => {
+      after_prepare_update_broker(chain, err, cb);
+    });
+}
+
+function after_prepare_update_wallet(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.insert_broker = chain.persistence.db.prepare(
+    "INSERT INTO Broker(parseable) VALUES(?) RETURNING id;",
+    (err) => {
+      after_prepare_insert_broker(chain, err, cb);
+    });
+}
+
+function after_prepare_insert_wallet(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.update_wallet = chain.persistence.db.prepare(
+    "UPDATE Wallet SET balance = ?, counter = ? WHERE id = ?;",
+    (err) => {
+      after_prepare_update_wallet(chain, err, cb);
+    });
+}
+
+function after_prepare_update_blocks(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.insert_wallet = chain.persistence.db.prepare(
+    "INSERT INTO Wallet(key, balance, counter) VALUES(?,?,?) RETURNING id;",
+    (err) => {
+      after_prepare_insert_wallet(chain, err, cb);
+    });
+}
+
+function after_prepare_get_blocks(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.update_block = chain.persistence.db.prepare(
+    "INSERT INTO Blocks(id, parseable) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET parseable = excluded.parseable;",
+    (err) => {
+      after_prepare_update_blocks(chain, err, cb);
+    });
+}
+
+function after_read_blocks(chain: Blockchain, err: Error, links: ChainLink[], cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.links = links;
+
+  chain.persistence.get_block = chain.persistence.db.prepare("SELECT parseable FROM Blocks WHERE id = ?;", (err) => {
+    after_prepare_get_blocks(chain, err, cb);
+  });
+}
+
+type Tx_result = {
+  id: number;
+  parseable: string;
+}
+
+function after_read_integrations(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  const reversing : ChainLink[] = [];
+
+  chain.persistence.db.each(`SELECT id,parseable FROM Blocks ORDER BY id DESC LIMIT ${MAX_BLOCKS_IN_MEMORY}`, (err, row: Tx_result) => {
+    if (!err) {
+      const link = JSON.parse(row.parseable) as ChainLink;
+      reversing.push(link);
+    }
+  }, (err, _count) => {
+    after_read_blocks(chain, err, reversing.reverse(), cb);
+  });
+
+}
+
+function after_read_sensors(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.db.each("SELECT id,parseable FROM Integration;", (err: Error, row: Tx_result) => {
+    if (!err) {
+      const integration = JSON.parse(row.parseable) as IntegrationExpanded;
+
+      chain.data.INTEGRATION.set(Integration.hashToSign(integration), {
+        dbId: row.id,
+        base: integration
+      });
+    }
+  }, (err: Error, _count: number) => {
+    after_read_integrations(chain, err, cb);
+  });
+}
+
+function after_read_brokers(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.db.each("SELECT id,parseable FROM Sensor;", (err: Error, row: Tx_result) => {
+    if (!err) {
+      const sensor = JSON.parse(row.parseable) as SensorRegistration;
+
+      chain.data.SENSOR.set(sensor.metadata.name, {
+        dbId: row.id,
+        base: sensor
+      });
+    }
+  }, (err: Error, _count: number) => {
+    after_read_sensors(chain, err, cb);
+  });
+}
+
+function after_read_wallets(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.db.each("SELECT id,parseable FROM Broker;", (err: Error, row: Tx_result) => {
+    if (!err) {
+      const broker = JSON.parse(row.parseable) as BrokerRegistration;
+
+      chain.data.BROKER.set(broker.metadata.name, {
+        dbId: row.id,
+        base: broker
+      });
+    }
+  }, (err: Error, _count: number) => {
+    after_read_brokers(chain, err, cb);
+  });
+}
+
+type Wallet_result = {
+  id: number,
+  key: string,
+  balance: number,
+  counter: number
+};
+function after_db_check_version(chain: Blockchain, err: Error, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+  chain.persistence.db.each("SELECT id,key,balance,counter FROM Wallet;", (err: Error, row: Wallet_result) => {
+    if (!err) {
+      chain.data.WALLET.set(row.key, {
+        dbId: row.id,
+        base: {
+          balance: row.balance,
+          counter: row.counter
+        }
+      });
+    }
+  }, (err: Error, _count: number) => {
+    after_read_wallets(chain, err, cb);
+  });
+}
+
+type Version_result = {
+  value: string | undefined;
+};
+
+function on_db_check_version(chain: Blockchain, err: Error, row: Version_result, cb: (err: Result) => void) {
+  if (err || row === undefined || row.value == undefined) {
+    chain.persistence.db.exec(DB_CREATE_QUERY, (err: Error) => {
+      after_db_check_version(chain, err, cb);
+    });
+    return;
+  }
+  if (row.value != DB_EXPECTED_VERSION) {
+    cb({
+      result: false,
+      reason: `Expected version '${DB_EXPECTED_VERSION}' but persisted db had version '${row.value}'`
+    });
+    return;
+  }
+  after_db_check_version(chain, null, cb);
+}
+
+function on_db_open(chain: Blockchain, err: Error | null, cb: (err: Result) => void) {
+  if (err) {
+    cb({
+      result: false,
+      reason: err.message
+    });
+    return;
+  }
+
+  chain.persistence.db.get("SELECT value FROM Configs WHERE name = 'version'", (err: Error, row: Version_result) => {
+    on_db_check_version(chain, err, row, cb);
+  });
+}
 
 class Blockchain {
   static MAX_BLOCKS_IN_MEMORY = MAX_BLOCKS_IN_MEMORY;
 
   static ERROR_REPLACEHCHAIN = ERROR_REPLACECHAIN;
 
-  data: Datas;
+  data: DatasWithDbId;
   links: ChainLink[];
   linksStartI: number;
   listeners: Listener[];
-  persistence: Persistence;
+  persistence: {
+    db: Database;
+    get_block: Statement;
+    update_block: Statement;
+    insert_broker: Statement;
+    update_broker: Statement;
+    insert_sensor: Statement;
+    update_sensor: Statement;
+    insert_wallet: Statement;
+    update_wallet: Statement;
+    insert_integration: Statement;
+    update_integration: Statement;
+  }
   queue: Op[];
   store: TripleCounts;
   fuseki_location: string | null;
 
-  constructor(persistence: Persistence, fuseki_location: string | null, readyCb: (err:Error)=>void) {
-    this.data = genDatas();
+  constructor(db_location: string, fuseki_location: string | null, cb: (err:Result)=>void) {
+    this.data = genDatasWithDbId();
     this.links = [];
     this.linksStartI = 0;
     this.listeners = [];
-    this.persistence = persistence;
+    sqlite3.verbose();
+    this.persistence = {
+      db: new sqlite3.Database(db_location, (err: Error) => on_db_open(this, err, cb)),
+      get_block: null,
+      update_block: null,
+      insert_broker: null,
+      update_broker: null,
+      insert_sensor: null,
+      update_sensor: null,
+      insert_wallet: null,
+      update_wallet: null,
+      insert_integration: null,
+      update_integration: null
+    };
     this.queue = [];
     this.fuseki_location = fuseki_location;
 
     this.store = genTripleCounts();
-
-    const blockCount = this.persistence.blockCount();
-
-    const updater = new Updater(this);
-
-    if (blockCount > 0) {
-      this.persistence.readBlock(0, (err: Error, data: object) => onInitRead(updater, 0, blockCount, err, data, readyCb));
-    } else {
-      setImmediate(() => readyCb(null));
-    }
   }
 
   get<T>(type: Data_type, key: string, _default: T): T {
-    return getDatas<T>(type, key, _default, [this.data]);
+    return getDatas<T>(type, key, _default, [], this.data);
   }
 
   getAll<T>(type: Data_type): Map<string,T> {
@@ -1577,7 +2392,7 @@ class Blockchain {
   }
 
   getBalanceCopy(publicKey: string): number {
-    return this.get<number>(DATA_TYPE.BALANCE, publicKey, 0);
+    return this.get<Wallet>(DATA_TYPE.WALLET, publicKey, { balance: 0, counter: 0 }).balance;
   }
 
   getSensorInfo(sensorName: string): SensorRegistration {
@@ -1592,7 +2407,7 @@ class Blockchain {
     return this.get<BrokerRegistration>(DATA_TYPE.BROKER, brokerName, null);
   }
   getCounterCopy(publicKey: string): number {
-    return this.get<number>(DATA_TYPE.COUNTER, publicKey, 0);
+    return this.get<Wallet>(DATA_TYPE.WALLET, publicKey, { balance: 0, counter: 0 }).counter;
   }
 
   getIntegration(integrationKey: string): IntegrationExpanded {
@@ -1618,15 +2433,21 @@ class Blockchain {
     return this.linksStartI + this.links.length;
   }
 
-  getBlock(i: number, cb: (err:Error,block:Block)=>void) {
+  getBlock(i: number, cb: (err: OpResult, block: Block) => void) {
     if (i >= this.linksStartI + this.links.length) {
-      setImmediate(() => cb(new Error("i is out of range"), null));
+      setImmediate(() => cb({
+        result: false,
+        reason: "i is out of range",
+        code: ERROR_REPLACECHAIN.BAD_ARG
+      }, null));
       return;
     }
     if (i >= this.linksStartI) {
-      setImmediate(() => cb(null, this.links[i - this.linksStartI].block));
+      setImmediate(() => cb({
+        result: true
+      }, this.links[i - this.linksStartI].block));
     } else {
-      this.persistence.readBlock(i, cb);
+      addOp(this, new ReadBlockOp(i, cb));
     }
   }
 
@@ -1639,19 +2460,12 @@ class Blockchain {
 
   //adds an existing block to the blockchain, returns false if the block can't be added, true if it was added
   addBlock(newBlock: Block, cb: OpCb) {
-    this.queue.push(new AddBlockOp(newBlock, (err) => {
-      cb(err);
-      opFinish(this);
-    }));
-
-    if (this.queue.length === 1) {
-      addBlockImpl(this);
-    }
+    addOp(this, new AddBlockOp(newBlock, cb));
   }
 
   wouldBeValidBlock(rewardee: string, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[]) {
     const updater = new Updater(this);
-    return verifyTxs(updater, rewardee, payments, sensorRegistrations, brokerRegistrations, integrations, compensations).result;
+    return verifyTxs(updater, rewardee, Date.now(), payments, sensorRegistrations, brokerRegistrations, integrations, compensations).result;
   }
 
   //static isValidChain(blocks: Block[]) {
@@ -1671,18 +2485,11 @@ class Blockchain {
       return;
     }
 
-    this.queue.push(new ReplaceChainOp(newBlocks, startIndex, (err) => {
-      cb(err);
-      opFinish(this);
-    }));
-
-    if (this.queue.length === 1) {
-      replaceImpl(this);
-    }
+    addOp(this, new ReplaceChainOp(newBlocks, startIndex, cb));
   }
 
-  checkForDivergence(blocks: Block[], startIndex: number, cb: (err:Error)=>void): void {
-    checkForDivergenceImpl(this, 0, blocks, startIndex, cb);
+  checkForDivergence(blocks: Block[], startIndex: number, cb: (err: Result, i: number) => void): void {
+    addOp(this, new CheckForDivergenceOp(0, startIndex, blocks, cb));
   }
 
   addListener(listener:Listener): void {
@@ -1695,4 +2502,4 @@ class Blockchain {
 }
 
 export default Blockchain;
-export { Blockchain, type Data_type, ALL_DATA_TYPES, DATA_TYPE, type UpdaterChanges };
+export { Blockchain, type Data_type, ALL_DATA_TYPES, DATA_TYPE, type UpdaterChanges, type IntegrationExpanded };

@@ -15,6 +15,7 @@
     "wallet/*.ts",
     "miner/*.ts",
     "broker/*.ts",
-    "keygen/*.ts"
+    "keygen/*.ts",
+    "ui/*.ts"
   ]
 }

@@ -32,7 +32,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
 import Blockchain from '../blockchain/blockchain.js';
-import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
+//import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 import Miner from './miner.js';
 'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
               With strict mode, you can not, for example, use undeclared variables.*/
@@ -45,7 +45,7 @@ import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
 import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
 import Compensation from '../blockchain/compensation.js';
-import fs from 'fs';
+//import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import {
@@ -61,9 +61,9 @@ const minerPublicKey = config.get({
   key: "miner-public-key",
   default: ""
 });
-const persistencePrefix = config.get({
-  key: "miner-blockchain-prefix",
-  default: "./miner_blockchain/"
+const persistenceLocation = config.get({
+  key: "miner-blockchain",
+  default: "./miner_blockchain.db"
 });
 const fusekiLocation = config.get({
   key: "miner-fuseki",
@@ -134,8 +134,8 @@ app.get('/Balance', (req, res) => {
 });
 app.get('/Balances', (_req, res) => {
   const returning: { [index: string]: number } = {};
-  for (const [key, amount] of blockchain.data.BALANCE) {
-    returning[key] = amount;
+  for (const [key, amount] of blockchain.data.WALLET) {
+    returning[key] = amount.base.balance;
   }
   res.json(returning);
 });
@@ -295,21 +295,15 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-const persistence = new Persistence(persistencePrefix, (err) => {
-  if (err) {
-    console.log(`Couldn't init persistence: ${err}`);
+blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
+  if (isFailure(err)) {
+    console.log(`Couldn't init blockchain: ${err.reason}`);
     return;
   }
-  blockchain = new Blockchain(persistence, fusekiLocation, (err) => {
-    if (err) {
-      console.log(`Couldn't init blockchain: ${err}`);
-      return;
-    }
 
-    miner = new Miner(blockchain, minerPublicKey);
-    chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
-    chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
+  miner = new Miner(blockchain, minerPublicKey);
+  chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
+  chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
-    app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
-  });
-}, fs as UnderlyingPersistence);
+  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
+});
