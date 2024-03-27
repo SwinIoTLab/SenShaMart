@@ -9,7 +9,7 @@ namespace {
       mqtt_client_(std::move(broker_endpoint), sensor_name) {
 
       auto connOpts = mqtt::connect_options_builder()
-        .keep_alive_interval(std::chrono::seconds(30))
+        .keep_alive_interval(std::chrono::seconds(5))
         .automatic_reconnect(std::chrono::seconds(2), std::chrono::seconds(30))
         .clean_session(true)
         .finalize();

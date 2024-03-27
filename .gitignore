@@ -21,3 +21,8 @@
 /demo/camera_client/dependencies/libvisiontransfer/python/examples
 /obj
 /bin
+/ui/application.js
+/ui/broker.js
+/ui/provider.js
+/*.db
+/*.db-journal
