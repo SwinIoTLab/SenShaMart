@@ -11,22 +11,24 @@ export const PREDICATE = {
   CONTAINS_PAYMENT: PREFIX + "ContainsPayment",
   CONTAINS_INTEGRATION: PREFIX + "ContainsIntegration",
   CONTAINS_COMPENSATION: PREFIX + "ContainsCompensation",
+  CONTAINS_COMMIT: PREFIX + "ContainsCommit",
   CONTAINS_TRANSACTION: PREFIX + "ContainsTransaction",
   CONTAINS_SENSOR_REGISTRATION: PREFIX + "ContainsSensorRegistration",
   CONTAINS_BROKER_REGISTRATION: PREFIX + "ContainsBrokerRegistration",
   TYPE: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
   LAST_BLOCK: PREFIX + "LastBlock",
   REWARDED: PREFIX + "Rewarded",
-  MINED_BY: PREFIX + "MinedBy"
+  MINED_BY: PREFIX + "MinedBy",
+  HAS_HASH: PREFIX + "HasHash"
 };
   
 export const OBJECT = {
-  PAYMENT: PREFIX + "Payment",
-  INTEGRATION: PREFIX + "Integration",
-  COMPENSATION: PREFIX + "Compensation",
-  SENSOR_REGISTRATION: PREFIX + "SensorRegistration",
-  BROKER_REGISTRATION: PREFIX + "BrokerRegistration",
-  TRANSACTION: PREFIX + "Transaction",
+  PAYMENT_TX: PREFIX + "Payment",
+  INTEGRATION_TX: PREFIX + "Integration",
+  COMPENSATION_TX: PREFIX + "Compensation",
+  COMMIT_TX: PREFIX + "Commit",
+  SENSOR_REGISTRATION_TX: PREFIX + "SensorRegistration",
+  BROKER_REGISTRATION_TX: PREFIX + "BrokerRegistration",
   WALLET: PREFIX + "Wallet",
   BLOCK: PREFIX + "Block",
 };

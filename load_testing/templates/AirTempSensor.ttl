@@ -18,13 +18,7 @@
 @base <SSMS://> .
 
 ############# System ################
-<> a ssn:System ;
-  ssn:hasSubSystem  <#AirTemperatureSensor> .
-
-
-########## Sensors #################
-
-<#AirTemperatureSensor> a sosa:Sensor , ssn:System ;
+<> a sosa:Sensor, ssn:System ;
   sosa:observes <#AirTemperatureSensorTemperature> ;
   ssn-system:hasSystemCapability <#AirTemperatureSensorCapability> ;
   sosa:hasFeatureOfInterest <#AirTemperatureSensor#location> .
@@ -48,13 +42,13 @@
 
   ################ Observation Instances #################
 
- <AirTemperatureSensorTemperature> a sosa:ObservableProperty ;
+ <#AirTemperatureSensorTemperature> a sosa:ObservableProperty ;
    rdfs:label "Air Temperature"@en;
    sosa:isObservedBy <#AirTemperatureSensor>  .
 
 ################ Location Instances ########################
 
-</AirTemperatureSensor#location> rdf:type sosa:FeatureOfInterest ;
+<#AirTemperatureSensor#location> rdf:type sosa:FeatureOfInterest ;
   geo:lat -37.821658  ;
   geo:long 145.03904 ;
   geo:alt 12.75 ;

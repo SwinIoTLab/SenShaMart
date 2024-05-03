@@ -1,0 +1,84 @@
+import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
+import { type Transaction, type TransactionWrapper } from './transaction_base.js';
+import Integration from './integration.js';
+
+const integrationValidation = {
+  input: ChainUtil.validateIsPublicKey,
+  counter: ChainUtil.createValidateIsIntegerWithMin(1)
+};
+
+const baseValidation = {
+  input: ChainUtil.validateIsPublicKey,
+  brokerName: ChainUtil.validateIsString,
+  integration: ChainUtil.createValidateObject(integrationValidation),
+  signature: ChainUtil.validateIsSignature
+};
+
+class Commit implements Transaction {
+  input: string;
+  brokerName: string;
+  integration: {
+    input: string;
+    counter: number;
+  };
+  signature: string;
+  constructor(senderKeyPair: KeyPair, brokerName: string, integration: Integration) {
+    const verifyIntegration = Integration.verify(integration);
+
+    if (isFailure(verifyIntegration)) {
+      throw new Error(verifyIntegration.reason);
+    }
+
+    this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
+    this.brokerName = brokerName;
+    this.integration = {
+      input: integration.input,
+      counter: integration.counter
+    };
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.hashToSign(this));
+
+    const verification = Commit.verify(this);
+    if (isFailure(verification)) {
+      throw new Error(verification.reason);
+    }
+  }
+
+  static hashToSign(transaction: Commit): string {
+    return ChainUtil.hash([
+      transaction.input,
+      transaction.brokerName,
+      transaction.integration]);
+  }
+
+  static verify(transaction: Commit): Result {
+    const validationRes = ChainUtil.validateObject(transaction, baseValidation);
+    if (!validationRes.result) {
+      return validationRes;
+    }
+
+    const verifyRes = ChainUtil.verifySignature(
+      ChainUtil.deserializePublicKey(transaction.input),
+      transaction.signature,
+      Commit.hashToSign(transaction));
+    if (!verifyRes.result) {
+      return verifyRes;
+    }
+
+    return {
+      result: true,
+    };
+  }
+
+  static wrap(tx: Commit): TransactionWrapper<Commit> {
+    return {
+      tx: tx,
+      type: this
+    };
+  }
+
+  static txName(): string {
+    return "Commit";
+  }
+}
+
+export default Commit;

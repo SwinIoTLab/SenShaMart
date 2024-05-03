@@ -6,6 +6,7 @@ import Integration from '../blockchain/integration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
 import Compensation from '../blockchain/compensation.js';
+import Commit from '../blockchain/commit.js';
 import { type Transaction, type TransactionClass } from '../blockchain/transaction_base.js';
 import type Blockchain from '../blockchain/blockchain.js';
 
@@ -18,6 +19,7 @@ const MINER_STATE = {
 
 type Miner_state = typeof MINER_STATE[keyof typeof MINER_STATE]
 
+//this is called to try ITERATIONS worth of nonces, and then yield once it's done
 function mine(miner: Miner) {
   if (miner.state !== MINER_STATE.RUNNING) {
     startMine(miner);
@@ -44,6 +46,7 @@ function mine(miner: Miner) {
       miner.txs.brokerRegistration.mining,
       miner.txs.integration.mining,
       miner.txs.compensation.mining,
+      miner.txs.commit.mining,
       miner.nonce,
       difficulty);
 
@@ -62,6 +65,7 @@ function mine(miner: Miner) {
         miner.txs.brokerRegistration.mining,
         miner.txs.integration.mining,
         miner.txs.compensation.mining,
+        miner.txs.commit.mining,
         miner.nonce,
         difficulty),
         (err) => {
@@ -84,6 +88,7 @@ function mine(miner: Miner) {
   setImmediate(() => { mine(miner) });
 }
 
+//for every tx, if we added it to the new block, would the block be valid? If so, add it
 function moveValidTxsToMining<Tx extends Transaction>(miner: Miner, txInfo: TxInfo<Tx>) {
   txInfo.mining = [];
   for (const tx of txInfo.pool) {
@@ -93,13 +98,15 @@ function moveValidTxsToMining<Tx extends Transaction>(miner: Miner, txInfo: TxIn
       miner.txs.sensorRegistration.mining,
       miner.txs.brokerRegistration.mining,
       miner.txs.integration.mining,
-      miner.txs.compensation.mining)) {
+      miner.txs.compensation.mining,
+      miner.txs.commit.mining)) {
 
       txInfo.mining.pop();
     }
   }
 }
 
+//set up state so we can start using mine() to mine nonces
 function startMine(miner: Miner) {
   //only continue if state is waiting or restarting
   if (miner.state !== MINER_STATE.INTERRUPTED) {
@@ -114,6 +121,7 @@ function startMine(miner: Miner) {
   moveValidTxsToMining(miner, miner.txs.brokerRegistration);
   moveValidTxsToMining(miner, miner.txs.integration);
   moveValidTxsToMining(miner, miner.txs.compensation);
+  moveValidTxsToMining(miner, miner.txs.commit);
 
   miner.nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
   miner.state = MINER_STATE.RUNNING;
@@ -121,10 +129,12 @@ function startMine(miner: Miner) {
   mine(miner);
 }
 
+//used for Array.findIndex
 function findTx<Tx extends Transaction>(tx: Tx) {
   return (t:Tx) => t.signature === tx.signature;
 }
 
+//remove any txs from txs we're trying to mine
 function clearFromBlock<Tx extends Transaction>(txs: TxInfo<Tx>, blockTxs: Tx[]) {
   for (const tx of blockTxs) {
     const foundIndex = txs.pool.findIndex(findTx(tx));
@@ -147,8 +157,10 @@ type Txs = {
   brokerRegistration: TxInfo<BrokerRegistration>,
   integration: TxInfo<Integration>,
   compensation: TxInfo<Compensation>
+  commit: TxInfo<Commit>
 };
 
+//add a tx to the pool
 function addImpl<Tx extends Transaction>(_miner: Miner, tx: Tx, txClass: TransactionClass<Tx>, txInfo: TxInfo<Tx>): Result {
   const verifyRes = txClass.verify(tx);
   if (isFailure(verifyRes)) {
@@ -175,12 +187,12 @@ function addImpl<Tx extends Transaction>(_miner: Miner, tx: Tx, txClass: Transac
 }
 
 class Miner {
-  state: Miner_state;
-  reward: string;
-  minedStartTime: bigint;
-  blockchain: Blockchain;
-  txs: Txs;
-  nonce: number;
+  state: Miner_state; //what are we doing/what should we do on next mine() call
+  reward: string; //who we want rewards for blocks we've mined to go to
+  minedStartTime: bigint; //when we started mining our block, used for metrics
+  blockchain: Blockchain; //the blockchain we're mining into
+  txs: Txs; //txs we want to mine/are mining
+  nonce: number; //what nonce we're currently on
 
   constructor(blockchain: Blockchain, reward: string) {
     this.state = MINER_STATE.INTERRUPTED;
@@ -189,7 +201,7 @@ class Miner {
     this.minedStartTime = null;
 
     this.blockchain = blockchain;
-    blockchain.addListener((newBlocks, undos, difference) => {
+    blockchain.addListener((newBlocks, _undos, _difference) => {
       for (const block of newBlocks) {
         this.onNewBlock(block);
       }
@@ -201,12 +213,14 @@ class Miner {
       brokerRegistration: { pool: [], mining: [] },
       integration: { pool: [], mining: [] },
       compensation: { pool: [], mining: [] },
+      commit: { pool: [], mining: [] }
     };
 
     this.nonce = 0;
     startMine(this);
   }
 
+  //add the appropriate tx to the pool
   addPayment(tx: Payment): Result {
     return addImpl(this, tx, Payment, this.txs.payment);
   }
@@ -222,14 +236,18 @@ class Miner {
   addCompensation(tx: Compensation): Result {
     return addImpl(this, tx, Compensation, this.txs.compensation);
   }
+  addCommit(tx: Commit): Result {
+    return addImpl(this, tx, Commit, this.txs.commit);
+  }
 
-
+  //when a new block is mined
   onNewBlock(block: Block) {
     clearFromBlock(this.txs.payment, Block.getPayments(block));
     clearFromBlock(this.txs.sensorRegistration, Block.getSensorRegistrations(block));
     clearFromBlock(this.txs.brokerRegistration, Block.getBrokerRegistrations(block));
     clearFromBlock(this.txs.integration, Block.getIntegrations(block));
     clearFromBlock(this.txs.compensation, Block.getCompensations(block));
+    clearFromBlock(this.txs.commit, Block.getCommits(block));
 
     this.state = MINER_STATE.INTERRUPTED;
   }

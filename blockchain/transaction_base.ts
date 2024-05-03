@@ -1,5 +1,7 @@
 import { type Result } from '../util/chain-util.js';
 
+//some basic types and functions to try and make the txs polymorphic
+
 interface Transaction {
   input: string,
   signature: string,

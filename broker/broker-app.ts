@@ -183,6 +183,7 @@ const aedesOptions: Aedes.AedesOptions = {
 const mqtt = Aedes.Server(aedesOptions);
 const MQTTServer = Net.createServer(mqtt.handle);
 
+//whenever a new packet of data is received by the MQTT broker
 function onNewPacket(sensor: string, data:string | Buffer) {
   //check to see if sensor has been paid for
 
@@ -190,6 +191,7 @@ function onNewPacket(sensor: string, data:string | Buffer) {
 
   const foundSensor = ourIntegrations.get(sensor);
 
+  //if we aren't brokering this sensor, ignore
   if (foundSensor === undefined) {
     return;
   }
@@ -198,11 +200,13 @@ function onNewPacket(sensor: string, data:string | Buffer) {
 
   const removing = [];
 
+  //for everone intergrating with this sensor
   for (const [hash, info] of foundSensor.integrations) {
     const timeDelta = now - info.dataLastAt;
     const cost =
       timeDelta * info.perMin
       + data.length / 1024 * info.perKB;
+    //debug print
     console.log(`out/${hash}/${info.index} = timeDelta: ${timeDelta}, cost: ${cost}`);
     if (cost >= info.coinsLeft) {
       //we're out of money, integration is over
@@ -334,7 +338,7 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-
+//init chain
 blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
   if (isFailure(err)) {
     console.log(`Couldn't init blockchain: ${err.reason}`);

@@ -4,6 +4,7 @@ import SensorRegistration from './sensor-registration.js';
 import BrokerRegistration from './broker-registration.js';
 import { Integration } from './integration.js';
 import Compensation from './compensation.js';
+import Commit from './commit.js';
 import { type Result, type ResultFailure, type ResultSuccess, isFailure, resultFromError, type LiteralMetadata, type NodeMetadata } from '../util/chain-util.js';
 import {
   MINING_REWARD,
@@ -14,8 +15,10 @@ import { default as sqlite3, type Statement, type Database } from 'sqlite3';
 
 import URIS from './uris.js';
 
+//expected version of the db, if it is less than this, we need to upgrade
 const DB_EXPECTED_VERSION = '1' as const;
 
+//query to create the persistent db
 const DB_CREATE_QUERY = 
 "CREATE TABLE Configs(\
  id INTEGER NOT NULL PRIMARY KEY,\
@@ -41,10 +44,12 @@ CREATE TABLE Integration(\
  id INTEGER NOT NULL PRIMARY KEY,\
  parseable TEXT NOT NULL);";
 
+//Make the key into integration datas for an integration
 function makeIntegrationKey(input: string, counter: number) {
   return input + '/' + String(counter);
 }
 
+//key names for different data types
 const DATA_TYPE = {
   WALLET: "WALLET",
   SENSOR: "SENSOR",
@@ -61,31 +66,37 @@ const ALL_DATA_TYPES = [
   DATA_TYPE.INTEGRATION,
 ] as const;
 
+//A template that holds the id of a data as well as the data
 interface WithDbId<Base> {
   dbId: number
   base: Base
 }
 
+//A wallet has the balance and current counter for a wallet
 interface Wallet {
   counter: number;
   balance: number;
 }
 
+//Extra information that is held about an integration output. A cache to simplify processing
 interface IntegrationOutputExtra {
-  sensorCostPerMin: number;
-  sensorCostPerKB: number;
-  broker: string;
+  sensorCostPerMin: number; //cost of the sensor at the time the integration started
+  sensorCostPerKB: number; //cost of the sensor at the time the integration started
+  broker: string; //broker of the sensor at the time the integration started
 }
 
+//Extra information that is held about integrations. A cache to simplify processing
 interface IntegrationExpanded extends Integration {
-  startTime: number;
+  startTime: number; //when this integration started
   witnesses: {
-    [index: string]: boolean
+    [index: string]: boolean //map of witnesses, and if they've voted to commit or compensate
   };
-  compensationCount: number;
-  outputsExtra: IntegrationOutputExtra[];
+  compensationCount: number; //total number of witnesses who have voted to commit of compensate
+  commitCount: number; //total number of witnesses who have voted to commit
+  outputsExtra: IntegrationOutputExtra[]; //extra information for each output
 }
 
+//data with db id
 type DatasWithDbId = {
   WALLET: Map<string, WithDbId<Wallet>>;
   SENSOR: Map<string, WithDbId<SensorRegistration>>;
@@ -94,6 +105,7 @@ type DatasWithDbId = {
   //[index: Data_type]: Map<string, unknown>;
 }
 
+//data before they have a db id
 type Datas = {
   WALLET: Map<string, Wallet>;
   SENSOR: Map<string, SensorRegistration>;
@@ -101,6 +113,7 @@ type Datas = {
   INTEGRATION: Map<string, IntegrationExpanded>;
 }
 
+//error number for replace chain
 const ERROR_REPLACECHAIN = {
   SUCCESS: 0,
   //given chain is shorter than current chain
@@ -119,11 +132,13 @@ const ERROR_REPLACECHAIN = {
   BAD_ARG: 7,
 } as const;
 
+//number of times a triple exists
 type TripleCounts = {
   nodes: Map<NodeMetadata, number>;
   literals: Map<LiteralMetadata, number>;
 }
 
+//create an empty triple counts object
 function genTripleCounts(): TripleCounts {
   return {
     nodes: new Map<NodeMetadata, number>(),
@@ -131,8 +146,10 @@ function genTripleCounts(): TripleCounts {
   };
 }
 
+//error type for replace chain
 type Error_replacechain = typeof ERROR_REPLACECHAIN[keyof typeof ERROR_REPLACECHAIN];
 
+//generate empty datas with db id
 function genDatasWithDbId(): DatasWithDbId {
   return {
     WALLET: new Map<string, WithDbId<Wallet>>(),
@@ -142,6 +159,7 @@ function genDatasWithDbId(): DatasWithDbId {
   };
 }
 
+//generate empty datas without db id
 function genDatas(): Datas {
   return {
     WALLET: new Map<string, Wallet>(),
@@ -151,12 +169,15 @@ function genDatas(): Datas {
   };
 }
 
+//helper type to create a literal, this used to do something fancier, and is kept in case it needs to again
 function literal<T>(t: T): T {
   return t;
 }
 
 //store 24 hours worth in memory
-const MAX_BLOCKS_IN_MEMORY = Math.ceil(24*60*60*1000/MINE_RATE);
+const MAX_BLOCKS_IN_MEMORY = Math.ceil(24 * 60 * 60 * 1000 / MINE_RATE);
+
+//a block and extra information needed to undo the block
 class ChainLink {
   block: Block;
   undos: Datas;
@@ -166,6 +187,7 @@ class ChainLink {
   }
 }
 
+//merge a datas into another
 function mergeDatas(from: Datas, to: Datas) {
   for (const [key, value] of from.WALLET.entries()) {
     if (value === null) {
@@ -197,6 +219,7 @@ function mergeDatas(from: Datas, to: Datas) {
   }
 }
 
+//copy a value, object or value
 function makeCopy<T>(v: T): T {
   if (v instanceof Object) {
     return Object.assign({}, v);
@@ -205,6 +228,7 @@ function makeCopy<T>(v: T): T {
   }
 }
 
+//get a value from a particular type of datas
 function getDatas<T>(type: Data_type, key: string, _default: T, datas: Datas[], parent: DatasWithDbId): T {
   for (const data of datas) {
     if (data[type].has(key)) {
@@ -217,6 +241,7 @@ function getDatas<T>(type: Data_type, key: string, _default: T, datas: Datas[], 
   return _default;
 }
 
+//do something for a every instance of a particular type of datas
 function forEveryData<T>(type: Data_type, datas: Datas[], parent: DatasWithDbId, transform: (k:string, v:T)=>void) {
   for (const data of datas) {
     for (const [key, value] of data[type]) {
@@ -232,6 +257,7 @@ type UpdaterChanges = {
   [Property in keyof Datas]: Set<string>
 };
 
+//creates an empty changes object
 function genChanges(): UpdaterChanges {
   return {
     WALLET: new Set<string>(),
@@ -693,34 +719,37 @@ function onUpdateFinish(updater: Updater, persist: boolean, res: Result, cb: Upd
   runInsertWallets(0, updates, changes, updater, persist, cb);
 }
 
+//these make the names of various types of objects in the RDF db
+
 function makeBlockName(block: Block): string {
   return URIS.OBJECT.BLOCK + '/' + block.hash;
 }
 
 function makePaymentTransactionName(payment: Payment): string {
-  return URIS.OBJECT.PAYMENT + '/' + Payment.hashToSign(payment);
+  return URIS.OBJECT.PAYMENT_TX + '/' + Payment.hashToSign(payment);
 }
 
 function makeIntegrationTransactionName(integration: Integration): string {
-  return URIS.OBJECT.INTEGRATION + '/' + Integration.hashToSign(integration);
+  return URIS.OBJECT.INTEGRATION_TX + '/' + Integration.hashToSign(integration);
 }
 
 function makeCompensationTransactionName(compensation: Compensation): string {
-  return URIS.OBJECT.COMPENSATION + '/' + Compensation.hashToSign(compensation);
+  return URIS.OBJECT.COMPENSATION_TX + '/' + Compensation.hashToSign(compensation);
 }
 
 function makeSensorTransactionName(sensorRegistration: SensorRegistration): string {
-  return URIS.OBJECT.SENSOR_REGISTRATION + '/' + SensorRegistration.hashToSign(sensorRegistration);
+  return URIS.OBJECT.SENSOR_REGISTRATION_TX + '/' + SensorRegistration.hashToSign(sensorRegistration);
 }
 
 function makeBrokerTransactionName(brokerName: BrokerRegistration): string {
-  return URIS.OBJECT.BROKER_REGISTRATION + '/' + BrokerRegistration.hashToSign(brokerName);
+  return URIS.OBJECT.BROKER_REGISTRATION_TX + '/' + BrokerRegistration.hashToSign(brokerName);
 }
 
 function makeWalletName(input: string): string {
   return URIS.OBJECT.WALLET + '/' + input;
 }
 
+//creates RDF triples to describe a block header
 function genBlockHeaderRDF(triples: TripleCounts, block: Block, prevBlockName: string, count:number = 1): void {
   const blockName = makeBlockName(block);
   addToLiteralTripleCounts(triples, {
@@ -740,14 +769,15 @@ function genBlockHeaderRDF(triples: TripleCounts, block: Block, prevBlockName: s
   }, count);
 }
 
+//this object carries all state needed to update a chain
 class Updater {
-  parent: Blockchain;
-  links: ChainLink[];
-  prevData: Datas;
-  curData: Datas;
-  startIndex: number;
-  on: number;
-  store: TripleCounts;
+  parent: Blockchain; //the blockchain it's updating
+  links: ChainLink[]; //new links it's adding
+  prevData: Datas; //previous steps datas
+  curData: Datas; //current steps datas
+  startIndex: number; //where the new links are inserting
+  on: number; //index in the chain we're currently on
+  store: TripleCounts; //new RDF
   constructor(parent: Blockchain) {
     this.parent = parent;
     this.links = [];
@@ -779,6 +809,7 @@ class Updater {
     return this.parent.links[this.on - this.parent.linksStartI - 1];
   }
 
+  //add a new block
   newBlock(block: Block): void {
     const prevBlock = this.prevBlock();
     if (this.links.length >= MAX_BLOCKS_IN_MEMORY) {
@@ -793,6 +824,7 @@ class Updater {
     genBlockHeaderRDF(this.store, block, makeBlockName(prevBlock));
   }
 
+  //remove a block
   undoBlock(): void {
     if (this.on === 0) {
       console.error("Tried to undo beyond genesis");
@@ -813,10 +845,12 @@ class Updater {
     }
   }
 
+  //get a datum
   get<T>(type: Data_type, key: string, _default: T): T {
     return getDatas(type, key, _default, [this.curData, this.prevData], this.parent.data);
   }
 
+  //set a datum
   set<T>(type: Data_type, key: string, value: T): void {
     const existing = getDatas(type, key, null, [this.prevData], this.parent.data);
 
@@ -835,6 +869,7 @@ class Updater {
     }
   }
 
+  //add a numeric value to an existing numeric value
   plus(type: Data_type, key: string, _default: number, value:number): void {
     if (value === 0) {
       return;
@@ -842,6 +877,7 @@ class Updater {
     this.set(type, key, this.get(type, key, _default) + value);
   }
 
+  //get the public keys of all current brokers
   getBrokerPublicKeys(): string[] {
     const keys = new Set<string>();
 
@@ -852,6 +888,7 @@ class Updater {
     return Array.from(keys);
   }
 
+  //finish updating and persist the changes if persist is true
   finish(persist: boolean, cb: UpdateCb) {
     //persist blockchain first
     if (persist) {
@@ -872,6 +909,7 @@ class Updater {
   }
 }
 
+//add a triple with a literal object to triples
 function addToLiteralTripleCounts(triples: TripleCounts, triple: LiteralMetadata, count?: number): void {
   if (count === undefined || count === null) {
     count = 1;
@@ -889,6 +927,7 @@ function addToLiteralTripleCounts(triples: TripleCounts, triple: LiteralMetadata
   }
 }
 
+//add a triple with a node object to triples
 function addToNodeTripleCounts(triples: TripleCounts, triple: NodeMetadata, count?: number): void {
   if (count === undefined || count === null) {
     count = 1;
@@ -906,6 +945,7 @@ function addToNodeTripleCounts(triples: TripleCounts, triple: NodeMetadata, coun
   }
 }
 
+//replace the SESHAMART_URI_REPLACE prefix with the sensor name, if it is prefixed
 function uriReplacePrefix(testing:string, sensorName:string):string {
   if (testing.startsWith(SENSHAMART_URI_REPLACE)) {
     return sensorName.concat(testing.slice(SENSHAMART_URI_REPLACE.length));
@@ -913,6 +953,8 @@ function uriReplacePrefix(testing:string, sensorName:string):string {
     return testing;
   }
 }
+
+//the following functions either generate the RDF for a particular tx type, or validate and apply the tx to the updater
 
 function genPaymentRDF(triples: TripleCounts, blockName: string, tx: Payment, count: number = 1): void{
 
@@ -938,7 +980,7 @@ function genPaymentRDF(triples: TripleCounts, blockName: string, tx: Payment, co
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.PAYMENT
+    o: URIS.OBJECT.PAYMENT_TX
   }, count);
 }
 
@@ -1018,11 +1060,16 @@ function genIntegrationRDF(triples: TripleCounts, blockName: string, tx: Integra
     p: URIS.PREDICATE.REWARDED,
     o: tx.rewardAmount
   }, count);
+  addToLiteralTripleCounts(triples, {
+    s: transactionName,
+    p: URIS.PREDICATE.HAS_HASH,
+    o: Integration.hashToSign(tx)
+  }, count);
 
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.INTEGRATION
+    o: URIS.OBJECT.INTEGRATION_TX
   }, count);
 }
 
@@ -1115,6 +1162,7 @@ function stepIntegration(updater:Updater, reward:string, startTime: number, tx:I
     startTime: startTime,
     witnesses: {},
     compensationCount: 0,
+    commitCount: 0,
     outputsExtra: outputsExtra
   }, tx);
   const brokers = updater.getBrokerPublicKeys();
@@ -1158,7 +1206,7 @@ function genCompensationRDF(triples: TripleCounts, blockName: string, tx: Compen
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.COMPENSATION
+    o: URIS.OBJECT.COMPENSATION_TX
   }, count);
 }
 
@@ -1210,7 +1258,7 @@ function stepCompensation(updater: Updater, tx: Compensation): Result {
   if (foundIntegration.witnesses[tx.brokerName]) {
     return {
       result: false,
-      reason: "Broker that is compensating has already compensated"
+      reason: "Broker that is compensating has already compensated or committed"
     };
   }
 
@@ -1223,6 +1271,7 @@ function stepCompensation(updater: Updater, tx: Compensation): Result {
       integrateeWallet.balance += output.amount;
     }
     updater.set(DATA_TYPE.WALLET, foundIntegration.input, integrateeWallet);
+    //TODO: move compensated integration into somewhere else
   }
 
   updater.set(DATA_TYPE.INTEGRATION, integrationKey, foundIntegration);
@@ -1234,26 +1283,112 @@ function stepCompensation(updater: Updater, tx: Compensation): Result {
   };
 }
 
-function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: SensorRegistration, count: number = 1): void {
-  const sensorName = SensorRegistration.getSensorName(tx);
+function genCommitRDF(triples: TripleCounts, blockName: string, tx: Compensation, count: number = 1): void {
+  const transactionName = makeCompensationTransactionName(tx);
 
-  //TODO, maybe the replacements shouldn't be to sensorName
+  addToNodeTripleCounts(triples, {
+    s: blockName,
+    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
+    o: transactionName
+  }, count);
+  addToNodeTripleCounts(triples, {
+    s: blockName,
+    p: URIS.PREDICATE.CONTAINS_COMMIT,
+    o: transactionName
+  }, count);
+
+  addToLiteralTripleCounts(triples, {
+    s: transactionName,
+    p: URIS.PREDICATE.TYPE,
+    o: URIS.OBJECT.COMMIT_TX
+  }, count);
+}
+
+function stepCommit(updater: Updater, tx: Commit): Result {
+  const verifyRes = Commit.verify(tx);
+
+  if (isFailure(verifyRes)) {
+    return {
+      result: false,
+      reason: "Couldn't verify a compensation: " + verifyRes.reason
+    };
+  }
+
+  const integrationKey = makeIntegrationKey(tx.integration.input, tx.integration.counter);
+
+  const foundIntegration = updater.get<IntegrationExpanded>(DATA_TYPE.INTEGRATION, integrationKey, null);
+
+  if (foundIntegration === null) {
+    return {
+      result: false,
+      reason: `Couldn't find integration '${integrationKey}' referenced by compensation`
+    };
+  }
+
+  //TODO: this is probably broken on undo, as witnesses won't get copied, probably move this into a new data
+  const foundBroker = updater.get<BrokerRegistration>(DATA_TYPE.BROKER, tx.brokerName, null);
+
+  if (foundBroker === null) {
+    return {
+      result: false,
+      reason: `Couldn't find broker '${tx.brokerName}' referenced by compensation`
+    };
+  }
+
+  if (foundBroker.input !== tx.input) {
+    return {
+      result: false,
+      reason: "Broker's owner doesn't match compensation's input"
+    };
+  }
+
+  if (!foundIntegration.witnesses[tx.brokerName] !== undefined) {
+    return {
+      result: false,
+      reason: "Broker that is compensating isn't a witness for the integration"
+    };
+  }
+
+  if (foundIntegration.witnesses[tx.brokerName]) {
+    return {
+      result: false,
+      reason: "Broker that is committing has already compensated or committed"
+    };
+  }
+
+  foundIntegration.witnesses[tx.brokerName] = true;
+  ++foundIntegration.commitCount;
+
+  if (foundIntegration.commitCount === Math.ceil(foundIntegration.witnessCount / 2)) {
+    //TODO: move committed or compensated integrations into somewhere else
+  }
+
+  updater.set(DATA_TYPE.INTEGRATION, integrationKey, foundIntegration);
+
+  genCommitRDF(updater.store, makeBlockName(updater.prevBlock()), tx);
+
+  return {
+    result: true
+  };
+}
+
+function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: SensorRegistration, count: number = 1): void {
+  const transactionName = makeSensorTransactionName(tx);
+
   for (const triple of SensorRegistration.getExtraNodeMetadata(tx)) {
     addToNodeTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, sensorName),
-      p: uriReplacePrefix(triple.p, sensorName),
-      o: uriReplacePrefix(triple.o, sensorName)
+      s: uriReplacePrefix(triple.s, transactionName),
+      p: uriReplacePrefix(triple.p, transactionName),
+      o: uriReplacePrefix(triple.o, transactionName)
     }, count);
   }
   for (const triple of SensorRegistration.getExtraLiteralMetadata(tx)) {
     addToLiteralTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, sensorName),
-      p: uriReplacePrefix(triple.p, sensorName),
+      s: uriReplacePrefix(triple.s, transactionName),
+      p: uriReplacePrefix(triple.p, transactionName),
       o: literal(triple.o)
     }, count);
   }
-
-  const transactionName = makeSensorTransactionName(tx);
 
   addToNodeTripleCounts(triples, {
     s: blockName,
@@ -1271,11 +1406,16 @@ function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: 
     p: URIS.PREDICATE.REWARDED,
     o: tx.rewardAmount
   }, count);
+  addToLiteralTripleCounts(triples, {
+    s: transactionName,
+    p: URIS.PREDICATE.HAS_HASH,
+    o: SensorRegistration.hashToSign(tx)
+  }, count);
 
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.SENSOR_REGISTRATION
+    o: URIS.OBJECT.SENSOR_REGISTRATION_TX
   }, count);
   addToLiteralTripleCounts(triples, {
     s: transactionName,
@@ -1287,10 +1427,10 @@ function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: 
     p: URIS.PREDICATE.IS_OWNED_BY,
     o: makeWalletName(tx.input)
   }, count);
-  addToNodeTripleCounts(triples, {
+  addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.DEFINES,
-    o: sensorName
+    o: SensorRegistration.getSensorName(tx)
   }, count);
   addToLiteralTripleCounts(triples, {
     s: transactionName,
@@ -1302,7 +1442,7 @@ function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: 
     p: URIS.PREDICATE.COSTS_PER_KB,
     o: SensorRegistration.getCostPerKB(tx)
   }, count);
-  addToNodeTripleCounts(triples, {
+  addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.USES_BROKER,
     o: SensorRegistration.getIntegrationBroker(tx)
@@ -1374,25 +1514,22 @@ function stepSensorRegistration(updater: Updater, reward: string, tx: SensorRegi
 }
 
 function genBrokerRegistrationRDF(triples: TripleCounts, blockName: string, tx: BrokerRegistration, count: number = 1): void {
-  //TODO, maybe the replacements shouldn't be to brokerName
-  const brokerName = BrokerRegistration.getBrokerName(tx);
+  const transactionName = makeBrokerTransactionName(tx);
 
   for (const triple of BrokerRegistration.getExtraNodeMetadata(tx)) {
     addToNodeTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, brokerName),
-      p: uriReplacePrefix(triple.p, brokerName),
-      o: uriReplacePrefix(triple.o, brokerName)
+      s: uriReplacePrefix(triple.s, transactionName),
+      p: uriReplacePrefix(triple.p, transactionName),
+      o: uriReplacePrefix(triple.o, transactionName)
     }, count);
   }
   for (const triple of BrokerRegistration.getExtraLiteralMetadata(tx)) {
     addToLiteralTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, brokerName),
-      p: uriReplacePrefix(triple.p, brokerName),
+      s: uriReplacePrefix(triple.s, transactionName),
+      p: uriReplacePrefix(triple.p, transactionName),
       o: literal(triple.o)
     }, count);
   }
-
-  const transactionName = makeBrokerTransactionName(tx);
 
   addToNodeTripleCounts(triples, {
     s: blockName,
@@ -1410,11 +1547,16 @@ function genBrokerRegistrationRDF(triples: TripleCounts, blockName: string, tx: 
     p: URIS.PREDICATE.REWARDED,
     o: tx.rewardAmount
   }, count);
+  addToLiteralTripleCounts(triples, {
+    s: transactionName,
+    p: URIS.PREDICATE.HAS_HASH,
+    o: BrokerRegistration.hashToSign(tx)
+  }, count);
 
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.BROKER_REGISTRATION
+    o: URIS.OBJECT.BROKER_REGISTRATION_TX
   }, count);
   addToLiteralTripleCounts(triples, {
     s: transactionName,
@@ -1429,7 +1571,7 @@ function genBrokerRegistrationRDF(triples: TripleCounts, blockName: string, tx: 
   addToLiteralTripleCounts(triples, {
     s: transactionName,
     p: URIS.PREDICATE.DEFINES,
-    o: brokerName
+    o: BrokerRegistration.getBrokerName(tx)
   }, count);
   addToLiteralTripleCounts(triples, {
     s: transactionName,
@@ -1492,6 +1634,7 @@ function stepBrokerRegistration(updater: Updater, reward: string, tx: BrokerRegi
   };
 }
 
+//add rdf for all txs of a block to triples
 function genBlockRDF(triples: TripleCounts, block: Block, prevBlock: Block) : void {
   const blockName = makeBlockName(block);
   const prevBlockName = makeBlockName(prevBlock);
@@ -1513,8 +1656,13 @@ function genBlockRDF(triples: TripleCounts, block: Block, prevBlock: Block) : vo
   for (const tx of Block.getBrokerRegistrations(block)) {
     genBrokerRegistrationRDF(triples, blockName, tx, -1);
   }
+  for (const tx of Block.getCommits(block)) {
+    genCommitRDF(triples, blockName, tx, -1);
+  }
 }
-function verifyTxs(updater: Updater, reward: string, timestamp: number, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[]): Result {
+
+//verify all txs
+function verifyTxs(updater: Updater, reward: string, timestamp: number, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[], commits: Commit[]): Result {
   const rewardWallet = updater.get<Wallet>(DATA_TYPE.WALLET, reward, { counter: 0, balance: 0 });
   rewardWallet.balance += MINING_REWARD;
   updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
@@ -1540,6 +1688,13 @@ function verifyTxs(updater: Updater, reward: string, timestamp: number, payments
     }
   }
 
+  for (const commit of commits) {
+    const res = stepCommit(updater, commit);
+    if (!res.result) {
+      return res;
+    }
+  }
+
   for (const brokerRegistration of brokerRegistrations) {
     const res = stepBrokerRegistration(updater, reward, brokerRegistration);
     if (!res.result) {
@@ -1559,6 +1714,7 @@ function verifyTxs(updater: Updater, reward: string, timestamp: number, payments
   };
 }
 
+//verify the hash of a block, including the previous hash
 function verifyBlockHash(prevBlock: Block, block: Block): Result {
   if (block.lastHash !== prevBlock.hash) {
     return {
@@ -1585,6 +1741,7 @@ function verifyBlockHash(prevBlock: Block, block: Block): Result {
   };
 }
 
+//verify a block, including all transactions
 function verifyBlock(updater: Updater, verifyingBlock: Block): Result {
   const verifyHashRes = verifyBlockHash(updater.prevBlock(), verifyingBlock);
 
@@ -1599,9 +1756,11 @@ function verifyBlock(updater: Updater, verifyingBlock: Block): Result {
     Block.getSensorRegistrations(verifyingBlock),
     Block.getBrokerRegistrations(verifyingBlock),
     Block.getIntegrations(verifyingBlock),
-    Block.getCompensations(verifyingBlock));
+    Block.getCompensations(verifyingBlock),
+    Block.getCommits(verifyingBlock));
 }
 
+//verify all blocks, in blocks
 function verifyBlocks(updater: Updater, blocks: Block[]) : Result {
   if (blocks.length === 0) {
     return {
@@ -1626,12 +1785,14 @@ function verifyBlocks(updater: Updater, blocks: Block[]) : Result {
   };
 }
 
+//called when the blockchain changes, calls all listeners
 function onChange(blockchain: Blockchain, newBlocks: Block[], changes: UpdaterChanges, difference: number): void {
   for (const listener of blockchain.listeners) {
     listener(newBlocks, changes, difference);
   }
 }
 
+//write a block to persistence
 function writeBlocks(chain: Blockchain, startIndex: number, links: ChainLink[], cb: (res: Result) => void) {
   if (links.length === 0) {
     cb({ result: true });
@@ -1649,6 +1810,7 @@ function writeBlocks(chain: Blockchain, startIndex: number, links: ChainLink[], 
   });
 }
 
+//read a block from persistence
 function readBlock(chain: Blockchain, i: number, cb: (res: Result, link: ChainLink | null) => void) {
   chain.persistence.get_block.get(i, (err, row: ReadBlock_result) => {
     if (err) {
@@ -1681,6 +1843,8 @@ interface Op {
   cb: OpCb;
 }
 
+
+//Add an operation to the blockchains operation queue
 function addOp(blockchain: Blockchain, op: Op) {
   const original_cb = op.cb;
 
@@ -1695,6 +1859,8 @@ function addOp(blockchain: Blockchain, op: Op) {
     op.op(blockchain);
   }
 }
+
+//called on finishing an operation, to remove the current and start the next if appropriate
 function opFinish(blockchain: Blockchain): void {
   blockchain.queue.shift();
   if (blockchain.queue.length > 0) {
@@ -1702,6 +1868,7 @@ function opFinish(blockchain: Blockchain): void {
   }
 }
 
+//logic to replace the current chain with a new chain
 function replaceImpl(blockchain: Blockchain): void {
   const op = blockchain.queue[0] as ReplaceChainOp;
 
@@ -1843,6 +2010,7 @@ class ReplaceChainOp implements Op {
   }
 }
 
+//logic to add a block to the current chain
 function addBlockImpl(blockchain: Blockchain): void {
   const op = blockchain.queue[0] as AddBlockOp;
 
@@ -1900,6 +2068,7 @@ type ReadBlock_result = {
   parseable: string;
 };
 
+//logic to read a block from the current chain
 function readBlockImpl(blockchain: Blockchain): void {
   const op = blockchain.queue[0] as ReadBlockOp;
 
@@ -1928,6 +2097,7 @@ class ReadBlockOp implements Op {
   }
 }
 
+//logic to where a given chain diverges from the current chain
 function checkForDivergenceImpl(blockchain: Blockchain): void {
   const op = blockchain.queue[0] as CheckForDivergenceOp;
 
@@ -1998,6 +2168,8 @@ class CheckForDivergenceOp implements Op {
 
 type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number) => void;
 
+
+//after all prepares are finished, call the cb
 function after_prepares(err: Error, cb: (err: Result) => void) {
   if (err) {
     cb({
@@ -2011,6 +2183,8 @@ function after_prepares(err: Error, cb: (err: Result) => void) {
     result: true
   });
 }
+
+//logic to prepare the statements used by sqlite3 for persistence
 
 function after_prepare_insert_integration(chain: Blockchain, err: Error, cb: (err: Result) => void) {
   if (err) {
@@ -2177,6 +2351,8 @@ type Tx_result = {
   parseable: string;
 }
 
+//read the various data stored in persistence
+
 function after_read_integrations(chain: Blockchain, err: Error, cb: (err: Result) => void) {
   if (err) {
     cb({
@@ -2274,6 +2450,8 @@ type Wallet_result = {
   balance: number,
   counter: number
 };
+
+//check the version of the db
 function after_db_check_version(chain: Blockchain, err: Error, cb: (err: Result) => void) {
   if (err) {
     cb({
@@ -2318,6 +2496,7 @@ function on_db_check_version(chain: Blockchain, err: Error, row: Version_result,
   after_db_check_version(chain, null, cb);
 }
 
+//after we've opened the db, check the result and then check the version
 function on_db_open(chain: Blockchain, err: Error | null, cb: (err: Result) => void) {
   if (err) {
     cb({
@@ -2332,16 +2511,17 @@ function on_db_open(chain: Blockchain, err: Error | null, cb: (err: Result) => v
   });
 }
 
+//the object/class to handle a blockchain
 class Blockchain {
   static MAX_BLOCKS_IN_MEMORY = MAX_BLOCKS_IN_MEMORY;
 
   static ERROR_REPLACEHCHAIN = ERROR_REPLACECHAIN;
 
-  data: DatasWithDbId;
-  links: ChainLink[];
-  linksStartI: number;
-  listeners: Listener[];
-  persistence: {
+  data: DatasWithDbId; //data
+  links: ChainLink[]; //blocks and the information required to undo them
+  linksStartI: number; //where the links in memory start
+  listeners: Listener[]; //listeners to blockchain changed events
+  persistence: { //persistence
     db: Database;
     get_block: Statement;
     update_block: Statement;
@@ -2354,9 +2534,9 @@ class Blockchain {
     insert_integration: Statement;
     update_integration: Statement;
   }
-  queue: Op[];
-  store: TripleCounts;
-  fuseki_location: string | null;
+  queue: Op[]; //queue of operations. These are queued to stop race conditions
+  store: TripleCounts; //simple store of counts of triples
+  fuseki_location: string | null; //the URL of a fuseki instance
 
   constructor(db_location: string, fuseki_location: string | null, cb: (err:Result)=>void) {
     this.data = genDatasWithDbId();
@@ -2463,9 +2643,9 @@ class Blockchain {
     addOp(this, new AddBlockOp(newBlock, cb));
   }
 
-  wouldBeValidBlock(rewardee: string, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[]) {
+  wouldBeValidBlock(rewardee: string, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], compensations: Compensation[], commits: Commit[]) {
     const updater = new Updater(this);
-    return verifyTxs(updater, rewardee, Date.now(), payments, sensorRegistrations, brokerRegistrations, integrations, compensations).result;
+    return verifyTxs(updater, rewardee, Date.now(), payments, sensorRegistrations, brokerRegistrations, integrations, compensations, commits).result;
   }
 
   //static isValidChain(blocks: Block[]) {
@@ -2475,6 +2655,7 @@ class Blockchain {
   //  return res.result;
   //}
 
+  //try and replace a chain with a different one. Start index allows to splice a tail onto the existing head
   replaceChain(newBlocks: Block[], startIndex: number, cb: OpCb): void {
     if (newBlocks.length === 0) {
       setImmediate(() => cb({

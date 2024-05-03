@@ -18,12 +18,7 @@
 @base <SSMS://> .
 
 ############# System ################
-<> a ssn:System ;
-  ssn:hasSubSystem  <#AirHumiditySensor> .
-
-########## Sensors #################
-
-<#AirHumiditySensor> a sosa:Sensor , ssn:System ; 
+<> a sosa:Sensor, ssn:System ;
   sosa:observes <#AirHumiditySensorRelativeHumidity> ;
   sosa:hasFeatureOfInterest <#AirHumiditySensor#location> .
 

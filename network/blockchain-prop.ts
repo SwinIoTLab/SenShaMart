@@ -10,6 +10,7 @@ import Compensation from '../blockchain/compensation.js';
 //import Transaction from '../blockchain/transaction_base.mjs';
 import Blockchain, { type UpdaterChanges } from '../blockchain/blockchain.js';
 
+//A bad approximation of the ws interface, to allow for different transports
 interface SocketEvent {
   type: string;
   target: Socket;
@@ -70,6 +71,7 @@ type Connection_state = typeof CONNECTION_STATE[keyof typeof CONNECTION_STATE];
 const SEND_WAIT = 1000;
 const RECV_WAIT = 10 * SEND_WAIT;
 
+//used for debugging to convert states to strings
 function _state_to_string(state: Connection_state): string {
   switch (state) {
     case CONNECTION_STATE.INIT: return "INIT";
@@ -80,6 +82,10 @@ function _state_to_string(state: Connection_state): string {
     default: throw new Error(`Unknown state: ${state}`);
   }
 }
+
+//Peer states were to allow for connections to be marked dead, this wasn't used. We instead currently use very long retry intervals.
+//This is still here in case we want to use it in the future again.
+
 const PEER_STATE = {
   OK: 0,
   DEAD : 1
@@ -127,27 +133,29 @@ interface ConnectionQueue {
   address?: string;
 }
 
+
+//a connection to a peer
 class Connection implements ConnectionListNode{
-  parent: PropServer;
-  address: string | null;
-  socket: Socket | null;
-  state: Connection_state;
+  parent: PropServer; //the server we belong to
+  address: string | null; //where we're connected to, if we know
+  socket: Socket | null; //the socket this connection is using
+  state: Connection_state; //the state
 
-  reconnectWait: number;
+  reconnectWait: number; //how long to wait until our next reconnect
 
-  prev: ConnectionListNode;
-  next: ConnectionListNode;
+  prev: ConnectionListNode; //prev connection in the linked list
+  next: ConnectionListNode; //next connection in the linked list
 
-  differing: number;
-  lastBlockHash: string;
+  differing: number; //where our two blockchains differ
+  lastBlockHash: string; //hash of the last block we've sent
 
-  queue: ConnectionQueue;
-  timer: NodeJS.Timeout | null;
+  queue: ConnectionQueue; //what we're waiting to send
+  timer: NodeJS.Timeout | null; //timer for reconnection/send pooling
   sub: {
-    txs: boolean
+    txs: boolean //are we subscribed to transactions. Miners care, other clients may not
   };
 
-  logName: string;
+  logName: string; //name to prefix to console prints
   constructor(parent: PropServer) {
     this.parent = parent;
     this.address = null;
@@ -173,7 +181,8 @@ class Connection implements ConnectionListNode{
     parent.connectionCounter++;
   }
 
-  accepted(socket: Socket) {
+  //When this connection was started via acceptance
+  accepted(socket: Socket) { 
     this.socket = socket;
 
     this.socket.addEventListener("error", (err) => {
@@ -188,6 +197,7 @@ class Connection implements ConnectionListNode{
     this.onConnection(false);
   }
 
+  //Start this connection via connection
   connect(address: string) {
     this.address = address;
     this.state = CONNECTION_STATE.CONNECTING;
@@ -212,10 +222,12 @@ class Connection implements ConnectionListNode{
     });
   }
 
+  //TODO:
   retryDead(_address: string) {
-
+    //We currently don't 'dead' connections, we just retry with really long wait indefinitely
   }
 
+  //when the connection misbehaves
   onError(message: string) {
     console.log(this.logName + ": " + message);
 
@@ -253,6 +265,7 @@ class Connection implements ConnectionListNode{
     }
   }
 
+  //on successful connection
   onConnection(weInitiated: boolean) {
     console.log(`${this.logName} connected, initiated: ${weInitiated}`);
 
@@ -279,15 +292,18 @@ class Connection implements ConnectionListNode{
     this.send();
   }
 
+  //when the timer says we should send now
   onSendTimer() {
     this.timer = null;
     this.send();
   }
+  //when the timer says we should have recved by now
   onRecvTimer() {
     this.timer = null;
     this.onError("Recv timeout");
   }
 
+  //handle a new chain from our peer
   handleChain(chain: SendingChain) {
     console.log(`${this.logName}: handleChain, this.differing: ${this.differing}, our startI: ${this.parent.blockchain.getCachedStartIndex()}, our length: ${this.parent.blockchain.links.length}, their start: ${chain.start}, their length ${chain.blocks.length}`);
     const validationRes = ChainUtil.validateObject(chain, chainValidation);
@@ -342,6 +358,7 @@ class Connection implements ConnectionListNode{
     return true;
   }
 
+  //handle new txs from our peer
   handleTxs(txs: SendingTransactions) {
     console.log("Recved msg with txs:");
     const validationRes = ChainUtil.validateObject(txs, txsValidation);
@@ -374,6 +391,7 @@ class Connection implements ConnectionListNode{
     return true;
   }
 
+  //handle a new message from our peer
   onMessage(event: SocketMessageEvent) {
     if (this.state !== CONNECTION_STATE.WAITING_FOR_PEER || this.socket.bufferedAmount !== 0) {
       //how did we recv, if we haven't finished sending?
@@ -415,6 +433,7 @@ class Connection implements ConnectionListNode{
 
   }
 
+  //whenever our own chain changes, we need to check if the point at which we differ with our peer has changed
   newChain(_newBlocks: Block[], _changes: UpdaterChanges, difference: number) {
     if (difference < this.differing) {
       console.log(`${this.logName}: Adjusting difference from ${this.differing} to ${difference}`);
@@ -424,6 +443,7 @@ class Connection implements ConnectionListNode{
     }
   }
 
+  //send a tx
   sendTx(transaction: AnyTransaction) {
     if (!this.sub.txs) {
       return;
@@ -445,6 +465,7 @@ class Connection implements ConnectionListNode{
     this.queue.txs[key].push(transaction.tx);
   }
 
+  //set timer to send
   setSendTimer() {
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -454,6 +475,7 @@ class Connection implements ConnectionListNode{
       this.onSendTimer();
     }, SEND_WAIT);
   }
+  //set timer to recv
   setRecvTimer() {
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -464,6 +486,7 @@ class Connection implements ConnectionListNode{
     }, RECV_WAIT);
   }
 
+  //send our message if we are in a state to
   send() {
     if (this.state !== CONNECTION_STATE.READY) {
       return;
@@ -504,6 +527,7 @@ class Connection implements ConnectionListNode{
   }
 }
 
+//handler for blockchain change events
 function updateBlocksImpl(server: PropServer, newBlocks: Block[], changes: UpdaterChanges, difference: number) {
   for (let connection = server.connected.next; connection !== server.connected; connection = connection.next) {
     (connection as Connection).newChain(newBlocks, changes, difference);
@@ -512,21 +536,22 @@ function updateBlocksImpl(server: PropServer, newBlocks: Block[], changes: Updat
 
 //this acts as a publisher, and subscriber
 class PropServer {
-  logName: string;
-  blockchain: Blockchain;
-  peerState: Map<string, Peer_state>;
-  connected: {
+  logName: string; //prefix for console prints
+  blockchain: Blockchain; //the blockchain we are propagating
+  peerState: Map<string, Peer_state>; //the states of our peers
+  connected: { //an empty node to act as a head for a linked list of connections
     next: ConnectionListNode;
     prev: ConnectionListNode;
   };
-  txsSeen: Set<string>;
-  port: number | null;
-  myAddress: string | null;
-  server: Listener | null;
-  connectionCounter: number;
-  txsCallback: null | ((tx: AnyTransaction) => void);
-  socketConstructor: SocketConstructor;
-  listenerConstructor: ListenerConstructor;
+  txsSeen: Set<string>; //the txs we've seen, so we don't resend them
+  port: number | null; //what port are we listening on
+  myAddress: string | null; //what is our address (if we know)
+  server: Listener | null; //the listening socket
+  connectionCounter: number; //number of connections we've had, used for IDing
+  txsCallback: null | ((tx: AnyTransaction) => void); //callback for new transactions
+  //the following allows for plugging different transports in
+  socketConstructor: SocketConstructor; //to construct sockets with
+  listenerConstructor: ListenerConstructor; //to construct listeners with
 
   constructor(logName: string, blockchain: Blockchain, socketConstructor: SocketConstructor, listenerConstructor: ListenerConstructor, txsCallback?: (tx: AnyTransaction) => void) {
     this.logName = logName;
@@ -555,7 +580,8 @@ class PropServer {
     this.listenerConstructor = listenerConstructor;
   }
 
-  start(port: number, myAddress: string, peers: string[]) {
+  //start the propagation server, on a port, with optional address and peers to start to connection to
+  start(port: number, myAddress: string | null, peers: string[]) {
     if (this.port !== null) {
       console.log(`Couldn't start BlockchainPub '${this.logName}', already started`);
       return;
@@ -576,6 +602,7 @@ class PropServer {
     }
   }
 
+  //connect to a new peer
   connect(peer: string) {
     if (!this.peerState.has(peer)) {
       this.peerState.set(peer, PEER_STATE.OK);
@@ -585,6 +612,7 @@ class PropServer {
     }
   }
 
+  //add a tx to be sent to peers
   sendTx(transaction: AnyTransaction) {
     const hash = transaction.type.hashToSign(transaction.tx);
 
