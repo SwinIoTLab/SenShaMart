@@ -101,10 +101,25 @@ A library file, and an -app file that drives the library
 
 ## Configuration
 
-System components are configured via a settings file. All setings have defaults in /util/constants.ts. The settings themselves are listed at the top of every -app file, along with what their default settings is. The default settings file is 'settings.json'. Each application's settings is prefixed by which application it belongs to, allowing all settings to coexist in the same file.
+System components are configured via a settings file.
+All setings have defaults in /util/constants.ts.
+The settings themselves are listed at the top of every -app file, along with what their default settings is.
+The default settings file is 'settings.json'.
+Each application's settings is prefixed by which application it belongs to, allowing all settings to coexist in the same file.
 
 ## RDF Store
 
-The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying. To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples. SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
+The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
+To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
+SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
 
-If the app is configured to use a fuseki instance, and it cannot connect during updating the blockchain, it will panic and stop. This helps stop the internal representation of the blockchain from diverging the state stored in the fuseki instance. A hardened version of this utilising the atomic nature of the sqlite3 store used to store persistence information is in the works.
+If the app is configured to use a fuseki instance, and it cannot connect during updating the blockchain, it will panic and stop.
+This helps stop the internal representation of the blockchain from diverging the state stored in the fuseki instance.
+A hardened version of this utilising the atomic nature of the sqlite3 store used to store persistence information is in the works.
+
+## Running
+
+As this project is a typescript node project, be sure to install all dependencies first (`npm install`), and then run the typescript compiler (`tsc`).
+
+The working directory is assumed to be the root of the repository.
+As such, starting the miner can be done with `node ./miner/miner-app.js`, broker with `node ./broker/broker-app.js`, etc.
