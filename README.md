@@ -1,5 +1,5 @@
 # Senshamart
-Senshamart is software to create a blockchain based Internet-of-Things (IoT) distributed system to share, search for, and pay for sensor data.
+Senshamart is a self-managed marketplace for sharing IoT sensors. it is based on a specialized semantic blockchain to ensure self-management for discovering, using, and paying for sensors' data.
 
 ## System Components
 
@@ -8,12 +8,12 @@ A deployed Senshamart System comprises of 5 components
 
 ### Sensor
 
-Sensors create the sensor data that is to be shared, searched for and paid for.
+Sensors create the data that are to be shared, searched for, and paid for.
 
 
 ### Miner
   
-Miners mine blocks onto the senshamart chain.
+Miners mine blocks onto the SenShaMart chain.
 
 
 ### Wallets
@@ -23,14 +23,14 @@ Wallets belong to users of the system. They create, sign, and propagate new tran
 
 ### IoT Applications
   
-Iot Applications are the consumers of sensor data.
+IoT Applications are the consumers of sensor data.
 
 
 ### Brokers
   
-Brokers act as proxies for sensor data and sit inbetween sensors and IoT applications. 
+Brokers act as proxies for sensor data and sit in between sensors and IoT applications. 
 
-Brokers act as access control for the sensors data, only allowing IoT applications owned by users with valid integration transactions to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
+Brokers act as access control for the sensors' data, only allowing IoT applications owned by users with valid integration transactions to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
 Random subsets of brokers can also act as witnesses of integrations.
 These witnessing brokers can then vote on whether the integration completed successfully, or vote to refund the user if they believe the sensor misbehaved in some way.
 
@@ -49,10 +49,10 @@ These witnessing brokers can then vote on whether the integration completed succ
   This transaction pays for sensor data
 
 ### Commit
-  This transaction is a witness voting that an integration has completed successfully
+  This transaction is a witness voting that an integration has been completed successfully
 
 ### Compensation
-  This transaction is a witness voting that an integration has completed but the sensor misbehaved and the buyer should be compensated
+  This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
 
 ## Repository Structure
 
@@ -60,7 +60,7 @@ The repository is split into multiple parts
 
 - blockchain/
 
-  This is where the logic for manging the blockchain is stored.
+  This is where the logic for managing the blockchain is stored.
   The blockchain logic is in blockchain.ts, and the blocks are in block.ts.
   Each type of transaction has its own source file.
   Utility types and constant strings are stored in transaction_base, transaction_wrapper, and uris.
