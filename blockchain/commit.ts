@@ -1,40 +1,45 @@
 import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
 import { type Transaction, type TransactionWrapper } from './transaction_base.js';
-import Integration from './integration.js';
 
 const integrationValidation = {
   input: ChainUtil.validateIsPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1)
 };
 
+const outputValidation = {
+  i: ChainUtil.createValidateIsIntegerWithMin(0),
+  commitRatio: ChainUtil.createValidateIsNumberWithMinMax(0, 1)
+};
+
 const baseValidation = {
   input: ChainUtil.validateIsPublicKey,
-  brokerName: ChainUtil.validateIsString,
   integration: ChainUtil.createValidateObject(integrationValidation),
+  outputs: ChainUtil.createValidateArray(ChainUtil.createValidateObject(outputValidation)),
   signature: ChainUtil.validateIsSignature
+};
+
+type Output = {
+  i: number; //the index in the integration outputs this commit is referring to
+  commitRatio: number; //the ratio to commit. 0 is a full refund, 1 is a full commit
 };
 
 class Commit implements Transaction {
   input: string;
-  brokerName: string;
   integration: {
     input: string;
     counter: number;
   };
+  outputs: Output[];
+  
   signature: string;
-  constructor(senderKeyPair: KeyPair, brokerName: string, integration: Integration) {
-    const verifyIntegration = Integration.verify(integration);
-
-    if (isFailure(verifyIntegration)) {
-      throw new Error(verifyIntegration.reason);
-    }
+  constructor(senderKeyPair: KeyPair, integrationInput: string, integrationCounter: number, outputs: Output[]) {
 
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
-    this.brokerName = brokerName;
     this.integration = {
-      input: integration.input,
-      counter: integration.counter
+      input: integrationInput,
+      counter: integrationCounter
     };
+    this.outputs = outputs;
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.hashToSign(this));
 
     const verification = Commit.verify(this);
@@ -46,8 +51,9 @@ class Commit implements Transaction {
   static hashToSign(transaction: Commit): string {
     return ChainUtil.hash([
       transaction.input,
-      transaction.brokerName,
-      transaction.integration]);
+      transaction.integration.counter,
+      transaction.integration.input,
+      transaction.outputs]);
   }
 
   static verify(transaction: Commit): Result {

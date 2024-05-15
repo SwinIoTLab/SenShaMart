@@ -5,7 +5,6 @@ import BrokerRegistration from './broker-registration.js';
 import SensorRegistration from './sensor-registration.js';
 import Integration from './integration.js';
 import Payment from './payment.js';
-import Compensation from './compensation.js';
 import Commit from './commit.js';
 
 /*
@@ -51,8 +50,6 @@ const baseValidation = {
     ChainUtil.createValidateArray(BrokerRegistration.verify)),
   integrations: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(Integration.verify)),
-  compensations: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(Compensation.verify)),
   payments: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(Payment.verify)),
   commits: ChainUtil.createValidateOptional(
@@ -80,10 +77,9 @@ class Block {
   sensorRegistrations?: SensorRegistration[];
   brokerRegistrations?: BrokerRegistration[];
   integrations?: Integration[];
-  compensations?: Compensation[];
   commits?: Commit[];
 
-  constructor(timestamp: number, lastHash: string, hash: string, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, compensations: Compensation[] | null, commits: Commit[] | null, nonce: number, difficulty: number) {
+  constructor(timestamp: number, lastHash: string, hash: string, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, commits: Commit[] | null, nonce: number, difficulty: number) {
     this.timestamp = timestamp;
     this.lastHash = lastHash;
     this.hash = hash;
@@ -99,9 +95,6 @@ class Block {
     }
     if (integrations !== null && integrations.length !== 0) {
       this.integrations = integrations;
-    }
-    if (compensations !== null && compensations.length !== 0) {
-      this.compensations = compensations;
     }
     if (commits !== null && commits.length !== 0) {
       this.commits = commits;
@@ -130,21 +123,17 @@ class Block {
     return getData(block.integrations);
   }
 
-  static getCompensations(block: Block): Compensation[] {
-    return getData(block.compensations);
-  }
-
   static getCommits(block: Block): Commit[] {
     return getData(block.commits);
   }
 
   //the initial block
   static genesis(): Block {
-    return new this(0, '-----', 'f1r57-h45h', '', null, null, null, null, null, null, 0, MINE_DIFFICULTY);
+    return new this(0, '-----', 'f1r57-h45h', '', null, null, null, null, null, 0, MINE_DIFFICULTY);
   }
 
   //hash the individual components of a block
-  static hash(timestamp: number, lastHash: string, reward: string, payments: Payment[]|null, sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations:Integration[], compensations:Compensation[] | null, commits:Commit[] | null, nonce: number, difficulty: number): string {
+  static hash(timestamp: number, lastHash: string, reward: string, payments: Payment[]|null, sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations:Integration[], commits:Commit[] | null, nonce: number, difficulty: number): string {
     //backwards compatible hashing:
     //if we add a new type of thing to the chain, the hash of previous blocks won't change as it will be undefined
     let hashing = `${timestamp}${lastHash}${nonce}${difficulty}${reward}`;
@@ -152,7 +141,6 @@ class Block {
     hashing = concatIfNotUndefined(hashing, 'sensorRegistrations', sensorRegistrations);
     hashing = concatIfNotUndefined(hashing, 'brokerRegistrations', brokerRegistrations);
     hashing = concatIfNotUndefined(hashing, 'integrations', integrations);
-    hashing = concatIfNotUndefined(hashing, 'compensations', compensations);
     hashing = concatIfNotUndefined(hashing, 'commits', commits);
 
     return ChainUtil.hash(hashing).toString();
@@ -168,7 +156,6 @@ class Block {
       block.sensorRegistrations,
       block.brokerRegistrations,
       block.integrations,
-      block.compensations,
       block.commits,
       block.nonce,
       block.difficulty);
@@ -208,7 +195,7 @@ class Block {
   }
 
   //simple blocking implementation of mining a block, used for debugging
-  static debugMine(lastBlock: Block, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, compensations: Compensation[] | null, commits: Commit[] | null): Block {
+  static debugMine(lastBlock: Block, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, commits: Commit[] | null): Block {
     const timestamp = lastBlock.timestamp + MINE_RATE;
     const difficulty = Block.adjustDifficulty(lastBlock, timestamp);
 
@@ -225,7 +212,6 @@ class Block {
         sensorRegistrations,
         brokerRegistrations,
         integrations,
-        compensations,
         commits,
         nonce,
         difficulty);
@@ -240,7 +226,6 @@ class Block {
       sensorRegistrations,
       brokerRegistrations,
       integrations,
-      compensations,
       commits,
       nonce,
       difficulty);

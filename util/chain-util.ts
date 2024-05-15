@@ -1,7 +1,7 @@
 import { generateKeyPairSync, createPublicKey, type KeyObject, createPrivateKey, createSign, createVerify, createHash } from 'node:crypto';
 import { SENSHAMART_URI_PREFIX } from './constants.js';
 
-export { ChainUtil, type ResultSuccess, type ResultFailure, type Result, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure, resultFromError };
+export { ChainUtil, type ResultSuccess, type ResultValue, type ResultFailure, type Result, type ValuedResult, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure, resultFromError };
 
 const EC_CURVE_ALG = 'secp256k1';
 const HASH_ALG = 'sha256';
@@ -31,6 +31,10 @@ interface ResultSuccess {
   result: true;
 }
 
+interface ResultValue<T> extends ResultSuccess {
+  value: T;
+}
+
 interface ResultFailure {
   result: false;
   reason: string;
@@ -41,6 +45,8 @@ function isFailure(res: ResultSuccess | ResultFailure): res is ResultFailure {
 }
 
 type Result = ResultSuccess | ResultFailure;
+
+type ValuedResult<T> = ResultValue<T> | ResultFailure;
 
 function resultFromError(err: Error | null): Result {
   if (err === null) {
@@ -336,6 +342,44 @@ class ChainUtil {
   static createValidateIsIntegerWithMin(minimum: number): ValidatorI {
     return (t) => {
       return ChainUtil.validateIsIntegerWithMin(t, minimum);
+    };
+  }
+
+  //includes minimum and maximum
+  static validateIsNumberWithMinMax(t: unknown, minimum: number, maximum: number): Result {
+    if (typeof t === "undefined") {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
+    if (typeof t !== 'number') {
+      return {
+        result: false,
+        reason: "Is not number"
+      };
+    }
+    if (t < minimum) {
+      return {
+        result: false,
+        reason: "Is below minimum"
+      };
+    }
+    if (t > maximum) {
+      return {
+        result: false,
+        reason: "Is above maximum"
+      };
+    }
+    return {
+      result: true
+    };
+  }
+
+  //includes minimum and maximum
+  static createValidateIsNumberWithMinMax(minimum: number, maximum: number): ValidatorI {
+    return (t) => {
+      return ChainUtil.validateIsNumberWithMinMax(t, minimum, maximum);
     };
   }
 

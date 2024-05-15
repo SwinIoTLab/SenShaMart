@@ -5,7 +5,6 @@ import Payment from '../blockchain/payment.js';
 import Integration from '../blockchain/integration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
-import Compensation from '../blockchain/compensation.js';
 import Commit from '../blockchain/commit.js';
 import { type Transaction, type TransactionClass } from '../blockchain/transaction_base.js';
 import type Blockchain from '../blockchain/blockchain.js';
@@ -34,7 +33,7 @@ function mine(miner: Miner) {
     miner.txs.sensorRegistration.mining.length +
     miner.txs.brokerRegistration.mining.length +
     miner.txs.integration.mining.length +
-    miner.txs.compensation.mining.length;
+    miner.txs.commit.mining.length;
 
   for (let i = 0; i < ITERATIONS; ++i) {
     const hash = Block.hash(
@@ -45,7 +44,6 @@ function mine(miner: Miner) {
       miner.txs.sensorRegistration.mining,
       miner.txs.brokerRegistration.mining,
       miner.txs.integration.mining,
-      miner.txs.compensation.mining,
       miner.txs.commit.mining,
       miner.nonce,
       difficulty);
@@ -64,7 +62,6 @@ function mine(miner: Miner) {
         miner.txs.sensorRegistration.mining,
         miner.txs.brokerRegistration.mining,
         miner.txs.integration.mining,
-        miner.txs.compensation.mining,
         miner.txs.commit.mining,
         miner.nonce,
         difficulty),
@@ -93,14 +90,15 @@ function moveValidTxsToMining<Tx extends Transaction>(miner: Miner, txInfo: TxIn
   txInfo.mining = [];
   for (const tx of txInfo.pool) {
     txInfo.mining.push(tx);
-    if (!miner.blockchain.wouldBeValidBlock(miner.reward,
+    const res = miner.blockchain.wouldBeValidBlock(miner.reward,
       miner.txs.payment.mining,
       miner.txs.sensorRegistration.mining,
       miner.txs.brokerRegistration.mining,
       miner.txs.integration.mining,
-      miner.txs.compensation.mining,
-      miner.txs.commit.mining)) {
+      miner.txs.commit.mining);
 
+      if(isFailure(res)) {
+      console.log(`Tx wouldn't lead to a valid block: ${res.reason}`);
       txInfo.mining.pop();
     }
   }
@@ -120,8 +118,9 @@ function startMine(miner: Miner) {
   moveValidTxsToMining(miner, miner.txs.sensorRegistration);
   moveValidTxsToMining(miner, miner.txs.brokerRegistration);
   moveValidTxsToMining(miner, miner.txs.integration);
-  moveValidTxsToMining(miner, miner.txs.compensation);
   moveValidTxsToMining(miner, miner.txs.commit);
+
+  console.log(`Started mining ${miner.txs.commit.mining.length} commits`);
 
   miner.nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
   miner.state = MINER_STATE.RUNNING;
@@ -156,7 +155,6 @@ type Txs = {
   sensorRegistration: TxInfo<SensorRegistration>,
   brokerRegistration: TxInfo<BrokerRegistration>,
   integration: TxInfo<Integration>,
-  compensation: TxInfo<Compensation>
   commit: TxInfo<Commit>
 };
 
@@ -212,7 +210,6 @@ class Miner {
       sensorRegistration: { pool: [], mining: [] },
       brokerRegistration: { pool: [], mining: [] },
       integration: { pool: [], mining: [] },
-      compensation: { pool: [], mining: [] },
       commit: { pool: [], mining: [] }
     };
 
@@ -233,9 +230,6 @@ class Miner {
   addIntegration(tx: Integration): Result {
     return addImpl(this, tx, Integration, this.txs.integration);
   }
-  addCompensation(tx: Compensation): Result {
-    return addImpl(this, tx, Compensation, this.txs.compensation);
-  }
   addCommit(tx: Commit): Result {
     return addImpl(this, tx, Commit, this.txs.commit);
   }
@@ -246,7 +240,6 @@ class Miner {
     clearFromBlock(this.txs.sensorRegistration, Block.getSensorRegistrations(block));
     clearFromBlock(this.txs.brokerRegistration, Block.getBrokerRegistrations(block));
     clearFromBlock(this.txs.integration, Block.getIntegrations(block));
-    clearFromBlock(this.txs.compensation, Block.getCompensations(block));
     clearFromBlock(this.txs.commit, Block.getCommits(block));
 
     this.state = MINER_STATE.INTERRUPTED;

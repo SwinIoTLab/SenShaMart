@@ -43,8 +43,8 @@ import Payment from '../blockchain/payment.js';
 import Integration from '../blockchain/integration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
+import Commit from '../blockchain/commit.js';
 import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
-import Compensation from '../blockchain/compensation.js';
 //import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
 
@@ -101,8 +101,8 @@ const newTxCb = function (tx: AnyTransaction): void {
     miner.addBrokerRegistration(tx.tx);
   } else if (isTransactionType(tx, Integration)) {
     miner.addIntegration(tx.tx);
-  } else if (isTransactionType(tx, Compensation)) {
-    miner.addCompensation(tx.tx);
+  } else if (isTransactionType(tx, Commit)) {
+    miner.addCommit(tx.tx);
   } else {
     console.log("Unknown tx through prop server. Name: '" + tx.type.txName() + "'");
   }
@@ -218,8 +218,8 @@ app.post('/SensorRegistration', (req, res) => {
   }
 });
 
-app.post('/Compensation', (req, res) => {
-  const addRes = miner.addCompensation(req.body);
+app.post('/Commit', (req, res) => {
+  const addRes = miner.addCommit(req.body);
   if (isFailure(addRes)) {
     res.json(addRes.reason);
   } else {

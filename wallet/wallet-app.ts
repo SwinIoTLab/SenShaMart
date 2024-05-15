@@ -5,7 +5,7 @@ import { PropServer as BlockchainProp, type SocketConstructor } from '../network
 
 import Wallet from './wallet.js';
 import Config from '../util/config.js';
-import { ChainUtil, isFailure } from '../util/chain-util.js';
+import { ChainUtil, isFailure, type ResultSuccess } from '../util/chain-util.js';
 
 import { Blockchain, type IntegrationExpanded } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
@@ -247,6 +247,13 @@ app.post('/Payment/Register', (req, res) => {
 type IntegrationAllRes = {
   [index: string]: Integration;
 }
+
+type IntegrationUsesOwnedByRes = ResultSuccess & {
+  value: {
+    [index: string]: IntegrationExpanded;
+  };
+}
+
 app.get('/Integration/All', (_req, res) => {
   const returning: IntegrationAllRes = {};
   for (const [key, integration] of blockchain.data.INTEGRATION) {
@@ -282,9 +289,6 @@ app.post('/Integration/Register', (req, res) => {
 const integrationUsesOwnedByValidators = {
   owner: ChainUtil.validateIsPublicKey
 } as const;
-type IntegrationUsesOwnedByRes = {
-  [index: string]: IntegrationExpanded;
-}
 app.post('/Integration/UsesOwnedBy', (req, res) => {
   const validateRes = ChainUtil.validateObject(req.body, integrationUsesOwnedByValidators);
 
@@ -296,12 +300,17 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
     return;
   }
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {},
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
+    console.log(`integration: ${Integration.hashToSign(integration.base)} with ${integration.base.outputs.length} outputs`);
     for (const output of integration.base.outputs) {
       const foundSensor = blockchain.getSensorInfo(output.sensorName);
-      if (foundSensor !== null && foundSensor.input === req.body.owner) {
-        returning[key] = integration.base;
+      console.log(`foundSensor: ${foundSensor}, with input = ${foundSensor !== null ? foundSensor.input : null}`);
+      if (foundSensor !== null && foundSensor.input === req.body.pubKey) {
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -310,23 +319,30 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
 });
 
 app.get('/Integration/Ours', (_req, res) => {
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
     if (integration.base.input === wallet.publicKey) {
-      returning[key] = integration.base;
+      returning.value[key] = integration.base;
     }
   }
   res.json(returning);
 });
 
 app.get('/Integration/UsesOurSensors', (_req, res) => {
-
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {},
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
+    console.log(`integration: ${Integration.hashToSign(integration.base)} with ${integration.base.outputs.length} outputs`);
     for (const output of integration.base.outputs) {
       const foundSensor = blockchain.getSensorInfo(output.sensorName);
+      console.log(`foundSensor: ${foundSensor}, with input = ${foundSensor !== null ? foundSensor.input : null}`);
       if (foundSensor !== null && foundSensor.input === wallet.publicKey) {
-        returning[key] = integration.base;
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -336,12 +352,15 @@ app.get('/Integration/UsesOurSensors', (_req, res) => {
 
 app.get('/Integration/OurBrokersBrokering', (_req, res) => {
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
     for (const output of integration.base.outputsExtra) {
       const foundBroker = blockchain.getBrokerInfo(output.broker);
       if (foundBroker !== null && foundBroker.input === wallet.publicKey) {
-        returning[key] = integration.base;
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -351,12 +370,15 @@ app.get('/Integration/OurBrokersBrokering', (_req, res) => {
 
 app.get('/Integration/OurBrokersWitnessing', (_req, res) => {
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (const witness of Object.keys(integration.base.witnesses)) {
-      const foundBroker = blockchain.getBrokerInfo(witness);
-      if (foundBroker !== null && foundBroker.input === wallet.publicKey) {
-        returning[key] = integration.base;
+    for (let i = 0; i < integration.base.outputs.length; i++) {
+      const extra = integration.base.outputsExtra[i];
+      if (Object.hasOwn(extra.witnesses, wallet.publicKey)) {
+        returning.value[key] = integration.base;
         break;
       }
     }

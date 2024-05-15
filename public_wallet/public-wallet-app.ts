@@ -1,5 +1,6 @@
 //WALLET
-import express from 'express';
+import type { RouteParameters } from 'express-serve-static-core';
+import { default as express } from 'express';
 import bodyParser from 'body-parser';
 import { PropServer as BlockchainProp, type SocketConstructor } from '../network/blockchain-prop.js';
 
@@ -7,7 +8,7 @@ import Wallet from './public-wallet.js';
 import Config from '../util/config.js';
 import { ChainUtil, isFailure, type ResultSuccess } from '../util/chain-util.js';
 
-import { Blockchain, type IntegrationExpanded } from '../blockchain/blockchain.js';
+import { Blockchain, type IntegrationExpanded, INTEGRATION_STATE} from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 //import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -16,7 +17,8 @@ import {
   DEFAULT_PUBLIC_WALLET_UI_BASE,
   DEFAULT_PORT_PUBLIC_WALLET_API,
   DEFAULT_PORT_PUBLIC_WALLET_CHAIN,
-  DEFAULT_PORT_MINER_CHAIN
+  DEFAULT_PORT_MINER_CHAIN,
+  INITIAL_BALANCE
 } from '../util/constants.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
@@ -81,14 +83,20 @@ const add_static_file = (url: string, location: string, type: string) => {
 
 add_static_file('/wallet.js', uiBaseLocation + 'public-wallet.js', '.js');
 add_static_file('/sensorList.js', uiBaseLocation + 'sensorList.js', '.js');
+add_static_file('/brokerList.js', uiBaseLocation + 'brokerList.js', '.js');
 add_static_file('/info.js', uiBaseLocation + 'info.js', '.js');
 add_static_file('/wallet.html', uiBaseLocation + 'public-wallet.html', '.html');
+add_static_file('/n3.js', uiBaseLocation + 'n3.js', '.js');
 
 
 app.post('/ChainServer/connect', (req, res) => {
   chainServer.connect(req.body.url);
   res.json("Connecting");
 });
+
+type PubKeyedBody = {
+  pubKey: string;
+};
 
 app.get('/gen-key', (_req, res) => {
   res.json({
@@ -98,39 +106,57 @@ app.get('/gen-key', (_req, res) => {
 });
 
 app.post('/PubKeyFor', (req, res) => {
-  //try {
+  try {
     res.json({
       result: true,
       value: ChainUtil.deserializeKeyPair(req.body.keyPair).pubSerialized
     });
-  //} catch (err) {
-  //  res.json({
-  //   result: false,
-  //    reason: err.message
-  //  });
-  //}
+  } catch (err) {
+    res.json({
+     result: false,
+      reason: err.message
+    });
+  }
 });
 
 app.get('/chain-length', (_req, res) => {
-  res.json(blockchain.length());
+  res.json({
+    result: true,
+    value: blockchain.length()
+  });
 });
-type BalanceGetRes = {
-  [index: string]: number
+type BalanceGetRes = ResultSuccess & {
+  default: number;
+  value: {
+    [index: string]: number;
+  };
 };
-app.post('/Balance', (req, res) => {
+app.post<string, RouteParameters<string>, BalanceGetRes, PubKeyedBody>('/Balance', (req, res) => {
   const balance = blockchain.getBalanceCopy(req.body.pubKey);
-  res.json(balance);
+
+  const returning: BalanceGetRes = {
+    result: true,
+    default: INITIAL_BALANCE,
+    value: {}
+  };
+
+  returning.value[req.body.pubKey] = balance;
+
+  res.json(returning);
 });
-app.get('/Balances', (_req, res) => {
-  const returning: BalanceGetRes = {};
+app.get<string, RouteParameters<string>, BalanceGetRes, PubKeyedBody>('/Balances', (_req, res) => {
+  const returning: BalanceGetRes = {
+    result: true,
+    default: INITIAL_BALANCE,
+    value: {}
+  };
   for (const [key, amount] of blockchain.data.WALLET) {
-    returning[key] = amount.base.balance;
+    returning.value[key] = amount.base.balance;
   }
   res.json(returning);
 });
 
 app.post('/Payment/Register', (req, res) => {
-  console.log(JSON.stringify(req.body));
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
     const rewardAmount = req.body.rewardAmount;
@@ -161,13 +187,18 @@ app.post('/Payment/Register', (req, res) => {
 //};
 
 //Integration
-type IntegrationAllRes = {
-  [index: string]: Integration;
+type IntegrationAllRes = ResultSuccess & {
+  value: {
+    [index: string]: Integration;
+  };
 }
 app.get('/Integration/All', (_req, res) => {
-  const returning: IntegrationAllRes = {};
+  const returning: IntegrationAllRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    returning[key] = integration.base;
+    returning.value[key] = integration.base;
   }
   res.json(returning);
 });
@@ -202,8 +233,10 @@ app.post('/Integration/Register', (req, res) => {
 const integrationUsesOwnedByValidators = {
   pubKey: ChainUtil.validateIsPublicKey
 } as const;
-type IntegrationUsesOwnedByRes = {
-  [index: string]: IntegrationExpanded;
+type IntegrationUsesOwnedByRes = ResultSuccess & {
+  value: {
+    [index: string]: IntegrationExpanded;
+  };
 }
 app.post('/Integration/UsesOwnedBy', (req, res) => {
   const validateRes = ChainUtil.validateObject(req.body, integrationUsesOwnedByValidators);
@@ -216,14 +249,15 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
     return;
   }
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {},
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    console.log(`integration: ${Integration.hashToSign(integration.base)} with ${integration.base.outputs.length} outputs`);
     for (const output of integration.base.outputs) {
       const foundSensor = blockchain.getSensorInfo(output.sensorName);
-      console.log(`foundSensor: ${foundSensor}, with input = ${foundSensor !== null ? foundSensor.input : null}`);
       if (foundSensor !== null && foundSensor.input === req.body.pubKey) {
-        returning[key] = integration.base;
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -232,10 +266,13 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
 });
 
 app.post('/Integration/OwnedBy', (req, res) => {
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    if (integration.base.input === req.body.pubKey) {
-      returning[key] = integration.base;
+    if (integration.base.state === INTEGRATION_STATE.RUNNING && integration.base.input === req.body.pubKey) {
+      returning.value[key] = integration.base;
     }
   }
   res.json(returning);
@@ -243,12 +280,15 @@ app.post('/Integration/OwnedBy', (req, res) => {
 
 app.get('/Integration/OurBrokersBrokering', (req, res) => {
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
     for (const output of integration.base.outputsExtra) {
       const foundBroker = blockchain.getBrokerInfo(output.broker);
       if (foundBroker !== null && foundBroker.input === req.body.pubKey) {
-        returning[key] = integration.base;
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -258,12 +298,15 @@ app.get('/Integration/OurBrokersBrokering', (req, res) => {
 
 app.get('/Integration/OurBrokersWitnessing', (req, res) => {
 
-  const returning: IntegrationUsesOwnedByRes = {};
+  const returning: IntegrationUsesOwnedByRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (const witness of Object.keys(integration.base.witnesses)) {
-      const foundBroker = blockchain.getBrokerInfo(witness);
-      if (foundBroker !== null && foundBroker.input === req.body.pubKey) {
-        returning[key] = integration.base;
+    for (let i = 0; i < integration.base.outputs.length; i++) {
+      const extra = integration.base.outputsExtra[i];
+      if (Object.hasOwn(extra.witnesses, req.body.pubKey)) {
+        returning.value[key] = integration.base;
         break;
       }
     }
@@ -272,15 +315,21 @@ app.get('/Integration/OurBrokersWitnessing', (req, res) => {
 });
 
 //BrokerRegistration
-type BrokerRegistrationGetRes = {
-  [index: string]: BrokerRegistration & {
-    hash: string;
+type BrokerRegistrationGetRes = ResultSuccess & {
+  value: {
+    [index: string]: BrokerRegistration & {
+      hash: string;
+    };
   };
 }
+
 app.get('/BrokerRegistration/All', (_req, res) => {
-  const returning: BrokerRegistrationGetRes = {};
+  const returning: BrokerRegistrationGetRes = {
+    result: true,
+    value: {},
+  };
   for (const [key, value] of blockchain.data.BROKER) {
-    returning[key] = Object.assign({
+    returning.value[key] = Object.assign({
       hash: BrokerRegistration.hashToSign(value.base)
     }, value.base);
   }
@@ -347,36 +396,40 @@ app.post('/BrokerRegistration/OwnedBy', (req, res) => {
     return;
   }
 
-  const returning: BrokerRegistrationGetRes = {};
+  const returning: BrokerRegistrationGetRes = {
+    result: true,
+    value: {}
+  };
 
   for (const [key, value] of blockchain.data.BROKER) {
     if (value.base.input !== req.body.pubKey) {
       continue;
     }
-    returning[key] = Object.assign({
+    returning.value[key] = Object.assign({
       hash: BrokerRegistration.hashToSign(value.base)
     }, value.base);
   }
   res.json(returning);
-  console.log("/BrokerRegistration/OwnedBy called");
-  console.log(`Returned ${Object.entries(returning).length} brokers`);
 });
 //SensorRegistration
-type SensorRegistrationGetRes = {
-  [index: string]: SensorRegistration & {
-    hash: string;
+type SensorRegistrationGetRes = ResultSuccess & {
+  value: {
+    [index: string]: SensorRegistration & {
+      hash: string;
+    };
   };
 }
 app.get('/SensorRegistration/All', (_req, res) => {
-  const returning: SensorRegistrationGetRes = {};
+  const returning: SensorRegistrationGetRes = {
+    result: true,
+    value: {}
+  };
   for (const [key, value] of blockchain.data.SENSOR) {
-    returning[key] = Object.assign({
+    returning.value[key] = Object.assign({
       hash: SensorRegistration.hashToSign(value.base)
     }, value.base);
   }
   res.json(returning);
-  console.log("/SensorRegistration/All called");
-  console.log(`Returned ${Object.entries(returning).length} sensors`);
 });
 
 const sensorRegistrationRegisterValidators = {
@@ -445,19 +498,20 @@ app.post('/SensorRegistration/OwnedBy', (req, res) => {
     return;
   }
 
-  const returning: SensorRegistrationGetRes = {};
+  const returning: SensorRegistrationGetRes = {
+    result: true,
+    value: {}
+  };
 
   for (const [key, value] of blockchain.data.SENSOR) {
     if (value.base.input !== req.body.pubKey) {
       continue;
     }
-    returning[key] = Object.assign({
+    returning.value[key] = Object.assign({
       hash: SensorRegistration.hashToSign(value.base)
     }, value.base);
   }
   res.json(returning);
-  console.log("/SensorRegistration/OwnedBy called");
-  console.log(`Returned ${Object.entries(returning).length} sensors`);
 });
 
 //TODO: probably want to move query logic into blockchain
@@ -504,9 +558,22 @@ app.post('/sparql', (req, res) => {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
     },
     body: 'query=' + encodeURIComponent(req.body.query)
-  }).then(res => {
-    return res.json();
-  }).then((fusekiRes: FusekiQueryRes) => {
+  }).then(queryRes => {
+    console.log("Query status: " + queryRes.status);
+    if (queryRes.status === 400) {
+      return queryRes.text();
+    } else {
+      return queryRes.json();
+    }
+  }).then((fusekiRes: FusekiQueryRes | string) => {
+    if (typeof (fusekiRes) == "string") {
+      res.json({
+        result: false,
+        reason: fusekiRes
+      });
+      return;
+    }
+
     const returning: QueryResult = {
       result: true,
       headers: fusekiRes.head.vars,
@@ -522,10 +589,10 @@ app.post('/sparql', (req, res) => {
     }
 
     res.json(returning);
-  }).catch((err) => {
+  }).catch((err: Error) => {
     res.json({
       result: false,
-      reason: err
+      reason: err.message
     });
   });
 });
@@ -541,3 +608,4 @@ blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
   app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
 });
 
+export type { IntegrationAllRes, IntegrationUsesOwnedByRes, BrokerRegistrationGetRes, SensorRegistrationGetRes };

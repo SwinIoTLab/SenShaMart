@@ -6,7 +6,7 @@
     "preserveConstEnums": true,
     "verbatimModuleSyntax": true,
     "sourceMap": true,
-    "target": "ES2015"
+    "target": "ES2022"
   },
   "include": [
     "blockchain/*.ts",
@@ -17,6 +17,7 @@
     "broker/*.ts",
     "keygen/*.ts",
     "ui/*.ts",
-    "public_wallet/*.ts"
+    "public_wallet/*.ts",
+    "testing/*.ts"
   ]
 }

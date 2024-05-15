@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<body id="body">
+  <div id="operationStatus">LOADING</div>
+  <div id="noKeyPage" style="text-align:center">
+    <div>
+      <span>Please enter your keyPair:</span>
+    </div>
+    <div>
+      <input id="noKeyKeyPair" />
+    </div>
+    <div>
+      <span>Or</span>
+    </div>
+    <div>
+      <button id="noKeyGenKeyGo">Generate a New Key</button>
+    </div>
+  </div>
+  <div id="keyPage" style="display:none;">
+    <div id="refreshStatus">LOADING</div>
+    <hr />
+    <div>
+      <span>Wallet public key: </span><span id="publicKey">LOADING</span>
+    </div>
+    <div style="display:flex">
+      <span>Wallet keypair: </span><input id="privateKey" style="flex-grow:1;"/>
+    </div>
+    <div>
+      <span>Current wallet balance: </span><span id="coinCount">0</span>
+    </div>
+    <div>
+      <span>Current chain length: </span><span id="chainDepth">LOADING</span>
+    </div>
+    <hr />
+    <div style="display:flex">
+      <button id="expertButton">Enable Expert Mode</button>
+      <button id="genKeyButton">Generate Key</button>
+      <button id="yourBrokersButton">Your Registered Brokers</button>
+      <button id="registerBrokerButton">Register a Broker</button>
+      <button id="allBrokersButton">All Brokers</button>
+      <button id="registerSensorButton">Register a Sensor</button>
+      <button id="sensorsButton">Your Registered Sensors</button>
+      <button id="integrationUsesOurSensorsButton">Current Integrations With Your Sensors</button>
+      <button id="freeformQueryButton">Query Sensors</button>
+      <button id="integrateButton">Integrate With Sensors</button>
+      <button id="integrationsButton">Current Integrations By You</button>
+    </div>
+    <hr />
+    <div id="genKeyTab">
+      <div>
+        <button id="genKeyGo">Generate New Key Pair</button>
+      </div>
+      <div>
+        <span>Key Pair:</span>
+      </div>
+      <div>
+        <textarea id="genKeyKeyPair" readonly style="resize:both"></textarea>
+      </div>
+    </div>
+    <div id="registerBrokerTab">
+      <div style="display:grid; grid-template-columns: auto 1fr">
+        <span>Name:</span><input id="registerBrokerName" required />
+        <span>Endpoint:</span><input id="registerBrokerEndpoint" required />
+        <span>Extra metadata:</span><span><button id="registerBrokerClearMetadata">Clear</button><input id="registerBrokerMetadata" type="file" value="" /></span>
+        <span>Reward amount:</span><input id="registerBrokerReward" type="number" min="0" value="0" required />
+        <button id="registerBrokerGo">Create</button>
+      </div>
+      <div id="registerBrokerResultDiv" style="display:none">
+        <h1>
+          Raw Broker Registration Transaction:
+        </h1>
+        <label id="registerBrokerResult"></label>
+      </div>
+    </div>
+    <div id="registerSensorTab">
+      <div style="display:grid; grid-template-columns: auto 1fr">
+        <span>Name:</span><input id="registerName" required />
+        <span>Cost Per Minute:</span><input id="registerCPM" type="number" min="0" value="1" required />
+        <span>Cost Per KB:</span><input id="registerCPKB" type="number" min="0" value="1" required />
+        <span>Broker:</span><select id="registerBroker" required></select>
+        <span>Extra metadata:</span><span><button id="registerClearMetadata">Clear</button><input id="registerMetadata" type="file" value="" /></span>
+        <span>Reward amount:</span><input id="registerReward" type="number" min="0" value="0" required />
+        <button id="registerGo">Create</button>
+      </div>
+      <div id="registerSensorResultDiv" style="display:none">
+        <h1>
+          Raw Sensor Registration Transaction:
+        </h1>
+        <label id="registerResult"></label>
+      </div>
+    </div>
+    <div id="integrationUsesOurSensorsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+      <div style="border: 1px">
+        <div>
+          Integrations:
+        </div>
+        <div>
+          <div>
+            <select id="integrationUsesOurSensorsIntegrations" style="width:100%" size="10">
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="integrationUsesOurSensorsInfo" style="display:block">
+        <div style="display: grid; grid-template-columns: auto 1fr">
+          <span>Started: </span>
+          <input id="integrationUsesOurSensorsInfoStarted" disabled />
+          <span>Hash: </span>
+          <input id="integrationUsesOurSensorsInfoHash" disabled />
+          <span>Witness Count: </span>
+          <input id="integrationUsesOurSensorsInfoWitnessCount" disabled />
+        </div>
+        <div>Sensors</div>
+        <div style="height:25vh;overflow:hidden;overflow-y:scroll">
+          <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+            <thead style="top:0;position:sticky;background-color:white;z-index:2">
+              <tr>
+                <th>Sensor Name</th>
+                <th>Amount</th>
+                <th>Cost per KB</th>
+                <th>Cost per Minute</th>
+                <th>Broker</th>
+              </tr>
+            </thead>
+            <tbody id="integrationUsesOurSensorsOutputBody"></tbody>
+          </table>
+        </div>
+        <div>Witnesses</div>
+        <div style="height:25vh;overflow:hidden;overflow-y:scroll">
+          <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+            <thead style="top:0;position:sticky;background-color:white;z-index:2">
+              <tr>
+                <th>Broker Name</th>
+              </tr>
+            </thead>
+            <tbody id="integrationUsesOurSensorsWitnessesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="freeformQueryTab">
+      <div>Query:</div>
+      <select id="freeformSelect" style="width:100%"></select>
+      <div>
+        <textarea id="freeformQuery" style="width:100%;resize:vertical" spellcheck="false"></textarea>
+      </div>
+      <div>
+        <button id="freeformGo">Go!</button>
+      </div>
+      <div>
+        <button id="freeformAdd" disabled>Add Sensor Results To Integrate Tab</button>
+      </div>
+      <div>
+        <table style="border-collapse: collapse">
+          <thead id="freeformHead"></thead>
+          <tbody id="freeformBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="integrateTab">
+      <div style="display:grid;grid-template-columns:1fr 1fr">
+        <div>
+          <span>Selected Sensors: </span>
+          <select id="integrateSensors" style="width:100%" size="10"></select>
+        </div>
+        <div id="integrateInfo" style="display:none">
+          <div style="display:grid;grid-template-columns: auto 1fr">
+            <span>Name: </span>
+            <input id="integrateInfoName" disabled />
+            <span>Cost Per Minute: </span>
+            <input id="integrateInfoCPM" disabled />
+            <span>Cost Per KB: </span>
+            <input id="integrateInfoCPKB" disabled />
+            <span>Broker: </span>
+            <input id="integrateInfoBroker" disabled />
+            <span id="integrateInfoAmountLabel">Amount: </span>
+            <input id="integrateInfoAmount" type="number" min="1" value="1" />
+          </div>
+          <button style="width:100%" id="integrateDeselect">Deselect This Sensor</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:auto 1fr">
+        <span>Reward Amount:</span>
+        <input id="integrateReward" type="number" min="0" value="0" />
+      </div>
+      <button id="integrateGo">Integrate</button>
+      <div>
+        <h1>
+          Connection Info:
+        </h1>
+        <table style="border-collapse: collapse; width: 100%; table-layout: fixed">
+          <thead>
+            <tr>
+              <th>SensorName</th>
+              <th>Broker ip</th>
+              <th>MQTT topic</th>
+            </tr>
+          </thead>
+          <tbody id="integrateConnectInfoBody"></tbody>
+        </table>
+      </div>
+      <div id="integrateResultDiv" style="display:none">
+        <h1>
+          Raw Integration Transaction:
+        </h1>
+        <div id="integrateResult">
+
+        </div>
+      </div>
+    </div>
+    <div id="integrationsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
+      <div style="border: 1px">
+        <div>
+          Integrations:
+        </div>
+        <div>
+          <div>
+            <select id="integrationIntegrations" style="width:100%" size="10">
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="integrationInfo" style="display:none">
+        <div style="display: grid; grid-template-columns: auto 1fr">
+          <span>Started: </span>
+          <input id="integrationInfoStarted" disabled />
+          <span>Hash: </span>
+          <input id="integrationInfoHash" disabled />
+          <span>Witness Count: </span>
+          <input id="integrationInfoWitnessCount" disabled />
+        </div>
+        <div>Sensors</div>
+        <div style="height:25vh;overflow:hidden;overflow-y:scroll">
+          <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+            <thead style="top:0;position:sticky;background-color:white;z-index:2">
+              <tr>
+                <th>Sensor Name</th>
+                <th>Amount</th>
+                <th>Cost per KB</th>
+                <th>Cost per Minute</th>
+                <th>Broker</th>
+              </tr>
+            </thead>
+            <tbody id="integrationOutputBody"></tbody>
+          </table>
+        </div>
+        <!--<div>Witnesses</div>
+        <div style="height:25vh;overflow:hidden;overflow-y:scroll">
+          <table style="border-collapse: collapse; width:100%; table-layout:fixed">
+            <thead style="top:0;position:sticky;background-color:white;z-index:2">
+              <tr>
+                <th>Broker Name</th>
+              </tr>
+            </thead>
+            <tbody id="integrationWitnessesBody"></tbody>
+          </table>
+        </div>-->
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+<script type="module">
+  import startUI from './wallet.js';
+  startUI();
+</script>

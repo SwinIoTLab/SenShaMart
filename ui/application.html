@@ -19,10 +19,10 @@
     <span>Current chain length: </span><span id="chainDepth">LOADING</span>
   </div>
   <div>
-    <button id="freeformQueryButton">Query Sensors</button>
+    <button id="freeformQueryButton">Query, Select, And Integrate With Sensors</button>
     <button id="integrateButton">Integrate with Sensors</button>
-    <button id="pastIntegrationsButton">Past Integrations</button>
-    <button id="currentIntegrationsButton">Current Integrations</button>
+    <button id="pastIntegrationsButton">Your Past Integrations</button>
+    <button id="currentIntegrationsButton">Your Current Integrations</button>
   </div>
   <div id="freeformQueryTab">
     <div>Query:</div>
@@ -45,7 +45,7 @@
         <span>Selected Sensors: </span>
         <select id="integrateSensors" style="width:100%" size="10"></select>
       </div>
-      <div id="integrateInfo" style="display:block">
+      <div id="integrateInfo" style="display:none">
         <div style="display:grid;grid-template-columns: auto 1fr">
           <span>Name: </span>
           <input id="integrateInfoName" disabled />
@@ -100,7 +100,7 @@
         </div>
       </div>
     </div>
-    <div id="pastIntegrationInfo" style="display:block">
+    <div id="pastIntegrationInfo" style="display:none">
       <div style="display: grid; grid-template-columns: auto 1fr">
         <span>Started: </span>
         <input id="pastIntegrationInfoStarted" disabled />
@@ -139,7 +139,7 @@
         </div>
       </div>
     </div>
-    <div id="currentIntegrationInfo" style="display:block">
+    <div id="currentIntegrationInfo" style="display:none">
       <div style="display: grid; grid-template-columns: auto 1fr">
         <span>Started: </span>
         <input id="currentIntegrationInfoStarted" disabled />

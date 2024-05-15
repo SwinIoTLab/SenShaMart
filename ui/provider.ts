@@ -30,7 +30,10 @@ function startUI() {
   const coinCountSpan = document.getElementById("coinCount") as HTMLSpanElement;
   const status = document.getElementById("status") as HTMLDivElement;
 
-  let currentTab = document.getElementById("sensorsTab");
+  let currentTab = {
+    button: document.getElementById("brokersButton") as HTMLButtonElement,
+    pane: document.getElementById("brokersTab") as HTMLDivElement
+  };
 
   const initTab = function (baseName: string, style: string) {
     const buttonName = baseName + "Button";
@@ -48,7 +51,9 @@ function startUI() {
     tab.style.display = "none";
 
     button.onclick = function (_) {
-      currentTab.style.display = "none";
+      currentTab.pane.style.display = "none";
+      currentTab.button.style.backgroundColor = "default";
+
       tab.style.display = style;
       currentTab = tab;
     };

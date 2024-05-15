@@ -6,7 +6,7 @@ import BrokerRegistration from '../blockchain/broker-registration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import Integration from '../blockchain/integration.js';
 import Payment from '../blockchain/payment.js';
-import Compensation from '../blockchain/compensation.js';
+import Commit from '../blockchain/commit.js';
 //import Transaction from '../blockchain/transaction_base.mjs';
 import Blockchain, { type UpdaterChanges } from '../blockchain/blockchain.js';
 
@@ -105,8 +105,8 @@ const txsValidation = {
     ChainUtil.createValidateArray(BrokerRegistration.verify)),
   Integration: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(Integration.verify)),
-  Compensation: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(Compensation.verify)),
+  Commit: ChainUtil.createValidateOptional(
+    ChainUtil.createValidateArray(Commit.verify)),
   Payment: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(Payment.verify))
 };
@@ -351,6 +351,9 @@ class Connection implements ConnectionListNode{
         }
         if (this.state === CONNECTION_STATE.WAITING_FOR_BLOCKCHAIN) {
           this.state = CONNECTION_STATE.READY;
+          if (this.timer === null) {
+            this.send();
+          }
         }
       });
     }
@@ -369,7 +372,7 @@ class Connection implements ConnectionListNode{
 
     for (const type of ALL_TYPES) {
       const key = type.txName();
-      if (key in txs) {
+      if (Object.hasOwn(txs, key)) {
         console.log(`${key} txs found`);
         for (const tx of txs[key]) {
           if (!this.parent.txsSeen.has((type as TransactionClass<Transaction>).hashToSign(tx))) {

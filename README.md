@@ -107,6 +107,28 @@ The settings themselves are listed at the top of every -app file, along with wha
 The default settings file is 'settings.json'.
 Each application's settings is prefixed by which application it belongs to, allowing all settings to coexist in the same file.
 
+### Common configuration
+
+- miner-public-key
+
+    The public key that the miner will give the block mining reward to
+    
+- wallet-keypair / broker-keypair
+
+    The keypair for the wallet and the broker.
+    
+- broker-name
+
+    The name of the broker that the app will act as
+    
+- public-wallet-chain-server-peers / miner-chain-server-peers / broker-chain-server-peers / wallet-chain-server-peers
+
+    The peers to which the app will try and connect to on start.
+    
+- public-wallet-fuseki / miner-fuseki / broker-fuseki / wallet-fuseki
+
+    The location of the fuseki instance to use for SPARQL queries.
+    
 ## RDF Store
 
 The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
@@ -114,7 +136,7 @@ To allow for efficient querying, the app can be told of the location of a apache
 SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
 
 If the app is configured to use a fuseki instance, and it cannot connect during updating the blockchain, it will panic and stop.
-This helps stop the internal representation of the blockchain from diverging the state stored in the fuseki instance.
+This helps stop the internal representation of the blockchain from diverging from the state stored in the fuseki instance.
 A hardened version of this utilising the atomic nature of the sqlite3 store used to store persistence information is in the works.
 
 ## Running

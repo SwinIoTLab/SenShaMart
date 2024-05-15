@@ -13,6 +13,7 @@ import { Blockchain, type UpdaterChanges } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';
 import Block from '../blockchain/block.js';
 import Net from 'net';
+import Commit from '../blockchain/commit.js';
 import { WebSocket, WebSocketServer } from 'ws';
 //import fs from 'fs';
 
@@ -31,7 +32,7 @@ const config = new Config(CONFIGS_STORAGE_LOCATION);
 
 const keyPair = config.get({
   key: "broker-keypair",
-  default: ChainUtil.genKeyPair(),
+  default: null,
   transform: ChainUtil.deserializeKeyPair
 });
 const pubKey = ChainUtil.serializePublicKey(keyPair.pub);
@@ -41,7 +42,7 @@ const broker_name = config.get({
 });
 
 const fusekiLocation = config.get({
-  key: "wallet-fuseki",
+  key: "broker-fuseki",
   default: null
 });
 const apiPort = config.get({
@@ -64,10 +65,6 @@ const chainServerPeers = config.get({
   key: "broker-chain-server-peers",
   default: ["ws://127.0.0.1:" + DEFAULT_PORT_MINER_CHAIN]
 });
-//const sensorHandshakePort = config.get({
-//  key: "broker-sensor-handshake-port",
-//  default: DEFAULT_PORT_BROKER_SENSOR_HANDSHAKE
-//});
 const MQTTPort = config.get({
   key: "broker-MQTT-port",
   default: DEFAULT_PORT_BROKER_MQTT
@@ -75,12 +72,15 @@ const MQTTPort = config.get({
 
 let blockchain: Blockchain = null;
 let chainServer: PropServer = null;
-function minutesNow() {
+function minutesNow(now: number = Date.now()) {
   //divide by 1000 for ms, 60 for seconds, and floor to get whole minutes passed
-  return Date.now() / (1000 * 60);
+  return now / (1000 * 60);
 }
 
 type SensorIntegration = {
+  integrationInput: string;
+  integrationCounter: number;
+  outputIndex: number;
   perKB: number;
   perMin: number;
   dataLastAt: number;
@@ -98,7 +98,21 @@ const ourIntegrations = new Map<string, SensorIntegrations>();
 //integration key -> sensors it uses
 const cachedIntegrations = new Map<string, string[]>(); 
 
+//return true
+function applyCost(hash: string, info: SensorIntegration, now: number, data_length: number) {
+  const timeDelta = now - info.dataLastAt;
+  const cost =
+    timeDelta * info.perMin
+    + data_length / 1024 * info.perKB;
+
+  console.log(`out/${hash}/${info.index} = timeDelta: ${timeDelta}, cost: ${cost}`);
+
+  info.coinsLeft -= cost;
+  info.dataLastAt = now;
+}
+
 function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _difference: number) {
+  console.log("on blockchain change");
   for (const sensorName of changes.SENSOR) {
     const sensorReg = blockchain.getSensorInfo(sensorName);
     if (sensorReg === undefined) { //if the sensor no longer exists
@@ -111,8 +125,11 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
   for (const integrationKey of changes.INTEGRATION) { //for every integration that was changed
     const integration = blockchain.getIntegration(integrationKey); //get the integration
     const cached = cachedIntegrations.get(integrationKey); //get what we think the integration used to be
-    
+
+    console.log(`New integration: ${integrationKey}`);
+
     if (integration === undefined) { //if the integration no longer exists
+      console.log("No longer exists");
       if (cached !== undefined) { //and it used to exist
         for (const sensorName of cached) { //for every sensor it used to reference
           const foundSensor = ourIntegrations.get(sensorName); //get information about the sensor (if we broker it)
@@ -124,10 +141,14 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
       cachedIntegrations.delete(integrationKey); //it no longer exists, forget about it
       continue; //next
     }
+
+    console.log(`Not undefined: ${integration}`);
+
     for (let i = 0; i < integration.outputs.length; i++) { //for every output
       const output = integration.outputs[i]; //get the output
       const outputExtra = integration.outputsExtra[i]; //get the output extra information
       if (outputExtra.broker != broker_name) { //if we aren't the broker for this
+        console.log(`Output ${i} does not use us, it uses: ${outputExtra.broker}`);
         continue; //we don't care, next output 
       }
       let ourIntegration = ourIntegrations.get(output.sensorName); //get the appropriate SensorIntegrations
@@ -138,19 +159,42 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
         ourIntegrations.set(output.sensorName, ourIntegration); //update ourIntegrations
       }
       if (ourIntegration.integrations.has(integrationKey)) { //if the sensor already has this integration
+        console.log(`Output ${i} uses us, but we already have it`);
         continue; //we already have it, nothing to do, next output
       } else { //else, this integration is new for this sensor
         //log for debugging
         console.log(`Starting to integrate for integration: ${integrationKey}, sensor: ${output.sensorName}, perMin: ${outputExtra.sensorCostPerMin}, costPerKB: ${outputExtra.sensorCostPerKB}`);
         ourIntegration.integrations.set(integrationKey, //add this integration to our information, using the extra output information for correct costs
           {
+            integrationInput: integration.input,
+            integrationCounter: integration.counter,
+            outputIndex: i,
             perKB: integration.outputsExtra[i].sensorCostPerKB,
             perMin: integration.outputsExtra[i].sensorCostPerMin,
-            dataLastAt: minutesNow(),
+            dataLastAt: minutesNow(integration.startTime),
             coinsLeft: output.amount,
             index: i
           });
       }
+    }
+  }
+
+  const removing: string[] = [];
+
+  for (const [sensorName, sensorIntegrations] of ourIntegrations) {
+
+    for (const [hash, info] of sensorIntegrations.integrations) {
+      applyCost(hash, info, minutesNow(blockchain.lastBlock().timestamp), 0);
+      if (info.coinsLeft < 0) {
+        chainServer.sendTx(Commit.wrap(new Commit(keyPair, info.integrationInput, info.integrationCounter, [{ i: info.outputIndex, commitRatio: 1 }])));
+        removing.push(hash);
+      }
+    }
+    for (const hash of removing) {
+      sensorIntegrations.integrations.delete(hash);
+    }
+    if (sensorIntegrations.integrations.size === 0) {
+      ourIntegrations.delete(sensorName);
     }
   }
 }
@@ -198,23 +242,18 @@ function onNewPacket(sensor: string, data:string | Buffer) {
 
   const now = minutesNow();
 
-  const removing = [];
+  const removing: string[] = [];
 
   //for everone intergrating with this sensor
   for (const [hash, info] of foundSensor.integrations) {
-    const timeDelta = now - info.dataLastAt;
-    const cost =
-      timeDelta * info.perMin
-      + data.length / 1024 * info.perKB;
-    //debug print
-    console.log(`out/${hash}/${info.index} = timeDelta: ${timeDelta}, cost: ${cost}`);
-    if (cost >= info.coinsLeft) {
-      //we're out of money, integration is over
+    applyCost(hash, info, now, 0);    
+    if (info.coinsLeft < 0) {
+      //we're out of time, integration is over
       console.log(`out of coins for ${hash}`);
+      chainServer.sendTx(Commit.wrap(new Commit(keyPair, info.integrationInput, info.integrationCounter, [{i: info.outputIndex, commitRatio: 1}])));
       removing.push(hash);
     } else {
-      info.coinsLeft -= cost;
-      info.dataLastAt = now;
+      applyCost(hash, info, now, data.length);
       mqtt.publish({
         cmd: 'publish',
         retain: true,
