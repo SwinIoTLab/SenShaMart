@@ -13,10 +13,7 @@
  *
  *    You should have received a copy of the GNU Lesser General Public License
  *    along with SenShaMart.  If not, see <http://www.gnu.org/licenses/>.
-
-/**
- * @author Josip Milovac
- */
+ **/
 
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
