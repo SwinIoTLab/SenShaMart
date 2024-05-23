@@ -1,6 +1,5 @@
-# Senshamart
-Senshamart is a self-managed marketplace for sharing IoT sensors. it is based on a specialized semantic blockchain to ensure self-management for discovering, using, and paying for sensors' data.
-
+#  SenShaMart - A Global Marketplace for Sharing Data of IoT Sensors
+Sensor Sharing Marketplace (SenShaMart) enables the owners of IoT sensors to share their data and get paid for them. Also, enables client IoT applications to discover available IoT sensors, pay them, and use their data. 
 ## System Components
 
 A deployed Senshamart System comprises of 5 components
