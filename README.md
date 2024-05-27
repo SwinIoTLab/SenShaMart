@@ -136,16 +136,28 @@ to access any of these APIs, you need to know 1) the IP of the machine that is r
 /Payment/Register
 
 /Integration/All
+
 /Integration/Register
+
 /Integration/UsesOwnedBy
+
 /Integration/OwnedBy
+
 /Integration/OurBrokersBrokering
+
 /Integration/OurBrokersWitnessing
+
 /BrokerRegistration/All
+
 /BrokerRegistration/Register
+
 /BrokerRegistration/OwnedBy
+
 /SensorRegistration/All
+
 /SensorRegistration/Register
+
 /SensorRegistration/OwnedBy
+
 /sparql
 
