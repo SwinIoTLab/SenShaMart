@@ -27,6 +27,9 @@ type LiteralMetadata = {
 
 type Metadata = NodeMetadata | LiteralMetadata;
 
+export type ResolveCb = (res?: unknown) => void;
+export type RejectCb = (err: Error) => void;
+
 interface ResultSuccess {
   result: true;
 }
@@ -395,7 +398,7 @@ class ChainUtil {
     } catch (_) {
       return {
         result: false,
-        reason: "Couldn't deserialize"
+        reason: `Couldn't deserialize: '${t}'`
       };
     }
     return {

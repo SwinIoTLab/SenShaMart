@@ -25,6 +25,66 @@ type RefreshStruct<T> = {
   };
 };
 
+type TabButtonVisibility = Readonly<[
+  boolean, //genKey
+  boolean, //yourBrokers
+  boolean, //registerBroker
+  boolean, //allBrokers
+  boolean, //registerSensor
+  boolean, //sensors
+  boolean, //integrationUsesOurSensors
+  boolean, //freeformQuery
+  boolean, //integrate
+  boolean]>; //integrations
+
+const brokerTabButtonVisibility: TabButtonVisibility = [
+  false, //genKey
+  true, //yourBrokers
+  true, //registerBroker
+  false, //allBrokers
+  false, //registerSensor
+  false, //sensors
+  false, //integrationUsesOurSensors
+  false, //freeformQuery
+  false, //integrate
+  false] as const; //integrations
+
+const providerTabButtonVisibility: TabButtonVisibility = [
+  false, //genKey
+  false, //yourBrokers
+  false, //registerBroker
+  false, //allBrokers
+  true, //registerSensor
+  true, //sensors
+  true, //integrationUsesOurSensors
+  false, //freeformQuery
+  false, //integrate
+  false] as const; //integrations
+
+const applicationTabButtonVisibility: TabButtonVisibility = [
+  false, //genKey
+  false, //yourBrokers
+  false, //registerBroker
+  false, //allBrokers
+  false, //registerSensor
+  false, //sensors
+  false, //integrationUsesOurSensors
+  false, //freeformQuery
+  true, //integrate
+  true] as const; //integrations
+
+const expertTabButtonVisibility: TabButtonVisibility = [
+  true, //genKey
+  true, //yourBrokers
+  true, //registerBroker
+  true, //allBrokers
+  true, //registerSensor
+  true, //sensors
+  true, //integrationUsesOurSensors
+  true, //freeformQuery
+  true, //integrate
+  true] as const; //integrations
+
 const sensorNormalVisibility: SensorVisibility = {
   name: true,
   owner: false,
@@ -71,27 +131,15 @@ export default () => {
   let expertMode = false;
   const expertModeCbs: ((expert:boolean)=>void)[] = [];
 
-  const expertButton = document.getElementById("expertButton");
-
-  if (expertMode) {
-    expertButton.innerHTML = "Disable Expert Mode";
-  } else {
-    expertButton.innerHTML = "Enable Expert Mode";
-  }
-
-  expertButton.onclick = function (_) {
-    expertMode = !expertMode;
-
-    if (expertMode) {
-      expertButton.innerHTML = "Disable Expert Mode";
-    } else {
-      expertButton.innerHTML = "Enable Expert Mode";
-    }
+  const setExpert = (expert: boolean) => {
+    expertMode = expert;
 
     for (const cb of expertModeCbs) {
       cb(expertMode);
     }
   }
+
+  let validKeyPair = false;
 
   const publicKeySpan = document.getElementById("publicKey") as HTMLSpanElement;
   let ourKeyPair: string = "";
@@ -103,10 +151,12 @@ export default () => {
   const operationStatus = document.getElementById("operationStatus") as HTMLDivElement;
 
   const noKeyPage = document.getElementById("noKeyPage") as HTMLDivElement;
+  const noKeyKeyPair = document.getElementById("noKeyKeyPair") as HTMLInputElement;
   const keyPage = document.getElementById("keyPage") as HTMLDivElement;
 
   const onPrivateKeyChange = () => {
     privateKey.disabled = true;
+    noKeyKeyPair.value = privateKey.value;
     fetch('/PubKeyFor', {
       method: "POST",
       headers: {
@@ -120,8 +170,10 @@ export default () => {
     }).then((res) => {
       if (!res.result) {
         statusError(operationStatus, "Error while getting public key for key pair");
+        validKeyPair = false;
         return;
       }
+      validKeyPair = true;
       publicKeySpan.innerHTML = res.value;
       ourKeyPair = privateKey.value;
       ourPubKey = res.value;
@@ -139,19 +191,20 @@ export default () => {
     onPrivateKeyChange();
   }
 
-  let currentTab = {
-    button: document.getElementById("freeformQueryButton") as HTMLButtonElement,
-    pane: document.getElementById("freeformQueryTab") as HTMLDivElement
+  type Tab = {
+    button: HTMLButtonElement;
+    tab: HTMLDivElement;
+    style: string;
+    onclick: (_?: unknown) => void;
   };
 
-  const body = document.getElementById('body') as HTMLBodyElement;
+  let currentTab: Tab = null;
 
-  const initTab = function (baseName: string, style: string, expert: boolean, tab?: HTMLDivElement) {
+  const initTab = function (baseName: string, style: string, expert: boolean, tab?: HTMLDivElement): Tab {
     const buttonName = baseName + "Button";
     const button = document.getElementById(buttonName) as HTMLButtonElement;
     if (button === null) {
-      console.log("Couldn't find: " + buttonName);
-      return;
+      throw new Error("Couldn't find: " + buttonName);
     }
     if (expert) {
       expertModeCbs.push((expert) => {
@@ -168,41 +221,62 @@ export default () => {
       tab = document.getElementById(tabName) as HTMLDivElement;
     }
     if (tab === null) {
-      console.log("Couldn't find tab for " + baseName);
-      return;
+      throw new Error("Couldn't find tab for " + baseName);
     }
     tab.style.display = "none";
 
-    button.onclick = function (_) {
-      currentTab.pane.style.display = "none";
-      currentTab.button.style.backgroundColor = "default";
+    const returning: Tab = {
+      button: button,
+      tab: tab,
+      style: style,
+      onclick: (_?:unknown) => {
+        currentTab.tab.style.display = "none";
+        currentTab.button.style.backgroundColor = "default";
 
-      tab.style.display = style;
-      currentTab = {
-        button: button,
-        pane: tab
-      };
+        tab.style.display = style;
+        currentTab = returning;
+      }
     };
+
+    button.onclick = returning.onclick;
+
+    return returning;
   };
 
-  const sensors = new SensorList(sensorNormalVisibility);
-  body.appendChild(sensors.parent());
-  const allBrokers = new BrokerList(brokerNormalVisibility);
-  body.appendChild(allBrokers.parent());
-  const yourBrokers = new BrokerList(brokerNormalVisibility);
-  body.appendChild(yourBrokers.parent());
+  const sensorsList = new SensorList(sensorNormalVisibility);
+  keyPage.appendChild(sensorsList.parent());
+  const allBrokersList = new BrokerList(brokerNormalVisibility);
+  keyPage.appendChild(allBrokersList.parent());
+  const yourBrokersList = new BrokerList(brokerNormalVisibility);
+  keyPage.appendChild(yourBrokersList.parent());
 
-  initTab("genKey", "block", true);
-  initTab("yourBrokers", "grid", true, yourBrokers.parent());
-  initTab("registerBroker", "grid", true);
-  initTab("allBrokers", "grid", true, allBrokers.parent());
-  initTab("registerSensor", "block", false);
-  initTab("sensors", "grid", false, sensors.parent());
-  initTab("integrationUsesOurSensors", "grid", true);
-  initTab("freeformQuery", "block", false);
-  initTab("integrate", "block", false);
-  initTab("integrations", "grid", false);
-  currentTab.pane.style.display = "block";
+  const genKey = initTab("genKey", "block", true);
+  const yourBrokers = initTab("yourBrokers", "grid", true, yourBrokersList.parent());
+  const registerBroker = initTab("registerBroker", "grid", true);
+  const allBrokers = initTab("allBrokers", "grid", true, allBrokersList.parent());
+  const registerSensor = initTab("registerSensor", "block", false);
+  const sensors = initTab("sensors", "grid", false, sensorsList.parent());
+  const integrationUsesOurSensors = initTab("integrationUsesOurSensors", "grid", true);
+  const freeformQuery = initTab("freeformQuery", "block", false);
+  const integrate = initTab("integrate", "block", false);
+  const integrations = initTab("integrations", "grid", false);
+
+  const setTabButtonVisibilities = function (visibilities: TabButtonVisibility) {
+    genKey.button.style.display = visibilities[0] ? "block" : "none";
+    yourBrokers.button.style.display = visibilities[1] ? "block" : "none";
+    registerBroker.button.style.display = visibilities[2] ? "block" : "none";
+    allBrokers.button.style.display = visibilities[3] ? "block" : "none";
+    registerSensor.button.style.display = visibilities[4] ? "block" : "none";
+    sensors.button.style.display = visibilities[5] ? "block" : "none";
+    integrationUsesOurSensors.button.style.display = visibilities[6] ? "block" : "none";
+    freeformQuery.button.style.display = visibilities[7] ? "block" : "none";
+    integrate.button.style.display = visibilities[8] ? "block" : "none";
+    integrations.button.style.display = visibilities[9] ? "block" : "none";
+  };
+
+  currentTab = freeformQuery;
+  currentTab.tab.style.display = currentTab.style;
+  currentTab.onclick();
 
   const refreshInfo = {
     balance: {
@@ -259,6 +333,10 @@ export default () => {
   };
 
   const refresh = function () {
+    if (refreshCounter !== 0) {
+      return;
+    }
+
     const updateInfo = function <T>(type: RefreshStruct<T>, newData: { [index: string]: T }) {
       const oldData = type.vals;
       type.vals = newData;
@@ -371,7 +449,7 @@ export default () => {
 
   //noKey
 
-  const noKeyKeyPair = document.getElementById("noKeyKeyPair") as HTMLInputElement;
+  
   const noKeyGenKeyGo = document.getElementById("noKeyGenKeyGo") as HTMLButtonElement;
 
   const onNoKeyKeyPair = (keyPair: string) => {
@@ -388,11 +466,12 @@ export default () => {
     }).then((res) => {
       if (!res.result) {
         statusError(operationStatus, "Error while getting public key for key pair");
+        validKeyPair = false;
         return;
       }
-      noKeyPage.style.display = "none";
-      keyPage.style.display = "block";
+      validKeyPair = true;
       publicKeySpan.innerHTML = res.value;
+      noKeyKeyPair.value = keyPair;
       privateKey.value = keyPair;
       ourKeyPair = keyPair;
       ourPubKey = res.value;
@@ -435,6 +514,56 @@ export default () => {
     noKeyKeyPairChange();
   }
 
+  (document.getElementById("noKeyBrokerGo") as HTMLButtonElement).addEventListener('click', (_) => {
+    setExpert(false);
+    if (!validKeyPair) {
+      statusError(operationStatus, "The key pair isn't valid. Either generate a new keypair or enter a valid keypair above");
+      return;
+    }
+
+    setTabButtonVisibilities(brokerTabButtonVisibility);
+    yourBrokers.onclick();
+
+    noKeyPage.style.display = "none";
+    keyPage.style.display = "block";
+  });
+  (document.getElementById("noKeyProviderGo") as HTMLButtonElement).addEventListener('click', (_) => {
+    setExpert(false);
+    if (!validKeyPair) {
+      statusError(operationStatus, "The key pair isn't valid. Either generate a new keypair or enter a valid keypair above");
+      return;
+    }
+
+    setTabButtonVisibilities(providerTabButtonVisibility);
+    sensors.onclick();
+
+    noKeyPage.style.display = "none";
+    keyPage.style.display = "block";
+  });
+  (document.getElementById("noKeyApplicationGo") as HTMLButtonElement).addEventListener('click', (_) => {
+    setExpert(false);
+    if (!validKeyPair) {
+      statusError(operationStatus, "The key pair isn't valid. Either generate a new keypair or enter a valid keypair above");
+      return;
+    }
+
+    setTabButtonVisibilities(applicationTabButtonVisibility);
+    integrate.onclick();
+
+    noKeyPage.style.display = "none";
+    keyPage.style.display = "block";
+  });
+  (document.getElementById("noKeyExpertGo") as HTMLButtonElement).addEventListener('click', (_) => {
+    setExpert(true);
+
+    setTabButtonVisibilities(expertTabButtonVisibility);
+    genKey.onclick();
+    refresh();
+
+    noKeyPage.style.display = "none";
+    keyPage.style.display = "block";
+  });
+
   //our balance header
   refreshInfo.balance.onNew.push(function (key, data) {
     if (key === ourPubKey) {
@@ -445,6 +574,27 @@ export default () => {
     if (key === ourPubKey) {
       coinCountSpan.innerHTML = String(data);
     }
+  });
+
+  (document.getElementById("changeMode") as HTMLButtonElement).addEventListener('click', (_) => {
+    noKeyPage.style.display = "block";
+    keyPage.style.display = "none";
+  });
+
+  //chain depth
+
+  const chainDepthDiv = document.getElementById("chainDepthDiv") as HTMLDivElement;
+
+  expertModeCbs.push((expert) => {
+    chainDepthDiv.style.display = expert ? "block" : "none";
+  });
+
+  //keypair set
+
+  const keyPairSetDiv = document.getElementById("keyPairSetDiv") as HTMLDivElement;
+
+  expertModeCbs.push((expert) => {
+    keyPairSetDiv.style.display = expert ? "flex" : "none";
   });
 
   //genKey
@@ -469,17 +619,17 @@ export default () => {
 
   //allBrokers
   refreshInfo.broker.onNew.push(function (key, data) {
-    allBrokers.onNew(key, data);
+    allBrokersList.onNew(key, data);
   });
   refreshInfo.broker.onDel.push(function (key) {
-    allBrokers.onDel(key);
+    allBrokersList.onDel(key);
   });
   refreshInfo.broker.onChange.push(function (key, data) {
-    allBrokers.onChange(key, data);
+    allBrokersList.onChange(key, data);
   });
 
   expertModeCbs.push((expert) => {
-    allBrokers.setVisibility(expert ? brokerExpertVisibility : brokerNormalVisibility);
+    allBrokersList.setVisibility(expert ? brokerExpertVisibility : brokerNormalVisibility);
   });
 
   //yourBrokers
@@ -488,29 +638,29 @@ export default () => {
     if (data.input !== ourPubKey) {
       return;
     }
-    yourBrokers.onNew(key, data);
+    yourBrokersList.onNew(key, data);
   });
   refreshInfo.broker.onDel.push((key) => {
-    yourBrokers.onDel(key);
+    yourBrokersList.onDel(key);
   });
   refreshInfo.broker.onChange.push((key, data) => {
     if (data.input !== ourPubKey) {
       return;
     }
-    yourBrokers.onChange(key, data);
+    yourBrokersList.onChange(key, data);
   });
   onPubKeyChange.push(() => {
     for (const [key, broker] of Object.entries(refreshInfo.broker.vals)) {
       if (broker.input === ourPubKey) {
-        yourBrokers.onNew(key, broker);
+        yourBrokersList.onNew(key, broker);
       } else {
-        yourBrokers.onDel(key);
+        yourBrokersList.onDel(key);
       }
     }
   });
 
   expertModeCbs.push((expert) => {
-    yourBrokers.setVisibility(expert ? brokerExpertVisibility : brokerNormalVisibility);
+    yourBrokersList.setVisibility(expert ? brokerExpertVisibility : brokerNormalVisibility);
   });
 
   //registerBroker
@@ -626,69 +776,69 @@ export default () => {
   });
 
   //register sensor
-  const registerName = document.getElementById("registerName") as HTMLInputElement;
-  const registerCPM = document.getElementById("registerCPM") as HTMLInputElement;
-  const registerCPKB = document.getElementById("registerCPKB") as HTMLInputElement;
-  const registerBroker = document.getElementById("registerBroker") as HTMLSelectElement;
-  const registerClearMetadata = document.getElementById("registerClearMetadata") as HTMLButtonElement;
-  const registerMetadata = document.getElementById("registerMetadata") as HTMLInputElement;
-  registerMetadata.value = "";
-  const registerReward = document.getElementById("registerReward") as HTMLInputElement;
-  const registerGo = document.getElementById("registerGo") as HTMLButtonElement;
-  const registerResultDiv = document.getElementById("registerSensorResultDiv") as HTMLDivElement;
-  const registerResult = document.getElementById("registerResult") as HTMLLabelElement;
+  const registerSensorName = document.getElementById("registerSensorName") as HTMLInputElement;
+  const registerSensorCPM = document.getElementById("registerSensorCPM") as HTMLInputElement;
+  const registerSensorCPKB = document.getElementById("registerSensorCPKB") as HTMLInputElement;
+  const registerSensorBroker = document.getElementById("registerSensorBroker") as HTMLSelectElement;
+  const registerSensorClearMetadata = document.getElementById("registerSensorClearMetadata") as HTMLButtonElement;
+  const registerSensorMetadata = document.getElementById("registerSensorMetadata") as HTMLInputElement;
+  registerSensorMetadata.value = "";
+  const registerSensorReward = document.getElementById("registerSensorReward") as HTMLInputElement;
+  const registerSensorGo = document.getElementById("registerSensorGo") as HTMLButtonElement;
+  const registerSensorResultDiv = document.getElementById("registerSensorResultDiv") as HTMLDivElement;
+  const registerSensorResult = document.getElementById("registerSensorResult") as HTMLLabelElement;
 
   expertModeCbs.push((expert) => {
-    registerResultDiv.style.display = expert ? "block" : "none";
+    registerSensorResultDiv.style.display = expert ? "block" : "none";
   });
 
   let registerSensorParsedNodeMetadata = [] as NodeMetadata[];
   let registerSensorParsedLiteralMetadata = [] as LiteralMetadata[];
   const registerSensorOptions = new Map<string, HTMLOptionElement>();
-  registerCPM.addEventListener("change", () => {
-    const parsed = Number.parseInt(registerCPM.value, 10);
+  registerSensorCPM.addEventListener("change", () => {
+    const parsed = Number.parseInt(registerSensorCPM.value, 10);
     if (Number.isNaN(parsed) || parsed < 0) {
-      registerCPM.value = '1';
+      registerSensorCPM.value = '1';
     }
   });
-  registerCPKB.addEventListener("change", () => {
-    const parsed = Number.parseInt(registerCPKB.value, 10);
+  registerSensorCPKB.addEventListener("change", () => {
+    const parsed = Number.parseInt(registerSensorCPKB.value, 10);
     if (Number.isNaN(parsed) || parsed < 0) {
-      registerCPKB.value = '1';
+      registerSensorCPKB.value = '1';
     }
   });
-  registerReward.addEventListener("change", () => {
-    const parsed = Number.parseInt(registerReward.value, 10);
+  registerSensorReward.addEventListener("change", () => {
+    const parsed = Number.parseInt(registerSensorReward.value, 10);
     if (Number.isNaN(parsed) || parsed < 0) {
-      registerReward.value = '0';
+      registerSensorReward.value = '0';
     }
   });
 
   refreshInfo.broker.onNew.push((key, _) => {
     const adding = new Option(key, key);
     registerSensorOptions.set(key, adding);
-    registerBroker.append(adding);
+    registerSensorBroker.append(adding);
   });
   refreshInfo.broker.onDel.push((key) => {
     if (registerSensorOptions.has(key)) {
       const child = registerSensorOptions.get(key);
-      registerBroker.removeChild(child);
+      registerSensorBroker.removeChild(child);
       registerSensorOptions.delete(key);
     }
   });
 
-  registerClearMetadata.addEventListener("click", (_) => {
+  registerSensorClearMetadata.addEventListener("click", (_) => {
     registerSensorParsedNodeMetadata = [];
     registerSensorParsedLiteralMetadata = [];
-    registerMetadata.value = "";
+    registerSensorMetadata.value = "";
   });
-  registerMetadata.addEventListener('change', (_event) => {
-    if (registerMetadata.files.length !== 1) {
+  registerSensorMetadata.addEventListener('change', (_event) => {
+    if (registerSensorMetadata.files.length !== 1) {
       statusError(operationStatus, "No file was selected");
       return;
     }
-    registerMetadata.disabled = true;
-    registerClearMetadata.disabled = true;
+    registerSensorMetadata.disabled = true;
+    registerSensorClearMetadata.disabled = true;
 
     const reader = new FileReader();
     reader.onload = (_) => {
@@ -712,34 +862,34 @@ export default () => {
           }
         }
         statusOK(operationStatus, `File was read sucessfully for ${registerSensorParsedLiteralMetadata.length + registerSensorParsedNodeMetadata.length} tuples`);
-        registerMetadata.disabled = false;
-        registerClearMetadata.disabled = false;
+        registerSensorMetadata.disabled = false;
+        registerSensorClearMetadata.disabled = false;
       } catch (ex) {
         statusError(operationStatus, "Couldn't read file: " + ex.message);
         console.log(ex);
-        registerMetadata.value = "";
-        registerMetadata.disabled = false;
-        registerClearMetadata.disabled = false;
+        registerSensorMetadata.value = "";
+        registerSensorMetadata.disabled = false;
+        registerSensorClearMetadata.disabled = false;
       }
     };
-    reader.readAsText(registerMetadata.files[0]);
+    reader.readAsText(registerSensorMetadata.files[0]);
   });
 
-  registerGo.addEventListener("click", (_) => {
-    if (registerBroker.selectedIndex === -1) {
+  registerSensorGo.addEventListener("click", (_) => {
+    if (registerSensorBroker.selectedIndex === -1) {
       statusError(operationStatus, "No broker selected");
       return;
     }
 
-    registerGo.disabled = true;
+    registerSensorGo.disabled = true;
 
     const input = {
       keyPair: ourKeyPair,
-      sensorName: registerName.value,
-      costPerMinute: Number.parseInt(registerCPM.value),
-      costPerKB: Number.parseInt(registerCPKB.value),
-      integrationBroker: registerBroker.item(registerBroker.selectedIndex).value,
-      rewardAmount: Number.parseInt(registerReward.value),
+      sensorName: registerSensorName.value,
+      costPerMinute: Number.parseInt(registerSensorCPM.value),
+      costPerKB: Number.parseInt(registerSensorCPKB.value),
+      integrationBroker: registerSensorBroker.item(registerSensorBroker.selectedIndex).value,
+      rewardAmount: Number.parseInt(registerSensorReward.value),
       extraLiteralMetadata: undefined as LiteralMetadata[],
       extraNodeMetadata: undefined as NodeMetadata[]
     };
@@ -764,26 +914,26 @@ export default () => {
         statusError(operationStatus, "Error while creating register sensor transaction: " + res.reason);
         return;
       }
-      registerResult.innerHTML = JSON.stringify(res.tx, null, 2);
+      registerSensorResult.innerHTML = JSON.stringify(res.tx, null, 2);
       statusOK(operationStatus, "Submitted sensor registration");
     }).finally(() => {
-      registerGo.disabled = false;
+      registerSensorGo.disabled = false;
     })
   });
 
   //sensors
   refreshInfo.sensor.onNew.push((key, data) => {
-    sensors.onNew(key, data);
+    sensorsList.onNew(key, data);
   });
   refreshInfo.sensor.onDel.push((key) => {
-    sensors.onDel(key);
+    sensorsList.onDel(key);
   });
   refreshInfo.sensor.onChange.push((key, data) => {
-    sensors.onChange(key, data);
+    sensorsList.onChange(key, data);
   });
 
   expertModeCbs.push((expert) => {
-    sensors.setVisibility(expert ? sensorExpertVisibility : sensorNormalVisibility);
+    sensorsList.setVisibility(expert ? sensorExpertVisibility : sensorNormalVisibility);
   });
 
   //integrations uses our sensors
@@ -892,9 +1042,8 @@ export default () => {
   //freeformQuery
 
   const freeformSelect = document.getElementById("freeformSelect") as HTMLSelectElement;
-  const freeformQuery = document.getElementById("freeformQuery") as HTMLTextAreaElement;
+  const freeformQueryInput = document.getElementById("freeformQueryInput") as HTMLTextAreaElement;
   const freeformGo = document.getElementById("freeformGo") as HTMLButtonElement;
-  const freeformAdd = document.getElementById("freeformAdd") as HTMLButtonElement;
   const freeformHead = document.getElementById("freeformHead") as HTMLTableSectionElement;
   const freeformBody = document.getElementById("freeformBody") as HTMLTableSectionElement;
   const freeformHeaders = new Map<string, number>();
@@ -904,8 +1053,6 @@ export default () => {
     headers: string[];
     values: (string | number)[][];
   }
-
-  let freeformCurRes: QueryResultSucces = null
 
   type QueryResult = QueryResultSucces | ResultFailure;
 
@@ -1044,7 +1191,7 @@ export default () => {
 
     const selected = freeformSelect.item(freeformSelect.selectedIndex);
 
-    freeformQuery.value = freeformQueries[selected.value];
+    freeformQueryInput.value = freeformQueries[selected.value];
   };
 
   freeformSelect.addEventListener("input", freeformOnInput);
@@ -1056,7 +1203,7 @@ export default () => {
   freeformOnInput();
 
   freeformGo.onclick = (_) => {
-    const input = freeformQuery.value;
+    const input = freeformQueryInput.value;
 
     freeformGo.disabled = true;
 
@@ -1079,14 +1226,10 @@ export default () => {
         return;
       }
 
-      freeformCurRes = res;
-
       freeformHeaders.clear();
       for (const header of res.headers) {
         freeformHeaders.set(header, freeformHeaders.size);
       }
-
-      freeformAdd.disabled = !(freeformHeaders.has("sensor_name") && freeformHeaders.has("sensor_hash") && freeformHeaders.has("broker_hash") && freeformHeaders.has("broker_endpoint"));
 
       const headerRow = freeformHead.insertRow(-1);
       const headerCells = [] as HTMLTableCellElement[];
@@ -1112,16 +1255,251 @@ export default () => {
     });
   };
 
-  freeformAdd.onclick = (_) => {
-    const nameIndex = freeformHeaders.get("sensor_name");
-    const sensorHashIndex = freeformHeaders.get("sensor_hash");
-    const brokerHashIndex = freeformHeaders.get("broker_hash");
-    const brokerEndpointIndex = freeformHeaders.get("broker_endpoint");
-    const brokerNameIndex = freeformHeaders.has("broker_name") ? freeformHeaders.get("broker_name") : null;
-    const cpmIndex = freeformHeaders.has("sensor_cpm") ? freeformHeaders.get("sensor_cpm") : null;
-    const cpkbIndex = freeformHeaders.has("sensor_cpkb") ? freeformHeaders.get("sensor_cpkb") : null;
+  //integrate
 
-    for (const obj of freeformCurRes.values) {
+  const integrateInfo = document.getElementById("integrateInfo") as HTMLDivElement;
+  const integrateInfoName = document.getElementById("integrateInfoName") as HTMLInputElement;
+  const integrateInfoCPM = document.getElementById("integrateInfoCPM") as HTMLInputElement;
+  const integrateInfoCPKB = document.getElementById("integrateInfoCPKB") as HTMLInputElement;
+  const integrateInfoBroker = document.getElementById("integrateInfoBroker") as HTMLInputElement;
+  const integrateInfoAmountLabel = document.getElementById("integrateInfoAmountLabel") as HTMLSpanElement;
+  const integrateInfoAmount = document.getElementById("integrateInfoAmount") as HTMLInputElement;
+  const integrateDeselect = document.getElementById("integrateDeselect");
+  const integrateReward = document.getElementById("integrateReward") as HTMLInputElement;
+  const integrateGo = document.getElementById("integrateGo") as HTMLButtonElement;
+  const integrateResult = document.getElementById("integrateResult") as HTMLDivElement;
+  const integrateResultDiv = document.getElementById("integrateResultDiv") as HTMLDivElement;
+  const integrateConnectInfoBody = document.getElementById("integrateConnectInfoBody") as HTMLTableSectionElement;
+
+  const integrateFreeformSelect = document.getElementById("integrateFreeformSelect") as HTMLSelectElement;
+  const integrateFreeformQueryInput = document.getElementById("integrateFreeformQueryInput") as HTMLTextAreaElement;
+  const integrateFreeformGo = document.getElementById("integrateFreeformGo") as HTMLButtonElement;
+  const integrateFreeformAdd = document.getElementById("integrateFreeformAdd") as HTMLButtonElement;
+  const integrateFreeformHead = document.getElementById("integrateFreeformHead") as HTMLTableSectionElement;
+  const integrateFreeformBody = document.getElementById("integrateFreeformBody") as HTMLTableSectionElement;
+  const integrateFreeformHeaders = new Map<string, number>();
+
+  interface QueryResultSucces extends ResultSuccess {
+    result: true,
+    headers: string[];
+    values: (string | number)[][];
+  }
+
+  let integrateFreeformCurRes: QueryResultSucces = null
+
+  const integrateFreeformQueries: { [index: string]: string } = {
+    "Get all camera sensors":
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"video\". }",
+    "Get all milk pressure sensors":
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Pressure\"}",
+    "Get all air temperature sensors":
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Air Temperature\"}",
+    "Get all air humidity sensors":
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Relative air Humidity\"}",
+    "Get all milk temperature sensors":
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Temperature\"}",
+    "Get all sensors in Australia":
+      "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE { \n" +
+      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
+      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
+      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
+      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
+      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
+      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
+      "\n" +
+      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
+      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
+      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
+      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
+      "\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
+      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
+      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
+      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
+      " FILTER(" +
+      "xsd:decimal(?long) > 113.338953078" +
+      " && xsd:decimal(?long) < 153.569469029" +
+      " && xsd:decimal(?lat) > -43.6345972634" +
+      " && xsd:decimal(?lat) < -10.6681857235)}"
+  };
+
+  const integrateFreeformOnInput = () => {
+    if (integrateFreeformSelect.selectedIndex === -1) {
+      return;
+    }
+
+    const selected = freeformSelect.item(integrateFreeformSelect.selectedIndex);
+
+    integrateFreeformQueryInput.value = integrateFreeformQueries[selected.value];
+  };
+
+  integrateFreeformSelect.addEventListener("input", integrateFreeformOnInput);
+
+  for (const key of Object.keys(integrateFreeformQueries)) {
+    integrateFreeformSelect.append(new Option(key, key));
+  }
+
+  integrateFreeformOnInput();
+
+  integrateFreeformGo.onclick = (_) => {
+    const input = integrateFreeformQueryInput.value;
+
+    integrateFreeformGo.disabled = true;
+
+    clearTable(integrateFreeformHead);
+    clearTable(integrateFreeformBody);
+
+    fetch("/sparql", {
+      method: 'POST',
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: input
+      })
+    }).then((res) => {
+      return res.json();
+    }).then((res: QueryResult) => {
+      if (!res.result) {
+        statusError(operationStatus, "Error when querying: " + (res as ResultFailure).reason);
+        return;
+      }
+
+      integrateFreeformCurRes = res;
+
+      integrateFreeformHeaders.clear();
+      for (const header of res.headers) {
+        integrateFreeformHeaders.set(header, integrateFreeformHeaders.size);
+      }
+
+      integrateFreeformAdd.disabled = !(integrateFreeformHeaders.has("sensor_name") && integrateFreeformHeaders.has("sensor_hash") && integrateFreeformHeaders.has("broker_hash") && integrateFreeformHeaders.has("broker_endpoint"));
+
+      const headerRow = integrateFreeformHead.insertRow(-1);
+      const headerCells = [] as HTMLTableCellElement[];
+      for (let i = 0; i < integrateFreeformHeaders.size; ++i) {
+        const created = document.createElement('th');
+        created.innerHTML = res.headers[i];
+        headerRow.appendChild(created);
+        headerCells.push(created);
+      }
+
+      for (const obj of res.values) {
+        const dataRow = integrateFreeformBody.insertRow();
+
+        for (let i = 0; i < integrateFreeformHeaders.size; ++i) {
+          const newCell = dataRow.insertCell();
+          newCell.style.border = "1px solid black";
+          newCell.innerHTML = String(obj[i]);
+        }
+      }
+      statusOK(operationStatus, "Finished query");
+    }).finally(() => {
+      integrateFreeformGo.disabled = false;
+    });
+  };
+
+  integrateFreeformAdd.onclick = (_) => {
+    const nameIndex = integrateFreeformHeaders.get("sensor_name");
+    const sensorHashIndex = integrateFreeformHeaders.get("sensor_hash");
+    const brokerHashIndex = integrateFreeformHeaders.get("broker_hash");
+    const brokerEndpointIndex = integrateFreeformHeaders.get("broker_endpoint");
+    const brokerNameIndex = integrateFreeformHeaders.has("broker_name") ? integrateFreeformHeaders.get("broker_name") : null;
+    const cpmIndex = integrateFreeformHeaders.has("sensor_cpm") ? integrateFreeformHeaders.get("sensor_cpm") : null;
+    const cpkbIndex = integrateFreeformHeaders.has("sensor_cpkb") ? integrateFreeformHeaders.get("sensor_cpkb") : null;
+
+    for (const obj of integrateFreeformCurRes.values) {
       const name = obj[nameIndex] as string;
       let sensorInfo: IntegrateSensor = null;
       if (!integrateSensorsMap.has(name)) {
@@ -1159,22 +1537,6 @@ export default () => {
 
     document.getElementById("integrateButton").click();
   };
-
-  //integrate
-
-  const integrateInfo = document.getElementById("integrateInfo") as HTMLDivElement;
-  const integrateInfoName = document.getElementById("integrateInfoName") as HTMLInputElement;
-  const integrateInfoCPM = document.getElementById("integrateInfoCPM") as HTMLInputElement;
-  const integrateInfoCPKB = document.getElementById("integrateInfoCPKB") as HTMLInputElement;
-  const integrateInfoBroker = document.getElementById("integrateInfoBroker") as HTMLInputElement;
-  const integrateInfoAmountLabel = document.getElementById("integrateInfoAmountLabel") as HTMLSpanElement;
-  const integrateInfoAmount = document.getElementById("integrateInfoAmount") as HTMLInputElement;
-  const integrateDeselect = document.getElementById("integrateDeselect");
-  const integrateReward = document.getElementById("integrateReward") as HTMLInputElement;
-  const integrateGo = document.getElementById("integrateGo") as HTMLButtonElement;
-  const integrateResult = document.getElementById("integrateResult") as HTMLDivElement;
-  const integrateResultDiv = document.getElementById("integrateResultDiv") as HTMLDivElement;
-  const integrateConnectInfoBody = document.getElementById("integrateConnectInfoBody") as HTMLTableSectionElement;
 
   expertModeCbs.push((expert) => {
     integrateResultDiv.style.display = expert ? "block" : "none";

@@ -4,36 +4,66 @@
   <div id="operationStatus">LOADING</div>
   <div id="noKeyPage" style="text-align:center">
     <div>
+      <h1>SenShaMart</h1>
+    </div>
+    <div>
+      <h3>A Global Network For Sharing IoT Sensors</h3> 
+    </div>
+    <hr />
+    <div>
       <span>Please enter your keyPair:</span>
     </div>
     <div>
-      <input id="noKeyKeyPair" />
+      <input id="noKeyKeyPair" style="width:100%;text-align:center"/>
     </div>
     <div>
-      <span>Or</span>
+      Or
+    </div>
+    <div>
+      <input id="noKeyKeyUpload" type="file" />
+    </div>
+    <div>
+      Or
     </div>
     <div>
       <button id="noKeyGenKeyGo">Generate a New Key</button>
+    </div>
+    <hr />
+    <div>
+      Select your role:
+    </div>
+    <div>
+      <button id="noKeyBrokerGo">SenShaMart Broker</button>
+      <button id="noKeyProviderGo">IoT Sensor Provider</button>
+      <button id="noKeyApplicationGo">IoT Client Application</button>
+    </div>
+    <hr/>
+    <div>
+      Or if you are a power user or developer:
+    </div>
+    <div>
+      <button id="noKeyExpertGo">For Developers</button>
     </div>
   </div>
   <div id="keyPage" style="display:none;">
     <div id="refreshStatus">LOADING</div>
     <hr />
-    <div>
-      <span>Wallet public key: </span><span id="publicKey">LOADING</span>
-    </div>
     <div style="display:flex">
+      <span>Wallet public key: </span>
+      <input id="publicKey" disabled value="LOADING" style="flex-grow:1;"/>
+      <button id="changeMode">Change mode</button>
+    </div>
+    <div id="keyPairSetDiv" style="display:none">
       <span>Wallet keypair: </span><input id="privateKey" style="flex-grow:1;"/>
     </div>
     <div>
       <span>Current wallet balance: </span><span id="coinCount">0</span>
     </div>
-    <div>
+    <div id="chainDepthDiv" style="display:none">
       <span>Current chain length: </span><span id="chainDepth">LOADING</span>
     </div>
     <hr />
     <div style="display:flex">
-      <button id="expertButton">Enable Expert Mode</button>
       <button id="genKeyButton">Generate Key</button>
       <button id="yourBrokersButton">Your Registered Brokers</button>
       <button id="registerBrokerButton">Register a Broker</button>
@@ -74,19 +104,19 @@
     </div>
     <div id="registerSensorTab">
       <div style="display:grid; grid-template-columns: auto 1fr">
-        <span>Name:</span><input id="registerName" required />
-        <span>Cost Per Minute:</span><input id="registerCPM" type="number" min="0" value="1" required />
-        <span>Cost Per KB:</span><input id="registerCPKB" type="number" min="0" value="1" required />
-        <span>Broker:</span><select id="registerBroker" required></select>
-        <span>Extra metadata:</span><span><button id="registerClearMetadata">Clear</button><input id="registerMetadata" type="file" value="" /></span>
-        <span>Reward amount:</span><input id="registerReward" type="number" min="0" value="0" required />
-        <button id="registerGo">Create</button>
+        <span>Name:</span><input id="registerSensorName" required />
+        <span>Cost Per Minute:</span><input id="registerSensorCPM" type="number" min="0" value="1" required />
+        <span>Cost Per KB:</span><input id="registerSensorCPKB" type="number" min="0" value="1" required />
+        <span>Broker:</span><select id="registerSensorBroker" required></select>
+        <span>Extra metadata:</span><span><button id="registerSensorClearMetadata">Clear</button><input id="registerSensorMetadata" type="file" value="" /></span>
+        <span>Reward amount:</span><input id="registerSensorReward" type="number" min="0" value="0" required />
+        <button id="registerSensorGo">Create</button>
       </div>
       <div id="registerSensorResultDiv" style="display:none">
         <h1>
           Raw Sensor Registration Transaction:
         </h1>
-        <label id="registerResult"></label>
+        <label id="registerSensorResult"></label>
       </div>
     </div>
     <div id="integrationUsesOurSensorsTab" style="display:grid; grid-template-columns: 1fr 7fr;">
@@ -101,7 +131,7 @@
           </div>
         </div>
       </div>
-      <div id="integrationUsesOurSensorsInfo" style="display:block">
+      <div id="integrationUsesOurSensorsInfo" style="display:none">
         <div style="display: grid; grid-template-columns: auto 1fr">
           <span>Started: </span>
           <input id="integrationUsesOurSensorsInfoStarted" disabled />
@@ -142,13 +172,10 @@
       <div>Query:</div>
       <select id="freeformSelect" style="width:100%"></select>
       <div>
-        <textarea id="freeformQuery" style="width:100%;resize:vertical" spellcheck="false"></textarea>
+        <textarea id="freeformQueryInput" style="width:100%;resize:vertical" spellcheck="false"></textarea>
       </div>
       <div>
         <button id="freeformGo">Go!</button>
-      </div>
-      <div>
-        <button id="freeformAdd" disabled>Add Sensor Results To Integrate Tab</button>
       </div>
       <div>
         <table style="border-collapse: collapse">
@@ -158,7 +185,26 @@
       </div>
     </div>
     <div id="integrateTab">
-      <div style="display:grid;grid-template-columns:1fr 1fr">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr">
+        <div>
+          <div>Query:</div>
+          <select id="integrateFreeformSelect" style="width:100%"></select>
+          <div>
+            <textarea id="integrateFreeformQueryInput" style="width:100%;resize:vertical" spellcheck="false"></textarea>
+          </div>
+          <div>
+            <button id="integrateFreeformGo">Go!</button>
+          </div>
+          <div>
+            <button id="integrateFreeformAdd" disabled>Add Sensor Results To Integrate Tab</button>
+          </div>
+          <div>
+            <table style="border-collapse: collapse">
+              <thead id="integrateFreeformHead"></thead>
+              <tbody id="integrateFreeformBody"></tbody>
+            </table>
+          </div>
+        </div>
         <div>
           <span>Selected Sensors: </span>
           <select id="integrateSensors" style="width:100%" size="10"></select>

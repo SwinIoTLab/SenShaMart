@@ -64,14 +64,12 @@ function mine(miner: Miner) {
         miner.txs.integration.mining,
         miner.txs.commit.mining,
         miner.nonce,
-        difficulty),
-        (err) => {
-          if (isFailure(err)) {
-            console.log(`Couldn't add mined block: ${err.reason}`);
-          }
+        difficulty)).catch((err) => {
+          console.log(`Couldn't add mined block: ${err.reason}`);
+        }).finally(() =>
           //even on error we try again
-          startMine(miner);
-        });
+          startMine(miner)
+        );
       return;
     } else {
       //failure

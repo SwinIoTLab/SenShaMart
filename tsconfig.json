@@ -18,6 +18,7 @@
     "keygen/*.ts",
     "ui/*.ts",
     "public_wallet/*.ts",
-    "testing/*.ts"
+    "testing/*.ts",
+    "tools/*.ts"
   ]
 }

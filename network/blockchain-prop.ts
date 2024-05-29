@@ -8,7 +8,10 @@ import Integration from '../blockchain/integration.js';
 import Payment from '../blockchain/payment.js';
 import Commit from '../blockchain/commit.js';
 //import Transaction from '../blockchain/transaction_base.mjs';
-import Blockchain, { type UpdaterChanges } from '../blockchain/blockchain.js';
+import { MINE_RATE } from '../util/constants.js';
+import Blockchain, { type UpdaterChanges, MAX_BLOCKS_IN_MEMORY } from '../blockchain/blockchain.js';
+
+const MAX_BLOCKS_SENDING = MAX_BLOCKS_IN_MEMORY / 2;
 
 //A bad approximation of the ws interface, to allow for different transports
 interface SocketEvent {
@@ -68,8 +71,8 @@ const CONNECTION_STATE = {
 
 type Connection_state = typeof CONNECTION_STATE[keyof typeof CONNECTION_STATE];
 
-const SEND_WAIT = 1000;
-const RECV_WAIT = 10 * SEND_WAIT;
+const SEND_WAIT = MINE_RATE / 2;
+const RECV_WAIT = Math.max(5 * 60 * 1000, 10 * SEND_WAIT);
 
 //used for debugging to convert states to strings
 function _state_to_string(state: Connection_state): string {
@@ -229,7 +232,7 @@ class Connection implements ConnectionListNode{
 
   //when the connection misbehaves
   onError(message: string) {
-    console.log(this.logName + ": " + message);
+    console.error(this.logName + " ERROR: " + message);
 
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -308,7 +311,7 @@ class Connection implements ConnectionListNode{
     console.log(`${this.logName}: handleChain, this.differing: ${this.differing}, our startI: ${this.parent.blockchain.getCachedStartIndex()}, our length: ${this.parent.blockchain.links.length}, their start: ${chain.start}, their length ${chain.blocks.length}`);
     const validationRes = ChainUtil.validateObject(chain, chainValidation);
     if (isFailure(validationRes)) {
-      console.log(JSON.stringify(chain));
+      //console.log(JSON.stringify(chain));
       this.onError("Couldn't validate chain message: " + validationRes.reason);
       return false;
     }
@@ -320,9 +323,7 @@ class Connection implements ConnectionListNode{
       return false;
     }
 
-    if (this.differing < chain.start) {
-      return true;
-    } else if (chain.start < this.differing) {
+    if (chain.start < this.differing) {
       this.differing = chain.start;
     }
 
@@ -340,21 +341,16 @@ class Connection implements ConnectionListNode{
     }
     if (chain.blocks.length !== 0) {
       this.state = CONNECTION_STATE.WAITING_FOR_BLOCKCHAIN;
-      this.parent.blockchain.replaceChain(chain.blocks, chain.start, (err) => {
-        console.log(err.result);
-        if (isFailure(err)) {
-          if (err.code !== Blockchain.ERROR_REPLACEHCHAIN.SHORTER) {
-            this.onError(err.reason); return;
-          }
-        } else {
-          this.differing = this.parent.blockchain.length();
-        }
+      this.parent.blockchain.replaceChain(chain.blocks, chain.start).then(() => {
+        this.differing = this.parent.blockchain.length();
         if (this.state === CONNECTION_STATE.WAITING_FOR_BLOCKCHAIN) {
           this.state = CONNECTION_STATE.READY;
           if (this.timer === null) {
             this.send();
           }
         }
+      }).catch((err: Error) => {
+        this.onError(err.message);
       });
     }
 
@@ -496,6 +492,12 @@ class Connection implements ConnectionListNode{
     }
 
     const cachedBlocks = this.parent.blockchain.getCachedBlocks();
+
+    const slicing = Math.max(cachedBlocks.blocks.length - MAX_BLOCKS_SENDING, 0);
+
+    cachedBlocks.start += slicing;
+    cachedBlocks.blocks = cachedBlocks.blocks.slice(slicing);
+
     let lastBlock = null;
     if (cachedBlocks.blocks.length === 0) {
       lastBlock = Block.genesis();

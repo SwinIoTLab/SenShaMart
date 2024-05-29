@@ -295,15 +295,10 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
-  if (isFailure(err)) {
-    console.log(`Couldn't init blockchain: ${err.reason}`);
-    return;
-  }
+blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 
-  miner = new Miner(blockchain, minerPublicKey);
-  chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
-  chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
+miner = new Miner(blockchain, minerPublicKey);
+chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
+chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
-  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
-});
+app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));

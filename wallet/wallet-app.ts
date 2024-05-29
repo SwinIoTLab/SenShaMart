@@ -668,14 +668,11 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
-  if (isFailure(err)) {
-    console.log(`Couldn't load blockchain: ${err.reason}`);
-    return;
-  }
-  chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
-  chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
+blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 
-  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
-});
+
+chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
+chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
+
+app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
 

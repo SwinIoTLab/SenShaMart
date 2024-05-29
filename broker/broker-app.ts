@@ -378,29 +378,24 @@ app.post('/sparql', (req, res) => {
 });
 
 //init chain
-blockchain = new Blockchain(persistenceLocation, fusekiLocation, (err) => {
-  if (isFailure(err)) {
-    console.log(`Couldn't init blockchain: ${err.reason}`);
-    return;
-  }
+blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 
-  chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
-  chainServer.start(chainServerPort, publicAddress, chainServerPeers);
+chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
+chainServer.start(chainServerPort, publicAddress, chainServerPeers);
 
-  app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
+app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
 
-  blockchain.addListener(onBlockchainChange);
+blockchain.addListener(onBlockchainChange);
 
-  const fakeChanges: UpdaterChanges = {
-    SENSOR: new Set<string>(),
-    WALLET: new Set<string>(),
-    BROKER: new Set<string>(),
-    INTEGRATION: new Set<string>()
-  };
+const fakeChanges: UpdaterChanges = {
+  SENSOR: new Set<string>(),
+  WALLET: new Set<string>(),
+  BROKER: new Set<string>(),
+  INTEGRATION: new Set<string>()
+};
 
-  const currentIntegrations = blockchain.getIntegrations();
-  for (const integrationKey of currentIntegrations.keys()) {
-    fakeChanges.INTEGRATION.add(integrationKey);
-  }
-  onBlockchainChange(null, fakeChanges, 0);
-});
+const currentIntegrations = blockchain.getIntegrations();
+for (const integrationKey of currentIntegrations.keys()) {
+  fakeChanges.INTEGRATION.add(integrationKey);
+}
+onBlockchainChange(null, fakeChanges, 0);
