@@ -161,3 +161,6 @@ to access any of these APIs, you need to know 1) the IP of the machine that is r
 
 /sparql
 
+## Authors contribution
+
+## Fund
