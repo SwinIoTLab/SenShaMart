@@ -166,6 +166,8 @@ to access any of these APIs, you need to know 1) the IP of the machine that is r
 /sparql
 
 ## Contributions
-Conceptualization, Anas Dawod, Dimitrios Georgakopoulos, and Prem P. Jayaraman; Coding, Anas Dawod and Josip Molivac; Validation, Anas Dawod and Josip Molivac; Investigation, Anas Dawod; writing—original code, Anas Dawod; Visualization, Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, and Ampalavanapillai Nirmalathas; Project Administration, Anas Dawod; 
+Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Molivac, and Ampalavanapillai Nirmalathas.
+Software Engineering: Anas Dawod and Josip Molivac.
+
 ## Fund
 This project is fundded by ARC discovery grand DP220101420. Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
