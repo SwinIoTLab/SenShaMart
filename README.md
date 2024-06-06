@@ -132,43 +132,9 @@ The working directory is assumed to be the root of the repository.
 As such, starting the miner can be done with `node ./miner/miner-app.js`, broker with `node ./broker/broker-app.js`, etc.
 
 ## APIs
-to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: hrrp://136.186.108.192:3002/gen-key
+to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: http://136.186.108.192:3002/gen-key.
 
-/ChainServer/connect
-
-/gen-key
-
-/PubKeyFor
-
-/chain-length
-
-/Payment/Register
-
-/Integration/All
-
-/Integration/Register
-
-/Integration/UsesOwnedBy
-
-/Integration/OwnedBy
-
-/Integration/OurBrokersBrokering
-
-/Integration/OurBrokersWitnessing
-
-/BrokerRegistration/All
-
-/BrokerRegistration/Register
-
-/BrokerRegistration/OwnedBy
-
-/SensorRegistration/All
-
-/SensorRegistration/Register
-
-/SensorRegistration/OwnedBy
-
-/sparql
+A list of APIs provided by public-wallet-app is provided in APIs.md in this folder
 
 ## Contributions
 Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Molivac, and Ampalavanapillai Nirmalathas.
