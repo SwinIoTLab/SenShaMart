@@ -1,58 +1,74 @@
-# Senshamart
-Senshamart is software to create a blockchain based Internet-of-Things (IoT) distributed system to share, search for, and pay for sensor data.
-
-## System Components
-
-A deployed Senshamart System comprises of 5 components
-
-
-### Sensor
-
-Sensors create the sensor data that is to be shared, searched for and paid for.
+#  SenShaMart - A Global Marketplace for Sharing Sensors in IoT
+Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
+SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
+SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
+![SSM archetecture](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/45881eee-0719-485c-8bf7-8511296b695f)
 
 
-### Miner
+## SenShaMart Components
+
+A deployed SenShaMart System comprises of several components
+
+### SSM Blockchain
+SSM Blockchain is a semantic-based blockchain that provides self-managment for sharing IoT sensors. SSM Blockchain comprises of a collection of nodes. These nodes can play three main roles, which are Miners, Wallets, and Brokers. Each node can select one or more roles.
+#### Miner
   
-Miners mine blocks onto the senshamart chain.
+Miners mine blocks onto the SSM Blockchain.
 
-
-### Wallets
+#### Wallets
   
-Wallets belong to users of the system. They create, sign, and propagate new transactions to miners who then mine them into the chain.
+Wallets belong to users of the SenShaMart. They create, sign, and propagate new transactions to miners who then mine them into the chain.
 
-
-### IoT Applications
+#### Brokers
   
-Iot Applications are the consumers of sensor data.
+Brokers act as proxies for sensor data and sit in between sensors and IoT applications. 
 
-
-### Brokers
-  
-Brokers act as proxies for sensor data and sit inbetween sensors and IoT applications. 
-
-Brokers act as access control for the sensors data, only allowing IoT applications owned by users with valid integration transactions to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
+Brokers act as access control for the sensors' data, only allowing IoT applications owned by users who paied to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
 Random subsets of brokers can also act as witnesses of integrations.
 These witnessing brokers can then vote on whether the integration completed successfully, or vote to refund the user if they believe the sensor misbehaved in some way.
 
-## Transaction Types
+#### RDF Store
 
-### Payment
+SSM Blockchain has embedded distributed RDF store in all SSM Blockchain nodes. This RDF store uses our developed ontology (i.e., an extension of Semantic Sensor Netwrok (SSN) https://www.w3.org/TR/vocab-ssn/) to store the semantic metadata of IoT sensors.  The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
+To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
+SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
+
+If the app is configured to use a fuseki instance, and it cannot connect during updating the blockchain, it will panic and stop.
+This helps stop the internal representation of the blockchain from diverging the state stored in the fuseki instance.
+A hardened version of this utilising the atomic nature of the sqlite3 store used to store persistence information is in the works.
+
+#### Transaction Types
+
+##### Payment
   This transaction moves coins from one wallet to another
 
-### Broker Registration
+##### Broker Registration
   This transaction registers a broker into the system
 
-### Sensor Registration
+##### Sensor Registration
   This transaction registers a sensor into the system
 
-### Integration
+##### Integration
   This transaction pays for sensor data
 
-### Commit
-  This transaction is a witness voting that an integration has completed successfully
+##### Commit
+  This transaction is a witness voting that an integration has been completed successfully
 
-### Compensation
-  This transaction is a witness voting that an integration has completed but the sensor misbehaved and the buyer should be compensated
+##### Compensation
+  This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
+### User Interface
+The User Interface runs on top of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
+
+
+### Sensors
+
+Sensors create the data that are to be shared, searched for, and paid for. We expect sensor providers to register thier sensors in SenShaMart to make them avaialble for sharing,
+
+### IoT Applications
+  
+IoT Applications are the clients of sensor data. We expect IoT applications to query required sensors, select them, pay them and use their data.
+
+
 
 ## Repository Structure
 
@@ -60,7 +76,7 @@ The repository is split into multiple parts
 
 - blockchain/
 
-  This is where the logic for manging the blockchain is stored.
+  This is where the logic for managing the blockchain is stored.
   The blockchain logic is in blockchain.ts, and the blocks are in block.ts.
   Each type of transaction has its own source file.
   Utility types and constant strings are stored in transaction_base, transaction_wrapper, and uris.
@@ -68,9 +84,9 @@ The repository is split into multiple parts
 - broker/
 
   This is where the logic for the broker is.
-  All logic for the broker is contained inside broker-app
-Most of the applications are split into two parts when appropriate.
-A library file, and an -app file that drives the library
+  All logic for the broker is contained inside broker-app.
+  Most of the applications are split into two parts when appropriate.
+  A library file, and an -app file that drives the library
 
 - miner/
 
@@ -107,37 +123,6 @@ The settings themselves are listed at the top of every -app file, along with wha
 The default settings file is 'settings.json'.
 Each application's settings is prefixed by which application it belongs to, allowing all settings to coexist in the same file.
 
-### Common configuration
-
-- miner-public-key
-
-    The public key that the miner will give the block mining reward to
-    
-- wallet-keypair / broker-keypair
-
-    The keypair for the wallet and the broker.
-    
-- broker-name
-
-    The name of the broker that the app will act as
-    
-- public-wallet-chain-server-peers / miner-chain-server-peers / broker-chain-server-peers / wallet-chain-server-peers
-
-    The peers to which the app will try and connect to on start.
-    
-- public-wallet-fuseki / miner-fuseki / broker-fuseki / wallet-fuseki
-
-    The location of the fuseki instance to use for SPARQL queries.
-    
-## RDF Store
-
-The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
-To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
-SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
-
-If the app is configured to use a fuseki instance, and it cannot connect during updating the blockchain, it will panic and stop.
-This helps stop the internal representation of the blockchain from diverging from the state stored in the fuseki instance.
-A hardened version of this utilising the atomic nature of the sqlite3 store used to store persistence information is in the works.
 
 ## Running
 
@@ -145,3 +130,49 @@ As this project is a typescript node project, be sure to install all dependencie
 
 The working directory is assumed to be the root of the repository.
 As such, starting the miner can be done with `node ./miner/miner-app.js`, broker with `node ./broker/broker-app.js`, etc.
+
+## APIs
+to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: hrrp://136.186.108.192:3002/gen-key
+
+/ChainServer/connect
+
+/gen-key
+
+/PubKeyFor
+
+/chain-length
+
+/Payment/Register
+
+/Integration/All
+
+/Integration/Register
+
+/Integration/UsesOwnedBy
+
+/Integration/OwnedBy
+
+/Integration/OurBrokersBrokering
+
+/Integration/OurBrokersWitnessing
+
+/BrokerRegistration/All
+
+/BrokerRegistration/Register
+
+/BrokerRegistration/OwnedBy
+
+/SensorRegistration/All
+
+/SensorRegistration/Register
+
+/SensorRegistration/OwnedBy
+
+/sparql
+
+## Contributions
+Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Molivac, and Ampalavanapillai Nirmalathas.
+Software Engineering: Anas Dawod and Josip Molivac.
+
+## Fund
+This project is fundded by ARC discovery grand DP220101420. Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
