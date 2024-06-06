@@ -1,24 +1,26 @@
-#  SenShaMart - A Global Marketplace for Sharing Data of IoT Sensors
-Sensor Sharing Marketplace (SenShaMart) enables the owners of IoT sensors to share their data and get paid for them. Also, enables client IoT applications to discover available IoT sensors, pay them, and use their data. 
+#  SenShaMart - A Global Marketplace for Sharing Sensors in IoT
+Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
+SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
+SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
 ## SenShaMart Components
 
-A deployed Senshamart System comprises of 5 components
+A deployed SenShaMart System comprises of  components
 
-### Blockchain
-SenShaMart is based on a semanic blockchain that provides self-managment for sharing IoT sensors. Our Blockchain contains three main roles for the nodes which are Miners, Wallets, and Brokers. each node can select one or more roles  
+### SSM Blockchain
+SSM Blockchain is a semantic-based blockchain that provides self-managment for sharing IoT sensors. SSM Blockchain comprises of a collection of nodes. These nodes can play three main roles, which are Miners, Wallets, and Brokers. Each node can select one or more roles  
 #### Miner
   
-Miners mine blocks onto the SenShaMart chain.
+Miners mine blocks onto the SSM Blockchain.
 
 #### Wallets
   
-Wallets belong to users of the system. They create, sign, and propagate new transactions to miners who then mine them into the chain.
+Wallets belong to users of the SenShaMart. They create, sign, and propagate new transactions to miners who then mine them into the chain.
 
 #### Brokers
   
 Brokers act as proxies for sensor data and sit in between sensors and IoT applications. 
 
-Brokers act as access control for the sensors' data, only allowing IoT applications owned by users with valid integration transactions to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
+Brokers act as access control for the sensors' data, only allowing IoT applications owned by users who paied to access the appropriate sensor data. Some sensors are lightweight and cannot support the computational and storage requirements of managing the chain, and so the broker handles the chain management for them.
 Random subsets of brokers can also act as witnesses of integrations.
 These witnessing brokers can then vote on whether the integration completed successfully, or vote to refund the user if they believe the sensor misbehaved in some way.
 
@@ -51,8 +53,8 @@ A hardened version of this utilising the atomic nature of the sqlite3 store used
 
 ##### Compensation
   This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
-### Dashboard
-The dashboard runs ontop of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
+### User Interface
+The User Interface runs on top of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
 
 
 ### Sensors
