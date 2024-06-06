@@ -2,12 +2,15 @@
 Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
 SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
 SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
+![SSM archetecture](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/45881eee-0719-485c-8bf7-8511296b695f)
+
+
 ## SenShaMart Components
 
-A deployed SenShaMart System comprises of  components
+A deployed SenShaMart System comprises of several components
 
 ### SSM Blockchain
-SSM Blockchain is a semantic-based blockchain that provides self-managment for sharing IoT sensors. SSM Blockchain comprises of a collection of nodes. These nodes can play three main roles, which are Miners, Wallets, and Brokers. Each node can select one or more roles  
+SSM Blockchain is a semantic-based blockchain that provides self-managment for sharing IoT sensors. SSM Blockchain comprises of a collection of nodes. These nodes can play three main roles, which are Miners, Wallets, and Brokers. Each node can select one or more roles.
 #### Miner
   
 Miners mine blocks onto the SSM Blockchain.
@@ -26,7 +29,7 @@ These witnessing brokers can then vote on whether the integration completed succ
 
 #### RDF Store
 
-The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
+SSM Blockchain has embedded distributed RDF store in all SSM Blockchain nodes. This RDF store uses our developed ontology (i.e., an extension of Semantic Sensor Netwrok (SSN) https://www.w3.org/TR/vocab-ssn/) to store the semantic metadata of IoT sensors.  The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
 To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
 SPARQL queries can then be ran against the fuseki instance directly, or by using the query API to make the app act as a proxy.
 
