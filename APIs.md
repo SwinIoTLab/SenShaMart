@@ -215,9 +215,7 @@ This directs the app to create, sign, and propagate an integration transaction o
 This gets all integrations that uses sensors owned by the given public key
 
     '/Integration/UsesOwnedBy'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     =>
     ResultFailure | {
       result: true;
@@ -229,9 +227,7 @@ This gets all integrations that uses sensors owned by the given public key
 This gets all integrations initiated by the given public key
 
     '/Integration/OwnedBy'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     =>
     ResultFailure | {
       result: true;
@@ -243,9 +239,7 @@ This gets all integrations initiated by the given public key
 This gets all integrations which brokers owned by the given public key are brokering
 
     '/Integration/OurBrokersBrokering'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     =>
     ResultFailure | {
       result: true;
@@ -257,9 +251,7 @@ This gets all integrations which brokers owned by the given public key are broke
 This gets all integrations which brokers owned by the given public key are witnessing
 
     '/Integration/OurBrokersWitnessing'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     =>
     ResultFailure | {
       result: true;
@@ -308,9 +300,7 @@ This directs the app to create, sign, and propagate for mining a transaction to 
 This returns all brokers owned by the given public key
 
     '/BrokerRegistration/OwnedBy'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     => 
     ResultFailure | {
       result: true;
@@ -361,9 +351,7 @@ This directs the app to create, sign, and propagate for mining a transaction to 
 This gets all sensor registrations owned by the given public key
 
     '/SensorRegistration/OwnedBy'
-    {
-      pubKey: string;
-    }
+    PubKeyedBody
     =>
     ResultFailure | {
       result: true;
@@ -373,7 +361,7 @@ This gets all sensor registrations owned by the given public key
 This performs a SPARQL query on the backend RDF database (if it exsits)
 
     '/sparql'
-    
+    {
       query: string;
     }
     =>
