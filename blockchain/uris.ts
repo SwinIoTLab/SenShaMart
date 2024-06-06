@@ -19,7 +19,8 @@ export const PREDICATE = {
   LAST_BLOCK: PREFIX + "LastBlock",
   REWARDED: PREFIX + "Rewarded",
   MINED_BY: PREFIX + "MinedBy",
-  HAS_HASH: PREFIX + "HasHash"
+  HAS_HASH: PREFIX + "HasHash",
+  SUPERCEDES: PREFIX + "Supercedes"
 };
   
 export const OBJECT = {

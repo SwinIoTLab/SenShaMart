@@ -18,6 +18,7 @@ const metadataValidation = {
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
   integrationBroker: ChainUtil.validateIsString,
+  interval: ChainUtil.createValidateIsEither(ChainUtil.validateIsNull, ChainUtil.createValidateIsIntegerWithMin(1)),
   extraNodes: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(
       ChainUtil.createValidateObject(
@@ -41,6 +42,7 @@ type SensorRegistrationMetadata = {
   costPerMinute: number;
   costPerKB: number;
   integrationBroker: string;
+  interval: number | null;
   extraNodes?: NodeMetadata[],
   extraLiterals?: LiteralMetadata[]
 }
@@ -53,7 +55,7 @@ class SensorRegistration implements RepeatableTransaction {
   metadata: SensorRegistrationMetadata;
   signature: string;
 
-  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, rewardAmount?: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, interval: number | null, rewardAmount?: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
@@ -61,6 +63,7 @@ class SensorRegistration implements RepeatableTransaction {
       name: sensorName,
       costPerMinute: costPerMinute,
       costPerKB: costPerKB,
+      interval: interval,
       integrationBroker: integrationBroker,
     };
     if (nodeMetadata !== undefined && nodeMetadata !== null) {
@@ -91,6 +94,14 @@ class SensorRegistration implements RepeatableTransaction {
 
   static getIntegrationBroker(registration: SensorRegistration):string {
     return registration.metadata.integrationBroker;
+  }
+
+  static hasInterval(registration: SensorRegistration): boolean {
+    return registration.metadata.interval !== null;
+  }
+
+  static getInterval(registration: SensorRegistration): number | null {
+    return registration.metadata.interval;
   }
 
   static getExtraNodeMetadata(registration: SensorRegistration): NodeMetadata[] {

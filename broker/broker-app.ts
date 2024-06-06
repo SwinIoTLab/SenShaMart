@@ -391,7 +391,9 @@ const fakeChanges: UpdaterChanges = {
   SENSOR: new Set<string>(),
   WALLET: new Set<string>(),
   BROKER: new Set<string>(),
-  INTEGRATION: new Set<string>()
+  INTEGRATION: new Set<string>(),
+  NODE_RDF: new Set<string>(),
+  LITERAL_RDF: new Set<string>()
 };
 
 const currentIntegrations = blockchain.getIntegrations();

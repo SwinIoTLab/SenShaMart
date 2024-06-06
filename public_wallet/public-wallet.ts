@@ -129,7 +129,18 @@ class Wallet {
   }
 
   //return Transaction
-  createSensorRegistration(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]) {
+  createSensorRegistration(
+    keyPair: KeyPair,
+    blockchain: Blockchain,
+    rewardAmount: number,
+    sensorName: string,
+    costPerMinute: number,
+    costPerKB: number,
+    interval: number | null,
+    integrationBroker: string,
+    extraNodeMetadata: NodeMetadata[],
+    extraLiteralMetadata: LiteralMetadata[]) {
+
     const balance = blockchain.getBalanceCopy(keyPair.pubSerialized);
 
     let counter = blockchain.getCounterCopy(keyPair.pubSerialized);
@@ -145,12 +156,32 @@ class Wallet {
       throw new Error(`Reward amount: ${rewardAmount} exceeds current balance: ${balance}`);
     }
 
-    return new SensorRegistration(keyPair, counter, sensorName, costPerMinute, costPerKB, integrationBroker, rewardAmount, extraNodeMetadata, extraLiteralMetadata);
+    return new SensorRegistration(
+      keyPair,
+      counter,
+      sensorName,
+      costPerMinute,
+      costPerKB,
+      integrationBroker,
+      interval,
+      rewardAmount,
+      extraNodeMetadata,
+      extraLiteralMetadata);
   }
 
-  createSensorRegistrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
+  createSensorRegistrationAsTransaction(
+    keyPair: KeyPair,
+    blockchain: Blockchain,
+    rewardAmount: number,
+    sensorName: string,
+    costPerMinute: number,
+    costPerKB: number,
+    interval: number | null,
+    integrationBroker: string,
+    extraNodeMetadata: NodeMetadata[],
+    extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
     return {
-      tx: this.createSensorRegistration(keyPair, blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
+      tx: this.createSensorRegistration(keyPair, blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, interval, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
       type: SensorRegistration
     };
   }

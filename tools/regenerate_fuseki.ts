@@ -1,4 +1,4 @@
-import { Blockchain, unEscapeLiteralMetadata, unEscapeNodeMetadata } from "../blockchain/blockchain.js";
+import { Blockchain, unEscapeLiteralMetadata, unEscapeNodeMetadata, DATA_TYPE } from "../blockchain/blockchain.js";
 
 const MAX_MESSAGE_SIZE = 1 * 1024 * 1024
 const QUERY_HEADER = "INSERT DATA {";
@@ -33,7 +33,7 @@ const chain = await Blockchain.create(process.argv[2], null);
 
 let createQuery: string = QUERY_HEADER;
 
-for (const node of chain.triples().nodes.keys()) {
+for (const node of chain.getAll(DATA_TYPE.NODE_RDF).keys()) {
   const triple = unEscapeNodeMetadata(node);
 
   createQuery += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
@@ -46,7 +46,7 @@ for (const node of chain.triples().nodes.keys()) {
   }
 }
 
-for (const literal of chain.triples().literals.keys()) {
+for (const literal of chain.getAll(DATA_TYPE.LITERAL_RDF).keys()) {
   const triple = unEscapeLiteralMetadata(literal);
 
   createQuery += `<${triple.s}> <${triple.p}> "${triple.o}".`;

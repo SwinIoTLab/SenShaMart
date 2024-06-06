@@ -23,6 +23,7 @@ import {
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
 import Integration from '../blockchain/integration.js';
+import { randomInt } from 'crypto';
 
 'use strict';
 
@@ -91,7 +92,9 @@ add_static_file('/n3.js', uiBaseLocation + 'n3.js', '.js');
 
 app.post('/ChainServer/connect', (req, res) => {
   chainServer.connect(req.body.url);
-  res.json("Connecting");
+  res.json({
+    result: true
+  });
 });
 
 type PubKeyedBody = {
@@ -170,7 +173,10 @@ app.post('/Payment/Register', (req, res) => {
 
     chainServer.sendTx(payment);
 
-    res.json(payment.tx);
+    res.json({
+      result: true,
+      value: payment.tx
+    });
   } catch (err) {
     console.log(err);
     res.json({
@@ -437,7 +443,8 @@ const sensorRegistrationRegisterValidators = {
   sensorName: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
-  integrationBroker: ChainUtil.validateIsString,
+  integrationBroker: ChainUtil.createValidateIsEither(ChainUtil.validateIsString, ChainUtil.validateIsNull),
+  interval: ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   extraNodeMetadata: ChainUtil.createValidateOptional(
     ChainUtil.validateIsObject),
@@ -455,6 +462,18 @@ app.post('/SensorRegistration/Register', (req, res) => {
     return;
   }
 
+  if (req.body.integrationBroker === null) {
+    if (blockchain.data.BROKER.size === 0) {
+      res.json({
+        result: false,
+        reason: "There are no brokers with which to select a default broker with"
+      });
+    }
+    const brokers = Array.from(blockchain.data.BROKER.keys());
+    const rand_i = randomInt(0, brokers.length);
+    req.body.integrationBroker = brokers[rand_i];
+  }
+
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
 
@@ -465,6 +484,7 @@ app.post('/SensorRegistration/Register', (req, res) => {
       req.body.sensorName,
       req.body.costPerMinute,
       req.body.costPerKB,
+      req.body.interval,
       req.body.integrationBroker,
       req.body.extraNodeMetadata,
       req.body.extraLiteralMetadata);

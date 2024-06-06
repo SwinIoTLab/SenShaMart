@@ -40,11 +40,13 @@ INSERT INTO Configs(name,value) VALUES
  ('version','${DB_EXPECTED_VERSION}');
 
 CREATE TABLE NodeTriples(
- key TEXT NOT NULL PRIMARY KEY,
+ id INTEGER NOT NULL PRIMARY KEY,
+ key TEXT NOT NULL,
  value INTEGER NOT NULL);
 
 CREATE TABLE LiteralTriples(
- key TEXT NOT NULL PRIMARY KEY,
+ id INTEGER NOT NULL PRIMARY KEY,
+ key TEXT NOT NULL,
  value INTEGER NOT NULL);
 
 CREATE TABLE Blocks(
@@ -92,6 +94,8 @@ const DATA_TYPE = {
   SENSOR: "SENSOR",
   BROKER: "BROKER",
   INTEGRATION: "INTEGRATION",
+  NODE_RDF: "NODE_RDF",
+  LITERAL_RDF: "LITERAL_RDF"
 } as const;
 
 type Data_type = typeof DATA_TYPE[keyof typeof DATA_TYPE];
@@ -101,6 +105,8 @@ const ALL_DATA_TYPES = [
   DATA_TYPE.SENSOR,
   DATA_TYPE.BROKER,
   DATA_TYPE.INTEGRATION,
+  DATA_TYPE.NODE_RDF,
+  DATA_TYPE.LITERAL_RDF
 ] as const;
 
 //A template that holds the id of a data as well as the data
@@ -150,6 +156,8 @@ type DatasWithDbId = {
   SENSOR: Map<string, WithDbId<SensorRegistration>>;
   BROKER: Map<string, WithDbId<BrokerRegistration>>;
   INTEGRATION: Map<string, WithDbId<IntegrationExpanded>>;
+  NODE_RDF: Map<string, WithDbId<number>>;
+  LITERAL_RDF: Map<string, WithDbId<number>>;
   //[index: Data_type]: Map<string, unknown>;
 }
 
@@ -159,6 +167,8 @@ type Datas = {
   SENSOR: Map<string, SensorRegistration>;
   BROKER: Map<string, BrokerRegistration>;
   INTEGRATION: Map<string, IntegrationExpanded>;
+  NODE_RDF: Map<string, number>;
+  LITERAL_RDF: Map<string, number>;
 }
 
 //error number for replace chain
@@ -180,17 +190,11 @@ const ERROR_REPLACECHAIN = {
   BAD_ARG: 7,
 } as const;
 
-//number of times a triple exists
-type TripleCounts = {
-  nodes: Map<string, number>;
-  literals: Map<string, number>;
-}
-
 function escapeNodeMetadata(escaping: NodeMetadata): string {
-  let returning = escaping.s.replace('\\', '\\\\');
-  returning += '\\';
-  returning += escaping.p.replace('\\', '\\\\');
-  returning += '\\';
+  let returning = escaping.s.replace('-', '--');
+  returning += '-';
+  returning += escaping.p.replace('-', '--');
+  returning += '-';
   returning += escaping.o;
   return returning;
 }
@@ -205,8 +209,8 @@ export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
   let i = 0;
 
   for (; i < escaping.length; ++i) {
-    if (escaping[i] === '\\' && (i === escaping.length - 1 || escaping[i + 1] !== '\\')) {
-      returning.s = escaping.substring(0, i).replace('\\\\', '\\');
+    if (escaping[i] === '-' && (i === escaping.length - 1 || escaping[i + 1] !== '-')) {
+      returning.s = escaping.substring(0, i).replace('--', '-');
       break;
     }
   }
@@ -218,8 +222,8 @@ export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
   let j = i + 1;
 
   for (; j < escaping.length; ++j) {
-    if (escaping[j] === '\\' && (j === escaping.length - 1 || escaping[j + 1] !== '\\')) {
-      returning.p = escaping.substring(i+1, j).replace('\\\\', '\\');
+    if (escaping[j] === '-' && (j === escaping.length - 1 || escaping[j + 1] !== '-')) {
+      returning.p = escaping.substring(i+1, j).replace('--', '-');
       break;
     }
   }
@@ -234,10 +238,10 @@ export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
 }
 
 function escapeLiteralMetadata(escaping: LiteralMetadata): string {
-  let returning = escaping.s.replace('\\', '\\\\');
-  returning += '\\';
-  returning += escaping.p.replace('\\', '\\\\');
-  returning += '\\';
+  let returning = escaping.s.replace('-', '--');
+  returning += '-';
+  returning += escaping.p.replace('-', '--');
+  returning += '-';
   returning += escaping.o;
   return returning;
 }
@@ -252,8 +256,8 @@ export function unEscapeLiteralMetadata(escaping: string): LiteralMetadata {
   let i = 0;
 
   for (; i < escaping.length; ++i) {
-    if (escaping[i] === '\\' && (i === escaping.length - 1 || escaping[i + 1] !== '\\')) {
-      returning.s = escaping.substring(0, i).replace('\\\\', '\\');
+    if (escaping[i] === '-' && (i === escaping.length - 1 || escaping[i + 1] !== '-')) {
+      returning.s = escaping.substring(0, i).replace('--', '-');
       break;
     }
   }
@@ -265,8 +269,8 @@ export function unEscapeLiteralMetadata(escaping: string): LiteralMetadata {
   let j = i + 1;
 
   for (; j < escaping.length; ++j) {
-    if (escaping[j] === '\\' && (j === escaping.length - 1 || escaping[j + 1] !== '\\')) {
-      returning.p = escaping.substring(i + 1, j).replace('\\\\', '\\');
+    if (escaping[j] === '-' && (j === escaping.length - 1 || escaping[j + 1] !== '-')) {
+      returning.p = escaping.substring(i + 1, j).replace('--', '-');
       break;
     }
   }
@@ -279,12 +283,12 @@ export function unEscapeLiteralMetadata(escaping: string): LiteralMetadata {
 
   return returning;
 }
-//create an empty triple counts object
-function genTripleCounts(): TripleCounts {
-  return {
-    nodes: new Map<string, number>(),
-    literals: new Map<string, number>()
-  };
+
+function plusNodeRdf(updater: Updater, s: string, p: string, o: string) {
+  updater.plus(DATA_TYPE.NODE_RDF, escapeNodeMetadata({ s: s, p: p, o: o }), 0, 1);
+}
+function plusLiteralRdf(updater: Updater, s: string, p: string, o: string) {
+  updater.plus(DATA_TYPE.LITERAL_RDF, escapeLiteralMetadata({ s: s, p: p, o: o }), 0, 1);
 }
 
 //generate empty datas with db id
@@ -293,7 +297,9 @@ function genDatasWithDbId(): DatasWithDbId {
     WALLET: new Map<string, WithDbId<Wallet>>(),
     SENSOR: new Map<string, WithDbId<SensorRegistration>>(),
     BROKER: new Map<string, WithDbId<BrokerRegistration>>(),
-    INTEGRATION: new Map<string, WithDbId<IntegrationExpanded>>()
+    INTEGRATION: new Map<string, WithDbId<IntegrationExpanded>>(),
+    NODE_RDF: new Map<string, WithDbId<number>>(),
+    LITERAL_RDF: new Map<string, WithDbId<number>>()
   };
 }
 
@@ -303,7 +309,9 @@ function genDatas(): Datas {
     WALLET: new Map<string, Wallet>(),
     SENSOR: new Map<string, SensorRegistration>(),
     BROKER: new Map<string, BrokerRegistration>(),
-    INTEGRATION: new Map<string, IntegrationExpanded>()
+    INTEGRATION: new Map<string, IntegrationExpanded>(),
+    NODE_RDF: new Map<string, number>(),
+    LITERAL_RDF: new Map<string, number>()
   };
 }
 
@@ -355,28 +363,21 @@ class ChainLink {
   }
 
   static deserialize(data: string): ChainLink {
-    const parsed = JSON.parse(data);
+    const parsed: {
+      block: Block;
+      undos: {
+        [index: string]: {
+          [index: string]: Wallet & SensorRegistration & BrokerRegistration & IntegrationExpanded & number
+        }
+      }
+    } = JSON.parse(data);
 
     const returning = new ChainLink(parsed.block);
-
-    if (parsed.undos[DATA_TYPE.WALLET] !== undefined) {
-      for (const [key, value] of Object.entries(parsed.undos[DATA_TYPE.WALLET])) {
-        returning.undos[DATA_TYPE.WALLET].set(key, value as Wallet);
-      }
-    }
-    if (parsed.undos[DATA_TYPE.SENSOR] !== undefined) {
-      for (const [key, value] of Object.entries(parsed.undos[DATA_TYPE.SENSOR])) {
-        returning.undos[DATA_TYPE.SENSOR].set(key, value as SensorRegistration);
-      }
-    }
-    if (parsed.undos[DATA_TYPE.BROKER] !== undefined) {
-      for (const [key, value] of Object.entries(parsed.undos[DATA_TYPE.BROKER])) {
-        returning.undos[DATA_TYPE.BROKER].set(key, value as BrokerRegistration);
-      }
-    }
-    if (parsed.undos[DATA_TYPE.INTEGRATION] !== undefined) {
-      for (const [key, value] of Object.entries(parsed.undos[DATA_TYPE.INTEGRATION])) {
-        returning.undos[DATA_TYPE.INTEGRATION].set(key, value as IntegrationExpanded);
+    for (const dataType of Object.values(DATA_TYPE)) {
+      if (parsed.undos[dataType] !== undefined) {
+        for (const [key, value] of Object.entries(parsed.undos[dataType])) {
+          returning.undos[dataType].set(key, value);
+        }
       }
     }
 
@@ -385,35 +386,23 @@ class ChainLink {
 }
 
 //merge a datas into another
+function mergeData<K, V>(from: Map<K, V>, to: Map<K, V>) {
+  for (const [key, value] of from.entries()) {
+    if (value === null) {
+      to.delete(key);
+    } else {
+      to.set(key, value);
+    }
+  }
+}
+
 function mergeDatas(from: Datas, to: Datas) {
-  for (const [key, value] of from.WALLET.entries()) {
-    if (value === null) {
-      to.WALLET.delete(key);
-    } else {
-      to.WALLET.set(key, value);
-    }
-  }
-  for (const [key, value] of from.SENSOR.entries()) {
-    if (value === null) {
-      to.SENSOR.delete(key);
-    } else {
-      to.SENSOR.set(key, value);
-    }
-  }
-  for (const [key, value] of from.BROKER.entries()) {
-    if (value === null) {
-      to.BROKER.delete(key);
-    } else {
-      to.BROKER.set(key, value);
-    }
-  }
-  for (const [key, value] of from.INTEGRATION.entries()) {
-    if (value === null) {
-      to.INTEGRATION.delete(key);
-    } else {
-      to.INTEGRATION.set(key, value);
-    }
-  }
+  mergeData(from.WALLET, to.WALLET);
+  mergeData(from.SENSOR, to.SENSOR);
+  mergeData(from.BROKER, to.BROKER);
+  mergeData(from.INTEGRATION, to.INTEGRATION);
+  mergeData(from.NODE_RDF, to.NODE_RDF);
+  mergeData(from.LITERAL_RDF, to.LITERAL_RDF);
 }
 
 //copy a value, object or value
@@ -456,7 +445,9 @@ function genChanges(): UpdaterChanges {
     WALLET: new Set<string>(),
     SENSOR: new Set<string>(),
     BROKER: new Set<string>(),
-    INTEGRATION: new Set<string>()
+    INTEGRATION: new Set<string>(),
+    NODE_RDF: new Set<string>(),
+    LITERAL_RDF: new Set<string>()
   };
 }
 
@@ -472,6 +463,12 @@ function addDataToChanges(data: Datas, changes: UpdaterChanges) {
   }
   for (const key of data.INTEGRATION.keys()) {
     changes.INTEGRATION.add(key);
+  }
+  for (const key of data.NODE_RDF.keys()) {
+    changes.NODE_RDF.add(key);
+  }
+  for (const key of data.LITERAL_RDF.keys()) {
+    changes.LITERAL_RDF.add(key);
   }
 }
 
@@ -498,7 +495,7 @@ async function rollbackErr(chain: Blockchain, orig: Error) {
   }
 }
 
-async function onUpdateFinish(updater: Updater, persist: boolean) {
+async function onUpdateFinish(updater: Updater) {
   const chain = updater.parent;
 
   //debug checks
@@ -637,92 +634,91 @@ async function onUpdateFinish(updater: Updater, persist: boolean) {
   let createQuery: string = CREATE_QUERY_INITIAL;
   let deleteQuery: string = DELETE_QUERY_INITIAL;
 
-  let negativeRDF = false;
-  for (const [escaped, count] of updater.store.nodes) {
-    let existing = updater.parent.store.nodes.get(escaped);
+  for (const [escaped, count] of updater.prevData.NODE_RDF) {
+    let existing = updater.parent.data.NODE_RDF.get(escaped);
     const triple = unEscapeNodeMetadata(escaped);
     if (existing === undefined) {
-      existing = 0;
-    }
-    if (existing + count < 0) {
-      console.error(`Negative rdf reached during update: '${triple.s}', '${triple.p}', '${triple.o}', existing: ${existing}, count: ${count}`);
-      negativeRDF = true;
-    }
-    if (count === 0) {
-      await updater.parent.persistence.run("DELETE FROM NodeTriples WHERE key = ?;",
-        escaped);
-    } else {
-      await updater.parent.persistence.run("INSERT INTO NodeTriples(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-        escaped, count);
-    }
-    if (persist) {
-      if (existing === 0 && existing + count > 0) {
+      if (count > 0) { //only write if count > 0, otherwise it should be 0, and no point writing it as default is 0
+        const newId = await updater.parent.persistence.get<Insert_result>("INSERT INTO NodeTriples(key,value) VALUES (?,?) RETURNING id;",
+          escaped, count);
+
+        updater.parent.data.NODE_RDF.set(escaped, {
+          dbId: newId.id,
+          base: count
+        });
+
         createQuery += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
       }
-      if (existing > 0 && existing + count === 0) {
+    } else {
+      if (count === 0) {
+        await updater.parent.persistence.run("DELETE FROM NodeTriples WHERE id = ?;",
+          existing.dbId);
+
+        updater.parent.data.NODE_RDF.delete(escaped);
+
         deleteQuery += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
+      } else {
+        await updater.parent.persistence.run("UPDATE NodeTriples SET value=? WHERE id =?;",
+          count, escaped);
+
+        existing.base = count;
       }
     }
-    updater.parent.store.nodes.set(escaped, existing + count);
   }
-  for (const [escaped, count] of updater.store.literals) {
-    let existing = updater.parent.store.literals.get(escaped);
-    const triple = unEscapeLiteralMetadata(escaped);
+  for (const [escaped, count] of updater.prevData.LITERAL_RDF) {
+    let existing = updater.parent.data.LITERAL_RDF.get(escaped);
+    const triple = unEscapeNodeMetadata(escaped);
     if (existing === undefined) {
-      existing = 0;
-    }
-    if (existing + count < 0) {
-      console.error(`Negative rdf reached during update: '${triple.s}', '${triple.p}', '${triple.o}', existing: ${existing}, count: ${count}`);
-      negativeRDF = true;
-    }
-    if (count === 0) {
-      await updater.parent.persistence.run("DELETE FROM LiteralTriples WHERE key = ?;",
-        escaped);
-    } else {
-      await updater.parent.persistence.run("INSERT INTO LiteralTriples(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-        escaped, count);
-    }
-    if (persist) {
-      if (existing === 0 && existing + count > 0) {
+      if (count > 0) { //only write if count > 0, otherwise it should be 0, and no point writing it as default is 0
+        const newId = await updater.parent.persistence.get<Insert_result>("INSERT INTO LiteralTriples(key,value) VALUES (?,?) RETURNING id;",
+          escaped, count);
+
+        updater.parent.data.LITERAL_RDF.set(escaped, {
+          dbId: newId.id,
+          base: count
+        });
+
         createQuery += `<${triple.s}> <${triple.p}> "${triple.o}".`;
       }
-      if (existing > 0 && existing + count === 0) {
+    } else {
+      if (count === 0) {
+        await updater.parent.persistence.run("DELETE FROM LiteralTriples WHERE id = ?;",
+          existing.dbId);
+
+        updater.parent.data.LITERAL_RDF.delete(escaped);
+
         deleteQuery += `<${triple.s}> <${triple.p}> "${triple.o}".`;
+      } else {
+        await updater.parent.persistence.run("UPDATE LiteralTriples SET value=? WHERE id =?;",
+          count, escaped);
+
+        existing.base = count;
       }
     }
-    updater.parent.store.literals.set(escaped, existing + count);
   }
 
-  if (negativeRDF) {
-    process.exit(-1);
-  }
+updater.curData = genDatas(); //reset cur and prev data
+updater.prevData = genDatas();
 
-  updater.curData = genDatas(); //reset cur and prev data
-  updater.prevData = genDatas();
-
-  if (persist) {
-    if (updater.parent.fuseki_location !== null) {
-      let sending = "";
-      if (createQuery.length > CREATE_QUERY_INITIAL.length) {
-        sending += createQuery + "};";
-      }
-      if (deleteQuery.length > DELETE_QUERY_INITIAL.length) {
-        sending += deleteQuery + "};";
-      }
-
-      await fetch(updater.parent.fuseki_location + "/update", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        },
-        body: 'update=' + encodeURIComponent(sending)
-      });
+  if (updater.parent.fuseki_location !== null) {
+    let sending = "";
+    if (deleteQuery.length > DELETE_QUERY_INITIAL.length) {
+      sending += deleteQuery + "};";
+    }
+    if (createQuery.length > CREATE_QUERY_INITIAL.length) {
+      sending += createQuery + "};";
     }
 
-    await updater.parent.persistence.run("COMMIT;");
-  } else {
-    await updater.parent.persistence.run("ROLLBACK;");
+    await fetch(updater.parent.fuseki_location + "/update", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: 'update=' + encodeURIComponent(sending)
+    });
   }
+
+  await updater.parent.persistence.run("COMMIT;");
 
   const newLinks = updater.links;
   updater.links = [];
@@ -764,25 +760,14 @@ function makeWalletName(input: string): string {
 }
 
 //creates RDF triples to describe a block header
-function genBlockHeaderRDF(triples: TripleCounts, block: Block, count: number = 1): void {
+function genBlockHeaderRDF(updater: Updater, block: Block): void {
   const blockName = makeBlockName(block.hash);
   const prevBlockName = makeBlockName(block.lastHash);
 
-  addToLiteralTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.BLOCK
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.LAST_BLOCK,
-    o: prevBlockName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.MINED_BY,
-    o: makeWalletName(block.reward)
-  }, count);
+
+  plusLiteralRdf(updater, blockName, URIS.PREDICATE.TYPE, URIS.OBJECT.BLOCK);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.LAST_BLOCK, prevBlockName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.MINED_BY, makeWalletName(block.reward));
 }
 
 //this object carries all state needed to update a chain
@@ -793,7 +778,6 @@ class Updater {
   curData: Datas; //current steps datas
   startIndex: number; //where the new links are inserting
   on: number; //index in the chain we're currently on
-  store: TripleCounts; //new RDF
   constructor(parent: Blockchain) {
     this.parent = parent;
     this.links = [];
@@ -801,7 +785,6 @@ class Updater {
     this.curData = genDatas();
     this.startIndex = parent.length();
     this.on = this.startIndex;
-    this.store = genTripleCounts();
   }
 
   prevBlock(): Block {
@@ -836,7 +819,7 @@ class Updater {
     mergeDatas(this.curData, this.prevData);
     this.curData = genDatas();
 
-    genBlockHeaderRDF(this.store, block);
+    genBlockHeaderRDF(this, block);
   }
 
   //remove a block
@@ -855,7 +838,6 @@ class Updater {
     mergeDatas(this.curData, this.prevData);
     this.curData = genDatas();
     mergeDatas(undoing.undos, this.prevData);
-    genBlockRDF(this.store, undoing.block);
 
     if (this.links.length > 0) {
       this.links.pop();
@@ -906,55 +888,16 @@ class Updater {
   }
 
   //finish updating and persist the changes if persist is true
-  async finish(persist: boolean): Promise<UpdateFinish> {
+  async persist(): Promise<UpdateFinish> {
     //persist blockchain first
     await this.parent.persistence.run("BEGIN;");
-    if (persist) {
-      
-      try {
-        await writeBlocks(this.parent, this.startIndex, this.links);
-        return await onUpdateFinish(this, persist);
-      } catch (err) {
-        await rollbackErr(this.parent, err);
-        throw err;
-      }
-    } else {
-      return await onUpdateFinish(this, persist);
+    try {
+      await writeBlocks(this.parent, this.startIndex, this.links);
+      return await onUpdateFinish(this);
+    } catch (err) {
+      await rollbackErr(this.parent, err);
+      throw err;
     }
-  }
-}
-
-//add a triple with a literal object to triples
-function addToLiteralTripleCounts(triples: TripleCounts, triple: LiteralMetadata, count: number = 1): void {
-
-  const escaped = escapeLiteralMetadata(triple);
-
-  if (triples.literals.has(escaped)) {
-    const returning = triples.literals.get(escaped) + count;
-    if (returning === 0) {
-      triples.literals.delete(escaped);
-    } else {
-      triples.literals.set(escaped, returning);
-    }
-  } else {
-    triples.literals.set(escaped, count);
-  }
-}
-
-//add a triple with a node object to triples
-function addToNodeTripleCounts(triples: TripleCounts, triple: NodeMetadata, count: number = 1): void {
-
-  const escaped = escapeNodeMetadata(triple);
-
-  if (triples.nodes.has(escaped)) {
-    const returning = triples.nodes.get(escaped) + count;
-    if (returning === 0) {
-      triples.nodes.delete(escaped);
-    } else {
-      triples.nodes.set(escaped, returning);
-    }
-  } else {
-    triples.nodes.set(escaped, count);
   }
 }
 
@@ -1006,32 +949,15 @@ function payoutIntegration(updater: Updater, integration: IntegrationExpanded): 
 
 //the following functions either generate the RDF for a particular tx type, or validate and apply the tx to the updater
 
-function genPaymentRDF(triples: TripleCounts, blockName: string, tx: Payment, count: number = 1): void{
+function genPaymentRDF(updater: Updater, blockName: string, tx: Payment): void{
 
   const transactionName = makePaymentTransactionName(tx);
 
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
-    o: transactionName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_PAYMENT,
-    o: transactionName
-  }, count);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_PAYMENT, transactionName);
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.REWARDED,
-    o: tx.rewardAmount
-  }, count);
-
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.PAYMENT_TX
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.PAYMENT_TX);
 }
 
 function stepPayment(updater: Updater, reward:string, tx:Payment, blockName: string):Result {
@@ -1083,44 +1009,23 @@ function stepPayment(updater: Updater, reward:string, tx:Payment, blockName: str
   rewardWallet.balance += tx.rewardAmount;
   updater.set(DATA_TYPE.WALLET, reward, rewardWallet);
 
-  genPaymentRDF(updater.store, blockName, tx);
+  genPaymentRDF(updater, blockName, tx);
 
   return {
     result: true
   };
 }
 
-function genIntegrationRDF(triples: TripleCounts, blockName: string, tx: Integration, count: number = 1): void {
+function genIntegrationRDF(updater: Updater, blockName: string, tx: Integration): void {
 
   const transactionName = makeIntegrationTransactionName(tx);
 
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
-    o: transactionName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_INTEGRATION,
-    o: transactionName
-  }, count);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_INTEGRATION, transactionName);
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.REWARDED,
-    o: tx.rewardAmount
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_HASH,
-    o: Integration.hashToSign(tx)
-  }, count);
-
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.INTEGRATION_TX
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, Integration.hashToSign(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.INTEGRATION_TX);
 }
 
 function stepIntegration(updater: Updater, reward: string, startTime: number, tx: Integration, blockName: string):Result {
@@ -1254,32 +1159,20 @@ function stepIntegration(updater: Updater, reward: string, startTime: number, tx
 
   updater.set(DATA_TYPE.INTEGRATION, makeIntegrationKey(txCopy.input, txCopy.counter), txCopy);
 
-  genIntegrationRDF(updater.store, blockName, txCopy);
+  genIntegrationRDF(updater, blockName, txCopy);
 
   return {
     result: true
   };
 }
 
-function genCommitRDF(triples: TripleCounts, blockName: string, tx: Commit, count: number = 1): void {
+function genCommitRDF(updater: Updater, blockName: string, tx: Commit): void {
   const transactionName = makeCommitTransactionName(tx);
 
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
-    o: transactionName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_COMMIT,
-    o: transactionName
-  }, count);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_COMMIT, transactionName);
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.COMMIT_TX
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.COMMIT_TX);
 }
 
 function stepCommit(updater: Updater, tx: Commit, blockName: string): Result {
@@ -1336,88 +1229,41 @@ function stepCommit(updater: Updater, tx: Commit, blockName: string): Result {
 
   updater.set(DATA_TYPE.INTEGRATION, integrationKey, foundIntegration);
 
-  genCommitRDF(updater.store, blockName, tx);
+  genCommitRDF(updater, blockName, tx);
 
   return {
     result: true
   };
 }
 
-function genSensorRegistrationRDF(triples: TripleCounts, blockName: string, tx: SensorRegistration, count: number = 1): void {
+function genSensorRegistrationRDF(updater: Updater, blockName: string, tx: SensorRegistration, prevSensor: SensorRegistration | null): void {
   const transactionName = makeSensorTransactionName(tx);
 
   for (const triple of SensorRegistration.getExtraNodeMetadata(tx)) {
-    addToNodeTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, transactionName),
-      p: uriReplacePrefix(triple.p, transactionName),
-      o: uriReplacePrefix(triple.o, transactionName)
-    }, count);
+    plusNodeRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), uriReplacePrefix(triple.o, transactionName));
   }
   for (const triple of SensorRegistration.getExtraLiteralMetadata(tx)) {
-    addToLiteralTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, transactionName),
-      p: uriReplacePrefix(triple.p, transactionName),
-      o: literal(triple.o)
-    }, count);
+    plusLiteralRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), String(triple.o));
   }
 
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
-    o: transactionName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION,
-    o: transactionName
-  }, count);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION, transactionName);
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.REWARDED,
-    o: tx.rewardAmount
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_HASH,
-    o: SensorRegistration.hashToSign(tx)
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, SensorRegistration.hashToSign(tx));
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.SENSOR_REGISTRATION_TX
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_COUNTER,
-    o: tx.counter
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.IS_OWNED_BY,
-    o: makeWalletName(tx.input)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.DEFINES,
-    o: SensorRegistration.getSensorName(tx)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.COSTS_PER_MINUTE,
-    o: SensorRegistration.getCostPerMinute(tx)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.COSTS_PER_KB,
-    o: SensorRegistration.getCostPerKB(tx)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.USES_BROKER,
-    o: SensorRegistration.getIntegrationBroker(tx)
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.SENSOR_REGISTRATION_TX);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
+  plusNodeRdf(updater, transactionName, URIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.DEFINES, SensorRegistration.getSensorName(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.COSTS_PER_MINUTE, String(SensorRegistration.getCostPerMinute(tx)));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.COSTS_PER_KB, String(SensorRegistration.getCostPerKB(tx)));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.USES_BROKER, SensorRegistration.getIntegrationBroker(tx));
+
+  if (prevSensor !== null) {
+    const prevTxName = makeSensorTransactionName(prevSensor);
+    plusNodeRdf(updater, transactionName, URIS.PREDICATE.SUPERCEDES, prevTxName);
+  }
 }
 
 function stepSensorRegistration(updater: Updater, reward: string, tx: SensorRegistration, blockName: string):Result {
@@ -1464,7 +1310,7 @@ function stepSensorRegistration(updater: Updater, reward: string, tx: SensorRegi
 
   const sensorName = SensorRegistration.getSensorName(tx);
 
-  const foundExistingSensor = updater.get(DATA_TYPE.SENSOR, sensorName, null);
+  const foundExistingSensor: SensorRegistration | null = updater.get(DATA_TYPE.SENSOR, sensorName, null);
 
   if (foundExistingSensor !== null) {
     if (foundExistingSensor.input !== tx.input) {
@@ -1477,78 +1323,39 @@ function stepSensorRegistration(updater: Updater, reward: string, tx: SensorRegi
 
   updater.set(DATA_TYPE.SENSOR, sensorName, tx);
 
-  genSensorRegistrationRDF(updater.store, blockName, tx);
+  genSensorRegistrationRDF(updater, blockName, tx, foundExistingSensor);
 
   return {
     result: true
   };
 }
 
-function genBrokerRegistrationRDF(triples: TripleCounts, blockName: string, tx: BrokerRegistration, count: number = 1): void {
+function genBrokerRegistrationRDF(updater: Updater, blockName: string, tx: BrokerRegistration, prevBroker: BrokerRegistration | null): void {
   const transactionName = makeBrokerTransactionName(tx);
 
   for (const triple of BrokerRegistration.getExtraNodeMetadata(tx)) {
-    addToNodeTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, transactionName),
-      p: uriReplacePrefix(triple.p, transactionName),
-      o: uriReplacePrefix(triple.o, transactionName)
-    }, count);
+    plusNodeRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), uriReplacePrefix(triple.o, transactionName));
   }
   for (const triple of BrokerRegistration.getExtraLiteralMetadata(tx)) {
-    addToLiteralTripleCounts(triples, {
-      s: uriReplacePrefix(triple.s, transactionName),
-      p: uriReplacePrefix(triple.p, transactionName),
-      o: literal(triple.o)
-    }, count);
+    plusLiteralRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), String(triple.o));
   }
 
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_TRANSACTION,
-    o: transactionName
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: blockName,
-    p: URIS.PREDICATE.CONTAINS_BROKER_REGISTRATION,
-    o: transactionName
-  }, count);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_BROKER_REGISTRATION, transactionName);
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.REWARDED,
-    o: tx.rewardAmount
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_HASH,
-    o: BrokerRegistration.hashToSign(tx)
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, BrokerRegistration.hashToSign(tx));
 
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.TYPE,
-    o: URIS.OBJECT.BROKER_REGISTRATION_TX
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_COUNTER,
-    o: tx.counter
-  }, count);
-  addToNodeTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.IS_OWNED_BY,
-    o: makeWalletName(tx.input)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.DEFINES,
-    o: BrokerRegistration.getBrokerName(tx)
-  }, count);
-  addToLiteralTripleCounts(triples, {
-    s: transactionName,
-    p: URIS.PREDICATE.HAS_ENDPOINT,
-    o: BrokerRegistration.getEndpoint(tx)
-  }, count);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.BROKER_REGISTRATION_TX);
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
+  plusNodeRdf(updater, transactionName, URIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.DEFINES, BrokerRegistration.getBrokerName(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_ENDPOINT, BrokerRegistration.getEndpoint(tx));
+
+  if (prevBroker !== null) {
+    const prevTxName = makeBrokerTransactionName(prevBroker);
+    plusNodeRdf(updater, transactionName, URIS.PREDICATE.SUPERCEDES, prevTxName);
+  }
 }
 
 function stepBrokerRegistration(updater: Updater, reward: string, tx: BrokerRegistration, blockName: string): Result {
@@ -1598,34 +1405,11 @@ function stepBrokerRegistration(updater: Updater, reward: string, tx: BrokerRegi
 
   updater.set(DATA_TYPE.BROKER,BrokerRegistration.getBrokerName(tx), tx);
 
-  genBrokerRegistrationRDF(updater.store, blockName, tx);
+  genBrokerRegistrationRDF(updater, blockName, tx, foundExistingBroker);
 
   return {
     result: true
   };
-}
-
-//add rdf for all txs of a block to triples
-function genBlockRDF(triples: TripleCounts, block: Block) : void {
-  const blockName = makeBlockName(block.hash);
-
-  genBlockHeaderRDF(triples, block, -1);
-
-  for (const tx of Block.getPayments(block)) {
-    genPaymentRDF(triples, blockName, tx, -1);
-  }
-  for (const tx of Block.getIntegrations(block)) {
-    genIntegrationRDF(triples, blockName, tx, -1);
-  }
-  for (const tx of Block.getSensorRegistrations(block)) {
-    genSensorRegistrationRDF(triples, blockName, tx, -1);
-  }
-  for (const tx of Block.getBrokerRegistrations(block)) {
-    genBrokerRegistrationRDF(triples, blockName, tx, -1);
-  }
-  for (const tx of Block.getCommits(block)) {
-    genCommitRDF(triples, blockName, tx, -1);
-  }
 }
 
 function checkIntegrationsForTimeout(updater: Updater, timestamp: number) {
@@ -1936,7 +1720,7 @@ async function replaceImpl(me: Op, blockchain: Blockchain): Promise<void> {
           return;
         }
 
-        const finishRes = await updater.finish(true);
+        const finishRes = await updater.persist();
 
         const newBlocks: Block[] = []; //make blocks array
         for (const link of finishRes.newBlocks) { //for every link
@@ -1985,7 +1769,7 @@ async function addBlockImpl(me: Op, blockchain: Blockchain): Promise<void> {
       return;
     }
 
-    const finishRes = await updater.finish(true);
+    const finishRes = await updater.persist();
 
     const newBlocks: Block[] = [];
     for (const link of finishRes.newBlocks) {
@@ -2095,6 +1879,7 @@ type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number
 //logic to prepare the statements used by sqlite3 for persistence
 
 type Triple_result = {
+  id: number,
   key: string,
   value: number
 };
@@ -2172,11 +1957,17 @@ async function open_db(chain: Blockchain, db_location: string) {
 
   chain.linksStartI = Math.max(blockCountRes.max - MAX_BLOCKS_IN_MEMORY + 1, 0);
 
-  await chain.persistence.each<Triple_result>("SELECT key,value FROM LiteralTriples;", (row) => {
-    chain.store.literals.set(row.key, row.value);
+  await chain.persistence.each<Triple_result>("SELECT id,key,value FROM LiteralTriples;", (row) => {
+    chain.data.LITERAL_RDF.set(row.key, {
+      dbId: row.id,
+      base: row.value
+    });
   });
-  await chain.persistence.each<Triple_result>("SELECT key,value FROM NodeTriples;", (row) => {
-    chain.store.nodes.set(row.key, row.value);
+  await chain.persistence.each<Triple_result>("SELECT id,key,value FROM NodeTriples;", (row) => {
+    chain.data.NODE_RDF.set(row.key, {
+      dbId: row.id,
+      base: row.value
+    });
   });
 }
 
@@ -2320,7 +2111,6 @@ class Blockchain {
   listeners: Listener[]; //listeners to blockchain changed events
   persistence: Persistence; //our wrapper to the sqlite3 based persitence
   queue: Op[]; //queue of operations. These are queued to stop race conditions
-  store: TripleCounts; //simple store of counts of triples
   fuseki_location: string | null; //the URL of a fuseki instance
 
   private constructor(fuseki_location: string | null) {
@@ -2331,8 +2121,6 @@ class Blockchain {
     sqlite3.verbose();
     this.queue = [];
     this.fuseki_location = fuseki_location;
-
-    this.store = genTripleCounts();
   }
 
   static async create(db_location: string, fuseki_location: string | null) {
@@ -2441,10 +2229,6 @@ class Blockchain {
 
   addListener(listener:Listener): void {
     this.listeners.push(listener);
-  }
-
-  triples(): TripleCounts {
-    return this.store;
   }
 }
 

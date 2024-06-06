@@ -1,5 +1,5 @@
 import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
-import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
+import type { RepeatableTransaction, TransactionWrapper } from './transaction_base.js';
 
 const outputValidation = {
   publicKey: ChainUtil.validateIsPublicKey,
@@ -12,7 +12,7 @@ type Output = {
 };
 
 function validateOutputs(t:unknown):Result {
-  let validateRes = ChainUtil.validateArray(t, function (output) {
+  const validateRes = ChainUtil.validateArray(t, function (output) {
       return ChainUtil.validateObject(output, outputValidation);
     });
   if (isFailure(validateRes)) {

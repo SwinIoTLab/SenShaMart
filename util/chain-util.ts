@@ -230,10 +230,48 @@ class ChainUtil {
     return {
       result: true
     };
+  } 
+
+  static createValidateIsEither(...validators: ValidatorI[]) {
+    return (t: unknown): Result => {
+      let failString = "Failed all validators:";
+      for (const v of validators) {
+        const res = v(t);
+        if (!isFailure(res)) {
+          return {
+            result: true
+          };
+        } else {
+          failString += "\n  " + res.reason;
+        }
+      }
+      return {
+        result: false,
+        reason: failString
+      };
+    };
+  }
+
+  static validateIsNull(t?: unknown): Result {
+    if (t === undefined) {
+      return {
+        result: false,
+        reason: "Is undefined"
+      };
+    }
+    if (t !== null) {
+      return {
+        result: false,
+        reason: "Is not null"
+      };
+    }
+    return {
+      result: true
+    };
   }
 
   static validateIsObject(t?: unknown): Result {
-    if (typeof t === "undefined") {
+    if (t === undefined) {
       return {
         result: false,
         reason: "Is undefined"

@@ -126,7 +126,7 @@ class Wallet {
   }
 
   //return Transaction
-  createSensorRegistration(blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]) {
+  createSensorRegistration(blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, interval: number | null, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]) {
     const balance = blockchain.getBalanceCopy(this.publicKey);
     const counter = blockchain.getCounterCopy(this.publicKey);
 
@@ -142,12 +142,12 @@ class Wallet {
     const counterToUse = this.counter + 1;
     this.counter++;
 
-    return new SensorRegistration(this.keyPair, counterToUse, sensorName, costPerMinute, costPerKB, integrationBroker, rewardAmount, extraNodeMetadata, extraLiteralMetadata);
+    return new SensorRegistration(this.keyPair, counterToUse, sensorName, costPerMinute, costPerKB, integrationBroker, interval, rewardAmount, extraNodeMetadata, extraLiteralMetadata);
   }
 
-  createSensorRegistrationAsTransaction(blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
+  createSensorRegistrationAsTransaction(blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number, interval: number | null, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
     return {
-      tx: this.createSensorRegistration(blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
+      tx: this.createSensorRegistration(blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, interval, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
       type: SensorRegistration
     };
   }
