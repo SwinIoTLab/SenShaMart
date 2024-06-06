@@ -30,28 +30,30 @@
     </div>
     <hr />
     <div>
-      Select your role:
+      Select Your Role:
     </div>
-    <div>
-      <button id="noKeyBrokerGo">SenShaMart Broker</button>
-      <button id="noKeyProviderGo">IoT Sensor Provider</button>
-      <button id="noKeyApplicationGo">IoT Client Application</button>
+    <div style="display:grid; grid-template-columns:1fr 1fr">
+      <button id="noKeyBrokerGo" style="display:none"><h3>SenShaMart Broker</h3> <br /> You provide MQTT brokers for Senshamart to help sensors share their data, and get paid doing so</button>
+      <button id="noKeyProviderGo"><h3>Provider</h3> <br /> You register and share your IoT sensors, and get paid by applications using your data</button>
+      <button id="noKeyApplicationGo"><h3>Consumer</h3> <br /> You find, use, and pay for data from available third party sensors</button>
     </div>
     <hr/>
     <div>
-      Or if you are a power user or developer:
+      Or:
     </div>
-    <div>
-      <button id="noKeyExpertGo">For Developers</button>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr">
+      <span></span>
+      <button id="noKeyExpertGo"><h4>Developer</h4> <br />  You are a power user or developer. You have more powerful but more complicated tools</button>
+      <span></span>
     </div>
   </div>
   <div id="keyPage" style="display:none;">
-    <div id="refreshStatus">LOADING</div>
+    <div id="refreshStatus" style="display:none">LOADING</div>
     <hr />
     <div style="display:flex">
-      <span>Wallet public key: </span>
+      <span>Your public key: </span>
       <input id="publicKey" disabled value="LOADING" style="flex-grow:1;"/>
-      <button id="changeMode">Change mode</button>
+      <button id="changeMode">Change role</button>
     </div>
     <div id="keyPairSetDiv" style="display:none">
       <span>Wallet keypair: </span><input id="privateKey" style="flex-grow:1;"/>
@@ -107,10 +109,20 @@
         <span>Name:</span><input id="registerSensorName" required />
         <span>Cost Per Minute:</span><input id="registerSensorCPM" type="number" min="0" value="1" required />
         <span>Cost Per KB:</span><input id="registerSensorCPKB" type="number" min="0" value="1" required />
-        <span>Broker:</span><select id="registerSensorBroker" required></select>
-        <span>Extra metadata:</span><span><button id="registerSensorClearMetadata">Clear</button><input id="registerSensorMetadata" type="file" value="" /></span>
+        <span id="registerSensorBrokerInfo">Broker:</span><select id="registerSensorBroker" required></select>
+        <span id="registerSensorMetadataInfo">Extra metadata:</span><span id="registerSensorMetadataData"><button id="registerSensorClearMetadata">Clear</button><input id="registerSensorMetadata" type="file" value="" /></span>
+        <span id="registerSensorLatitudeInfo">Latitude:</span><input id="registerSensorLatitude" type="number" min="-90" max="90" value="0"/>
+        <span id="registerSensorLongitudeInfo">Longitude:</span><input id="registerSensorLongitude" type="number" min="-180" max="180" value="0"/>
+        <span id="registerSensorMeasuresInfo">Measures:</span><input id="registerSensorMeasures" />
+        <span>Measurement Interval:</span><span><button id="registerSensorUnknownInterval">Set to not periodic</button><input id="registerSensorInterval" type="number" min="0" value="1000"/><span id="registerSensorIntervalFooter">ms</span></span>
         <span>Reward amount:</span><input id="registerSensorReward" type="number" min="0" value="0" required />
         <button id="registerSensorGo">Create</button>
+      </div>
+      <div id="registerSensorConnectionDiv" style="display:none; grid-template-columns: auto 1fr auto 1fr">
+        <div>Connection address:</div>
+        <div id="registerSensorConnectionAddress"></div>
+        <div>Connection topic:</div>
+        <div id="registerSensorConnectionTopic"></div>
       </div>
       <div id="registerSensorResultDiv" style="display:none">
         <h1>
@@ -185,26 +197,26 @@
       </div>
     </div>
     <div id="integrateTab">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr">
+      <div>
+        <div>Query:</div>
+        <select id="integrateFreeformSelect" style="width:100%"></select>
         <div>
-          <div>Query:</div>
-          <select id="integrateFreeformSelect" style="width:100%"></select>
-          <div>
-            <textarea id="integrateFreeformQueryInput" style="width:100%;resize:vertical" spellcheck="false"></textarea>
-          </div>
-          <div>
-            <button id="integrateFreeformGo">Go!</button>
-          </div>
-          <div>
-            <button id="integrateFreeformAdd" disabled>Add Sensor Results To Integrate Tab</button>
-          </div>
-          <div>
-            <table style="border-collapse: collapse">
-              <thead id="integrateFreeformHead"></thead>
-              <tbody id="integrateFreeformBody"></tbody>
-            </table>
-          </div>
+          <textarea id="integrateFreeformQueryInput" style="width:100%;resize:vertical" spellcheck="false"></textarea>
         </div>
+        <div>
+          <button id="integrateFreeformGo">Go!</button>
+        </div>
+        <div>
+          <button id="integrateFreeformAdd" disabled>Add Sensor Results To Selected Sensors</button>
+        </div>
+        <div>
+          <table style="border-collapse: collapse">
+            <thead id="integrateFreeformHead"></thead>
+            <tbody id="integrateFreeformBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr">
         <div>
           <span>Selected Sensors: </span>
           <select id="integrateSensors" style="width:100%" size="10"></select>
@@ -229,7 +241,7 @@
         <span>Reward Amount:</span>
         <input id="integrateReward" type="number" min="0" value="0" />
       </div>
-      <button id="integrateGo">Integrate</button>
+      <button id="integrateGo">Pay And Integrate</button>
       <div>
         <h1>
           Connection Info:

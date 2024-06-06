@@ -210,12 +210,30 @@ const ERROR_REPLACECHAIN = {
 } as const;
 
 function escapeNodeMetadata(escaping: NodeMetadata): string {
-  let returning = escaping.s.replace('-', '--');
-  returning += '-';
-  returning += escaping.p.replace('-', '--');
-  returning += '-';
+  let returning = escaping.s.replaceAll('\\', '\\\\');
+  returning += '\\n';
+  returning += escaping.p.replaceAll('\\', '\\\\');
+  returning += '\\n';
   returning += escaping.o;
   return returning;
+}
+
+function findDelim(searchee: string, on: number) {
+  let on_slash = false;
+  for (; on < searchee.length; ++on) {
+    if (!on_slash) {
+      if (searchee[on] === '\\') {
+        on_slash = true;
+      }
+    } else {
+      if (searchee[on] === 'n') {
+        return on - 1;
+      } else {
+        on_slash = false;
+      }
+    }
+  }
+  return on;
 }
 
 export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
@@ -225,42 +243,29 @@ export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
     o: null
   };
 
-  let i = 0;
-
-  for (; i < escaping.length; ++i) {
-    if (escaping[i] === '-' && (i === escaping.length - 1 || escaping[i + 1] !== '-')) {
-      returning.s = escaping.substring(0, i).replace('--', '-');
-      break;
-    }
-  }
-
-  if (i === escaping.length) {
+  let prevI = 0;
+  let newI = findDelim(escaping, prevI);
+  if (newI === escaping.length) {
     throw new Error(`Couldn't unescape triple: '${escaping}'`);
   }
-
-  let j = i + 1;
-
-  for (; j < escaping.length; ++j) {
-    if (escaping[j] === '-' && (j === escaping.length - 1 || escaping[j + 1] !== '-')) {
-      returning.p = escaping.substring(i+1, j).replace('--', '-');
-      break;
-    }
-  }
-
-  if (j === escaping.length) {
+  returning.s = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
+  prevI = newI + 2;
+  newI = findDelim(escaping, prevI);
+  if (newI === escaping.length) {
     throw new Error(`Couldn't unescape triple: '${escaping}'`);
   }
-
-  returning.o = escaping.substring(j + 1);
+  returning.p = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
+  prevI = newI + 2;
+  returning.o = escaping.substring(prevI); 
 
   return returning;
 }
 
 function escapeLiteralMetadata(escaping: LiteralMetadata): string {
-  let returning = escaping.s.replace('-', '--');
-  returning += '-';
-  returning += escaping.p.replace('-', '--');
-  returning += '-';
+  let returning = escaping.s.replaceAll('\\', '\\\\');
+  returning += '\\n';
+  returning += escaping.p.replaceAll('\\', '\\\\');
+  returning += '\\n';
   returning += escaping.o;
   return returning;
 }
@@ -272,33 +277,20 @@ export function unEscapeLiteralMetadata(escaping: string): LiteralMetadata {
     o: null
   };
 
-  let i = 0;
-
-  for (; i < escaping.length; ++i) {
-    if (escaping[i] === '-' && (i === escaping.length - 1 || escaping[i + 1] !== '-')) {
-      returning.s = escaping.substring(0, i).replace('--', '-');
-      break;
-    }
-  }
-
-  if (i === escaping.length) {
+  let prevI = 0;
+  let newI = findDelim(escaping, prevI);
+  if (newI === escaping.length) {
     throw new Error(`Couldn't unescape triple: '${escaping}'`);
   }
-
-  let j = i + 1;
-
-  for (; j < escaping.length; ++j) {
-    if (escaping[j] === '-' && (j === escaping.length - 1 || escaping[j + 1] !== '-')) {
-      returning.p = escaping.substring(i + 1, j).replace('--', '-');
-      break;
-    }
-  }
-
-  if (j === escaping.length) {
+  returning.s = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
+  prevI = newI + 2;
+  newI = findDelim(escaping, prevI);
+  if (newI === escaping.length) {
     throw new Error(`Couldn't unescape triple: '${escaping}'`);
   }
-
-  returning.o = escaping.substring(j + 1);
+  returning.p = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
+  prevI = newI + 2;
+  returning.o = escaping.substring(prevI);
 
   return returning;
 }

@@ -515,7 +515,8 @@ app.post('/SensorRegistration/Register', (req, res) => {
 
     res.json({
       result: true,
-      tx: reg.tx
+      tx: reg.tx,
+      brokerIp: blockchain.getBrokerInfo((reg.tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
     });
   } catch (err) {
     console.log(err);

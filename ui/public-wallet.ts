@@ -141,7 +141,7 @@ export default () => {
 
   let validKeyPair = false;
 
-  const publicKeySpan = document.getElementById("publicKey") as HTMLSpanElement;
+  const publicKeySpan = document.getElementById("publicKey") as HTMLInputElement;
   let ourKeyPair: string = "";
   let ourPubKey: string = "";
   const onPubKeyChange = [] as (() => void)[];
@@ -332,10 +332,13 @@ export default () => {
     status.style.backgroundColor = 'red';
   };
 
+  let refreshWorking = false;
+
   const refresh = function () {
-    if (refreshCounter !== 0) {
+    if (refreshWorking) {
       return;
     }
+    refreshWorking = true;
 
     const updateInfo = function <T>(type: RefreshStruct<T>, newData: { [index: string]: T }) {
       const oldData = type.vals;
@@ -369,7 +372,10 @@ export default () => {
           statusOK(refreshStatus, "Refresh finished at " + new Date().toTimeString());
         }
 
-        setTimeout(() => refresh(), 1000);
+        setTimeout(() => {
+          refreshWorking = false;
+          refresh()
+        }, 1000);
       }
     };
 
@@ -470,7 +476,7 @@ export default () => {
         return;
       }
       validKeyPair = true;
-      publicKeySpan.innerHTML = res.value;
+      publicKeySpan.value = res.value;
       noKeyKeyPair.value = keyPair;
       privateKey.value = keyPair;
       ourKeyPair = keyPair;
@@ -513,6 +519,24 @@ export default () => {
   if (noKeyKeyPair.value.length > 0) {
     noKeyKeyPairChange();
   }
+
+  const noKeyKeyUpload = document.getElementById("noKeyKeyUpload") as HTMLInputElement;
+
+  noKeyKeyUpload.addEventListener('change', (_event) => {
+    if (noKeyKeyUpload.files.length !== 1) {
+      statusError(operationStatus, "No file was selected");
+      return;
+    }
+    noKeyKeyUpload.disabled = true;
+
+    const reader = new FileReader();
+    reader.onload = (_) => {
+      onNoKeyKeyPair(reader.result as string).finally(() => {
+        noKeyKeyUpload.disabled = false;
+      });
+    };
+    reader.readAsText(noKeyKeyUpload.files[0]);
+  });
 
   (document.getElementById("noKeyBrokerGo") as HTMLButtonElement).addEventListener('click', (_) => {
     setExpert(false);
@@ -562,6 +586,11 @@ export default () => {
 
     noKeyPage.style.display = "none";
     keyPage.style.display = "block";
+  });
+
+  //refresh status
+  expertModeCbs.push((expert) => {
+    refreshStatus.style.display = expert ? "block" : "none";
   });
 
   //our balance header
@@ -779,17 +808,43 @@ export default () => {
   const registerSensorName = document.getElementById("registerSensorName") as HTMLInputElement;
   const registerSensorCPM = document.getElementById("registerSensorCPM") as HTMLInputElement;
   const registerSensorCPKB = document.getElementById("registerSensorCPKB") as HTMLInputElement;
+  const registerSensorBrokerInfo = document.getElementById("registerSensorBrokerInfo") as HTMLSpanElement;
   const registerSensorBroker = document.getElementById("registerSensorBroker") as HTMLSelectElement;
+  const registerSensorMetadataInfo = document.getElementById("registerSensorMetadataInfo") as HTMLSpanElement;
+  const registerSensorMetadataData = document.getElementById("registerSensorMetadataData") as HTMLSpanElement;
   const registerSensorClearMetadata = document.getElementById("registerSensorClearMetadata") as HTMLButtonElement;
   const registerSensorMetadata = document.getElementById("registerSensorMetadata") as HTMLInputElement;
   registerSensorMetadata.value = "";
+  const registerSensorLatitudeInfo = document.getElementById("registerSensorLatitudeInfo") as HTMLSpanElement;
+  const registerSensorLatitude = document.getElementById("registerSensorLatitude") as HTMLInputElement;
+  const registerSensorLongitudeInfo = document.getElementById("registerSensorLongitudeInfo") as HTMLSpanElement;
+  const registerSensorLongitude = document.getElementById("registerSensorLongitude") as HTMLInputElement;
+  const registerSensorMeasuresInfo = document.getElementById("registerSensorMeasuresInfo") as HTMLSpanElement;
+  const registerSensorMeasures = document.getElementById("registerSensorMeasures") as HTMLInputElement;
+  const registerSensorUnknownInterval = document.getElementById("registerSensorUnknownInterval") as HTMLButtonElement;
+  let registerSensorIntervalIsKnown = true;
+  const registerSensorInterval = document.getElementById("registerSensorInterval") as HTMLInputElement;
+  const registerSensorIntervalFooter = document.getElementById("registerSensorIntervalFooter") as HTMLSpanElement;
   const registerSensorReward = document.getElementById("registerSensorReward") as HTMLInputElement;
   const registerSensorGo = document.getElementById("registerSensorGo") as HTMLButtonElement;
+  const registerSensorConnectionDiv = document.getElementById("registerSensorConnectionDiv") as HTMLDivElement;
+  const registerSensorConnectionAddress = document.getElementById("registerSensorConnectionAddress") as HTMLDivElement;
+  const registerSensorConnectionTopic = document.getElementById("registerSensorConnectionTopic") as HTMLDivElement;
   const registerSensorResultDiv = document.getElementById("registerSensorResultDiv") as HTMLDivElement;
   const registerSensorResult = document.getElementById("registerSensorResult") as HTMLLabelElement;
 
   expertModeCbs.push((expert) => {
     registerSensorResultDiv.style.display = expert ? "block" : "none";
+    registerSensorBrokerInfo.style.display = expert ? "block" : "none";
+    registerSensorBroker.style.display = expert ? "block" : "none";
+    registerSensorMetadataInfo.style.display = expert ? "block" : "none";
+    registerSensorMetadataData.style.display = expert ? "block" : "none";
+    registerSensorLatitudeInfo.style.display = expert ? "none" : "block";
+    registerSensorLatitude.style.display = expert ? "none" : "block";
+    registerSensorLongitudeInfo.style.display = expert ? "none" : "block";
+    registerSensorLongitude.style.display = expert ? "none" : "block";
+    registerSensorMeasuresInfo.style.display = expert ? "none" : "block";
+    registerSensorMeasures.style.display = expert ? "none" : "block";
   });
 
   let registerSensorParsedNodeMetadata = [] as NodeMetadata[];
@@ -813,6 +868,31 @@ export default () => {
       registerSensorReward.value = '0';
     }
   });
+  registerSensorLatitude.addEventListener("change", () => {
+    const parsed = Number.parseFloat(registerSensorLatitude.value);
+    if (Number.isNaN(parsed) || parsed < -90 || parsed > 90) {
+      registerSensorLatitude.value = '0';
+    }
+  });
+  registerSensorLongitude.addEventListener("change", () => {
+    const parsed = Number.parseFloat(registerSensorLongitude.value);
+    if (Number.isNaN(parsed) || parsed < -180 || parsed > 180) {
+      registerSensorLongitude.value = '0';
+    }
+  });
+  registerSensorInterval.addEventListener("change", () => {
+    const parsed = Number.parseInt(registerSensorInterval.value, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      registerSensorInterval.value = '1000';
+    }
+  });
+  registerSensorUnknownInterval.addEventListener('click', () => {
+    registerSensorIntervalIsKnown = !registerSensorIntervalIsKnown;
+    registerSensorInterval.style.display = registerSensorIntervalIsKnown ? "inline" : "none";
+    registerSensorIntervalFooter.style.display = registerSensorIntervalIsKnown ? "inline" : "none";
+    registerSensorUnknownInterval.innerHTML = registerSensorIntervalIsKnown ? "Set to not periodic" : "Set to periodic";
+  });
+
 
   refreshInfo.broker.onNew.push((key, _) => {
     const adding = new Option(key, key);
@@ -876,11 +956,6 @@ export default () => {
   });
 
   registerSensorGo.addEventListener("click", (_) => {
-    if (registerSensorBroker.selectedIndex === -1) {
-      statusError(operationStatus, "No broker selected");
-      return;
-    }
-
     registerSensorGo.disabled = true;
 
     const input = {
@@ -888,17 +963,43 @@ export default () => {
       sensorName: registerSensorName.value,
       costPerMinute: Number.parseInt(registerSensorCPM.value),
       costPerKB: Number.parseInt(registerSensorCPKB.value),
-      integrationBroker: registerSensorBroker.item(registerSensorBroker.selectedIndex).value,
       rewardAmount: Number.parseInt(registerSensorReward.value),
-      extraLiteralMetadata: undefined as LiteralMetadata[],
-      extraNodeMetadata: undefined as NodeMetadata[]
+      integrationBroker: null as string,
+      interval: null as number,
+      extraLiteralMetadata: null as LiteralMetadata[],
+      extraNodeMetadata: null as NodeMetadata[]
     };
 
-    if (registerSensorParsedLiteralMetadata.length !== 0) {
-      input.extraLiteralMetadata = registerSensorParsedLiteralMetadata;
+    if (expertMode) {
+      if (registerSensorBroker.selectedIndex === -1) {
+        statusError(operationStatus, "No broker selected");
+        return;
+      }
+      input.integrationBroker = registerSensorBroker.item(registerSensorBroker.selectedIndex).value;
     }
-    if (registerSensorParsedNodeMetadata.length !== 0) {
-      input.extraNodeMetadata = registerSensorParsedNodeMetadata;
+    if (expertMode) {
+      if (registerSensorParsedLiteralMetadata.length !== 0) {
+        input.extraLiteralMetadata = registerSensorParsedLiteralMetadata;
+      }
+      if (registerSensorParsedNodeMetadata.length !== 0) {
+        input.extraNodeMetadata = registerSensorParsedNodeMetadata;
+      }
+    } else {
+      input.extraLiteralMetadata = [];
+      input.extraLiteralMetadata.push(
+        { s: 'SSMS://#observes', p: '<http://www.w3.org/2000/01/rdf-schema#label>', o: registerSensorMeasures.value },
+        { s: 'SSMS://#location', p: '<http://www.w3.org/2003/01/geo/wgs84_pos#lat>', o: registerSensorLatitude.value },
+        { s: 'SSMS://#location', p: '<http://www.w3.org/2003/01/geo/wgs84_pos#long>', o: registerSensorLongitude.value }
+      );
+
+      input.extraNodeMetadata = [];
+      input.extraNodeMetadata.push(
+        { s: 'SSMS://', p: '<http://www.w3.org/ns/sosa/observes>', o: 'SSMS://#observes' },
+        { s: 'SSMS://', p: '<http://www.w3.org/ns/sosa/hasFeatureOfInterest>', o: 'SSMS://#location' }
+      );
+    }
+    if (registerSensorIntervalIsKnown) {
+      input.interval = Number.parseInt(registerSensorInterval.value, 10);
     }
 
     fetch("/sensorregistration/register", {
@@ -914,6 +1015,9 @@ export default () => {
         statusError(operationStatus, "Error while creating register sensor transaction: " + res.reason);
         return;
       }
+      registerSensorConnectionDiv.style.display = 'grid';
+      registerSensorConnectionAddress.innerHTML = res.brokerIp;
+      registerSensorConnectionTopic.innerHTML = 'in/'+input.sensorName;
       registerSensorResult.innerHTML = JSON.stringify(res.tx, null, 2);
       statusOK(operationStatus, "Submitted sensor registration");
     }).finally(() => {
@@ -1058,131 +1162,144 @@ export default () => {
 
   const freeformQueries: { [index: string]: string } = {
     "Get all camera sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"video\". }",
+      `SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> "video".}`,
     "Get all milk pressure sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Pressure\"}",
+      `SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> "Milk Pressure".}`,
     "Get all air temperature sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Air Temperature\"}",
+      `SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> "Air Temperature".}`,
     "Get all air humidity sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Relative air Humidity\"}",
+      `SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> "Relative air Humidity".}`,
     "Get all milk temperature sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Temperature\"}",
+      `SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> "Milk Temperature".}`,
     "Get all sensors in Australia":
-      "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE { \n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " FILTER(" +
-      "xsd:decimal(?long) > 113.338953078" +
-      " && xsd:decimal(?long) < 153.569469029" +
-      " && xsd:decimal(?lat) > -43.6345972634" +
-      " && xsd:decimal(?lat) < -10.6681857235)}"
+      `PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE { 
+       ?sensor_tx <ssm://Defines> ?sensor_name.
+       ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://SensorRegistration".
+       ?sensor_tx <ssm://HasHash> ?sensor_hash.
+       ?sensor_tx <ssm://UsesBroker> ?broker_name.
+       ?sensor_tx <ssm://CostsPerMinute> ?sensor_cpm.
+       ?sensor_tx <ssm://CostsPerKB> ?sensor_cpkb.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?sensor_tx }.
+       
+       ?broker_tx <ssm://Defines> ?broker_name.
+       ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "ssm://BrokerRegistration".
+       ?broker_tx <ssm://HasHash> ?broker_hash.
+       ?broker_tx <ssm://HasEndpoint> ?broker_endpoint.
+       FILTER NOT EXISTS { ?x <ssm://Supercedes> ?broker_tx }.
+       
+       ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.
+       ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.
+       ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.
+       ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+       FILTER( +
+       xsd:decimal(?long) > 113.338953078
+       && xsd:decimal(?long) < 153.569469029
+       && xsd:decimal(?lat) > -43.6345972634
+       && xsd:decimal(?lat) < -10.6681857235)}`
   };
+
 
   const freeformOnInput = () => {
     if (freeformSelect.selectedIndex === -1) {
@@ -1279,6 +1396,14 @@ export default () => {
   const integrateFreeformBody = document.getElementById("integrateFreeformBody") as HTMLTableSectionElement;
   const integrateFreeformHeaders = new Map<string, number>();
 
+  let integrateFreeformNameIndex = integrateFreeformHeaders.get("sensor_name");
+  let integrateFreeformSensorHashIndex = integrateFreeformHeaders.get("sensor_hash");
+  let integrateFreeformBrokerHashIndex = integrateFreeformHeaders.get("broker_hash");
+  let integrateFreeformBrokerEndpointIndex = integrateFreeformHeaders.get("broker_endpoint");
+  let integrateFreeformBrokerNameIndex = integrateFreeformHeaders.has("broker_name") ? integrateFreeformHeaders.get("broker_name") : null;
+  let integrateFreeformCpmIndex = integrateFreeformHeaders.has("sensor_cpm") ? integrateFreeformHeaders.get("sensor_cpm") : null;
+  let integrateFreeformCpkbIndex = integrateFreeformHeaders.has("sensor_cpkb") ? integrateFreeformHeaders.get("sensor_cpkb") : null;
+
   interface QueryResultSucces extends ResultSuccess {
     result: true,
     headers: string[];
@@ -1287,134 +1412,6 @@ export default () => {
 
   let integrateFreeformCurRes: QueryResultSucces = null
 
-  const integrateFreeformQueries: { [index: string]: string } = {
-    "Get all camera sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"video\". }",
-    "Get all milk pressure sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Pressure\"}",
-    "Get all air temperature sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Air Temperature\"}",
-    "Get all air humidity sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Relative air Humidity\"}",
-    "Get all milk temperature sensors":
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE {\n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> \"Milk Temperature\"}",
-    "Get all sensors in Australia":
-      "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
-      "SELECT ?sensor_name ?sensor_hash ?broker_name ?broker_hash ?broker_endpoint ?lat ?long ?measures ?sensor_cpm ?sensor_cpkb WHERE { \n" +
-      " ?sensor_tx <SSM://Defines> ?sensor_name.\n" +
-      " ?sensor_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://SensorRegistration\".\n" +
-      " ?sensor_tx <SSM://HasHash> ?sensor_hash.\n" +
-      " ?sensor_tx <SSM://UsesBroker> ?broker_name.\n" +
-      " ?sensor_tx <SSM://CostsPerMinute> ?sensor_cpm.\n" +
-      " ?sensor_tx <SSM://CostsPerKB> ?sensor_cpkb.\n" +
-      "\n" +
-      " ?broker_tx <SSM://Defines> ?broker_name.\n" +
-      " ?broker_tx <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"SSM://BrokerRegistration\".\n" +
-      " ?broker_tx <SSM://HasHash> ?broker_hash.\n" +
-      " ?broker_tx <SSM://HasEndpoint> ?broker_endpoint.\n" +
-      "\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/observes> ?observes.\n" +
-      " ?sensor_tx <http://www.w3.org/ns/sosa/hasFeatureOfInterest> ?location.\n" +
-      " ?observes <http://www.w3.org/2000/01/rdf-schema#label> ?measures.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.\n" +
-      " ?location <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.\n" +
-      " FILTER(" +
-      "xsd:decimal(?long) > 113.338953078" +
-      " && xsd:decimal(?long) < 153.569469029" +
-      " && xsd:decimal(?lat) > -43.6345972634" +
-      " && xsd:decimal(?lat) < -10.6681857235)}"
-  };
-
   const integrateFreeformOnInput = () => {
     if (integrateFreeformSelect.selectedIndex === -1) {
       return;
@@ -1422,16 +1419,52 @@ export default () => {
 
     const selected = freeformSelect.item(integrateFreeformSelect.selectedIndex);
 
-    integrateFreeformQueryInput.value = integrateFreeformQueries[selected.value];
+    integrateFreeformQueryInput.value = freeformQueries[selected.value];
   };
 
   integrateFreeformSelect.addEventListener("input", integrateFreeformOnInput);
 
-  for (const key of Object.keys(integrateFreeformQueries)) {
+  for (const key of Object.keys(freeformQueries)) {
     integrateFreeformSelect.append(new Option(key, key));
   }
 
   integrateFreeformOnInput();
+
+  const addFreeformToIntegrate = (obj: (string | number)[]) => {
+    const name = obj[integrateFreeformNameIndex] as string;
+    let sensorInfo: IntegrateSensor = null;
+    if (!integrateSensorsMap.has(name)) {
+      const adding = new Option(name);
+      integrateSensors.append(adding);
+      sensorInfo = {
+        sensor_name: name,
+        sensor_hash: obj[integrateFreeformSensorHashIndex] as string,
+        broker_name: null,
+        broker_hash: obj[integrateFreeformBrokerHashIndex] as string,
+        broker_endpoint: obj[integrateFreeformBrokerEndpointIndex] as string,
+        cpm: null,
+        cpkb: null,
+        amount: 0,
+        option: adding
+      };
+      integrateSensorsMap.set(name, sensorInfo);
+    } else {
+      sensorInfo = integrateSensorsMap.get(name);
+      sensorInfo.sensor_hash = obj[integrateFreeformSensorHashIndex] as string;
+      sensorInfo.broker_hash = obj[integrateFreeformBrokerHashIndex] as string;
+      sensorInfo.broker_endpoint = obj[integrateFreeformBrokerEndpointIndex] as string;
+    }
+
+    if (integrateFreeformBrokerNameIndex !== null) {
+      sensorInfo.broker_name = obj[integrateFreeformBrokerNameIndex] as string;
+    }
+    if (integrateFreeformCpmIndex !== null) {
+      sensorInfo.cpm = obj[integrateFreeformCpmIndex] as number;
+    }
+    if (integrateFreeformCpkbIndex !== null) {
+      sensorInfo.cpkb = obj[integrateFreeformCpkbIndex] as number;
+    }
+  };
 
   integrateFreeformGo.onclick = (_) => {
     const input = integrateFreeformQueryInput.value;
@@ -1464,19 +1497,41 @@ export default () => {
         integrateFreeformHeaders.set(header, integrateFreeformHeaders.size);
       }
 
-      integrateFreeformAdd.disabled = !(integrateFreeformHeaders.has("sensor_name") && integrateFreeformHeaders.has("sensor_hash") && integrateFreeformHeaders.has("broker_hash") && integrateFreeformHeaders.has("broker_endpoint"));
+      integrateFreeformNameIndex = integrateFreeformHeaders.has("sensor_name") ? integrateFreeformHeaders.get("sensor_name") : null;
+      integrateFreeformSensorHashIndex = integrateFreeformHeaders.has("sensor_hash") ? integrateFreeformHeaders.get("sensor_hash") : null;
+      integrateFreeformBrokerHashIndex = integrateFreeformHeaders.has("broker_hash") ? integrateFreeformHeaders.get("broker_hash") : null;
+      integrateFreeformBrokerEndpointIndex = integrateFreeformHeaders.has("broker_endpoint") ? integrateFreeformHeaders.get("broker_endpoint") : null;
+      integrateFreeformBrokerNameIndex = integrateFreeformHeaders.has("broker_name") ? integrateFreeformHeaders.get("broker_name") : null;
+      integrateFreeformCpmIndex = integrateFreeformHeaders.has("sensor_cpm") ? integrateFreeformHeaders.get("sensor_cpm") : null;
+      integrateFreeformCpkbIndex = integrateFreeformHeaders.has("sensor_cpkb") ? integrateFreeformHeaders.get("sensor_cpkb") : null;
+
+      integrateFreeformAdd.disabled = !(
+        integrateFreeformNameIndex !== null &&
+        integrateFreeformSensorHashIndex !== null &&
+        integrateFreeformBrokerHashIndex !== null &&
+        integrateFreeformBrokerEndpointIndex !== null);
 
       const headerRow = integrateFreeformHead.insertRow(-1);
-      const headerCells = [] as HTMLTableCellElement[];
+      //we reserve column 0 for the add button
+      const buttonHeader = document.createElement('th');
+      headerRow.appendChild(buttonHeader);
       for (let i = 0; i < integrateFreeformHeaders.size; ++i) {
         const created = document.createElement('th');
         created.innerHTML = res.headers[i];
         headerRow.appendChild(created);
-        headerCells.push(created);
       }
 
       for (const obj of res.values) {
         const dataRow = integrateFreeformBody.insertRow();
+
+        const addCell = dataRow.insertCell();
+        const addButton = document.createElement('button');
+        addButton.disabled = integrateFreeformAdd.disabled;
+        addButton.innerHTML = "Add Sensor";
+        addButton.addEventListener('click', ((obj) => {
+          return () => addFreeformToIntegrate(obj);
+        })(obj));
+        addCell.appendChild(addButton);
 
         for (let i = 0; i < integrateFreeformHeaders.size; ++i) {
           const newCell = dataRow.insertCell();
@@ -1491,48 +1546,8 @@ export default () => {
   };
 
   integrateFreeformAdd.onclick = (_) => {
-    const nameIndex = integrateFreeformHeaders.get("sensor_name");
-    const sensorHashIndex = integrateFreeformHeaders.get("sensor_hash");
-    const brokerHashIndex = integrateFreeformHeaders.get("broker_hash");
-    const brokerEndpointIndex = integrateFreeformHeaders.get("broker_endpoint");
-    const brokerNameIndex = integrateFreeformHeaders.has("broker_name") ? integrateFreeformHeaders.get("broker_name") : null;
-    const cpmIndex = integrateFreeformHeaders.has("sensor_cpm") ? integrateFreeformHeaders.get("sensor_cpm") : null;
-    const cpkbIndex = integrateFreeformHeaders.has("sensor_cpkb") ? integrateFreeformHeaders.get("sensor_cpkb") : null;
-
     for (const obj of integrateFreeformCurRes.values) {
-      const name = obj[nameIndex] as string;
-      let sensorInfo: IntegrateSensor = null;
-      if (!integrateSensorsMap.has(name)) {
-        const adding = new Option(name);
-        integrateSensors.append(adding);
-        sensorInfo = {
-          sensor_name: name,
-          sensor_hash: obj[sensorHashIndex] as string,
-          broker_name: null,
-          broker_hash: obj[brokerHashIndex] as string,
-          broker_endpoint: obj[brokerEndpointIndex] as string,
-          cpm: null,
-          cpkb: null,
-          amount: 0,
-          option: adding
-        };
-        integrateSensorsMap.set(name, sensorInfo);
-      } else {
-        sensorInfo = integrateSensorsMap.get(name);
-        sensorInfo.sensor_hash = obj[sensorHashIndex] as string;
-        sensorInfo.broker_hash = obj[brokerHashIndex] as string;
-        sensorInfo.broker_endpoint = obj[brokerEndpointIndex] as string;
-      }
-
-      if (brokerNameIndex !== null) {
-        sensorInfo.broker_name = obj[brokerNameIndex] as string;
-      }
-      if (cpmIndex !== null) {
-        sensorInfo.cpm = obj[cpmIndex] as number;
-      }
-      if (cpkbIndex !== null) {
-        sensorInfo.cpkb = obj[cpkbIndex] as number;
-      }
+      addFreeformToIntegrate(obj);
     }
 
     document.getElementById("integrateButton").click();

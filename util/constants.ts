@@ -6,7 +6,7 @@ export const MINUTE_MS = 60 * 1000;
 export const BROKER_DEAD_BUFFER_TIME_MS = 60 * 5 * 1000; // 5 minutes
 export const BROKER_COMMISION = 0.1;
 
-export const SENSHAMART_URI_PREFIX= "SSM://";
+export const SENSHAMART_URI_PREFIX= "ssm://";
 export const SENSHAMART_URI_REPLACE= "SSMS://";
 
 export const DEFAULT_UI_HTML= "./ui/wallet-ui.html";
