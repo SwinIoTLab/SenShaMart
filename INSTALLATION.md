@@ -74,6 +74,16 @@ We also provide some tools to help with some administrative actions. These are f
   This deletes all RDF triples and data stores from a fuseki instance.
   This can be used to fully remove a dataset from fuseki, so that you can then regenerate a new blockchain into it for testing.
 
+- dummy_sensor
+
+  This sends timestamps to the specified MQTT broker and topic.
+  It can be used to simulate a sensor.
+
+- dummy_consumer
+
+  This connects to the specific MQTT broker and topic and prints recieved messsages to the console.
+  It can be used to simulate a consumer._
+
 ## Install Fuseki
 
 If you want to support SPARQL queries, an Apache Fuseki instance must be available and configured. 
