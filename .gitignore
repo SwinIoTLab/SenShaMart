@@ -26,3 +26,5 @@
 /ui/provider.js
 /*.db
 /*.db-journal
+/demo
+/deployment
