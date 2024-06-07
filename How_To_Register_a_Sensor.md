@@ -5,7 +5,9 @@ All IoT sensors involved with sharing data need to be registered by storing thei
 
 ##Using the User Interface
 
-The User Interface can be used by the users of SenShaMart to reigster IoT sensors easly. First, the user needs to create a key-pair to have a wallet in SenShaMart. Then, the user needs to chose IoT sensor provider section to access to sensor registration service. After that, the use (IoT device provider) needs to provide some information about the sensor including Name,Cost, Location, measurment, and interval. If the user wish to provide more details about the sensor, then it is better to chose the developer section at the beggining. this section allows the user to provide a file of tribles that contains the semantic description of IoT sensor. Also, it allows the user to chose the endpoint (Broker) that will share the sensors data with potential data consumers (IoT applications).
+The User Interface can be used by the users of SenShaMart to reigster IoT sensors easly. First, the user needs to create a key-pair to have a wallet in SenShaMart. Then, the user needs to chose IoT sensor provider section to access to sensor registration service. After that, the use (IoT device provider) needs to provide some information about the sensor including Name,Cost, Location, measurment, and interval. 
+
+If the user wish to provide more details about the sensor, then it is better to chose the developer section at the beggining. This section allows the user to provide a file of tribles that contains the semantic description of IoT sensor. Also, it allows the user to chose the endpoint (Broker) that will share the sensors data with potential data consumers (IoT applications).
 
 ##Using the API
 
