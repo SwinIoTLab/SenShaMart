@@ -1,15 +1,33 @@
-#How To Register a Sensor
+# How To Register and Share a Sensor
 
-All IoT sensors involved with sharing data need to be registered by storing their semantic description (i.e., metadata) in SSM Blockchain. IoT sensor providers can register their IoT sensors by using the API directly or using the User Interface.
+All IoT sensors involved with sharing data need to be registered into the SenShaMart (SSM) blockchain.
+Their semantic description (i.e., user defined metadata), as well as metadata needed by the system needs to be included in this registration.
+IoT sensor providers can register their IoT sensors by using the API directly or using the User Interface.
 
 
-##Using the User Interface
+## Using the User Interface
 
-The User Interface can be used by the users of SenShaMart to reigster IoT sensors easly. First, the user needs to create a key-pair to have a wallet in SenShaMart. Then, the user needs to chose IoT sensor provider section to access to sensor registration service. After that, the use (IoT device provider) needs to provide some information about the sensor including Name,Cost, Location, measurment, and interval. If the user wish to provide more details about the sensor, then it is better to chose the developer section at the beggining. this section allows the user to provide a file of tribles that contains the semantic description of IoT sensor. Also, it allows the user to chose the endpoint (Broker) that will share the sensors data with potential data consumers (IoT applications).
+The User Interface can be used by the users of SenShaMart to register IoT sensors easily by following these steps:
 
-##Using the API
+1. The user needs to create a key-pair to have a wallet in SenShaMart.
+   This can be created on the landing page of the public wallet UI, or by using the `/gen-key` API.
+2. The user needs to choose IoT sensor provider section to access the sensor registration service.
+3. The user (IoT device provider) needs to provide some information about the sensor including:
+    - Name
+    - Cost
+    - Location
+    - Measurment
+    - Interval
+   If the user wishes to provide more details about the sensor, then it is better to use the developer option on the landing page. 
+   The developer option allows the user to provide a file of RDF triples that contains the semantic description of IoT sensor.
+   It also allows the user to chose the endpoint (Broker) that will share the sensors data with potential data consumers (IoT applications).
+4. Hit Create!
+5. If all is successful, the UI will tell you the connection address and connection topic. Note these down.
+6. To start sharing data, configure your sensing device to send its data to the MQTT broker at the connection address, and on the connection topic.
 
-The IoT sensor registration API, which is provided in API.md can be used to register IoT sensors. 
+## Using the API
+
+The IoT sensor registration API, which is provided in [API.md](./API.md) can be used to register IoT sensors. 
 The IoT sensor provider needs to provide information about the sensor that is required by the API below.
 
 ```
@@ -41,5 +59,8 @@ ResultFailure | {
 }
 ```
 
+If the integrationBroker is null, a random broker is selected for you. If interval is null, the sensor is assumed to not be periodic.
 
+To start sharing data, configure your sensing device to send its data to the MQTT broker at the brokerIp returned by the API, and on the connection topic given by `in/${SENSOR_NAME}`.
+`${SENSOR_NAME}` is the name of your sensor.
 

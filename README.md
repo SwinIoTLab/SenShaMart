@@ -1,7 +1,13 @@
 #  SenShaMart - A Global Marketplace for Sharing Sensors in IoT
-Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
-SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
-SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
+Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain.
+These distributed nodes are public, and anyone can join the pool of the distributed nodes.
+Note that these nodes are not same as the IoT sensors.
+IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
+
+SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them.
+Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
+SenShaMart is a self-managed marketplace that does not need any individual/organisation to control it or own it.
+It relies on decentralisation and semantic technology to support autonomic share of data between providers and consumers.
 ![Picture 1](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/17fbd32d-864b-427f-a43c-5836794a3424)
 
 
@@ -136,8 +142,8 @@ to access any of these APIs, you need to know 1) the IP of the machine that is r
 A list of APIs provided by public-wallet-app is provided in APIs.md in this folder
 
 ## Contributions
-Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Molivac, and Ampalavanapillai Nirmalathas.
-Software Engineering: Anas Dawod and Josip Molivac.
+Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Milovac, and Ampalavanapillai Nirmalathas.
+Software Engineering: Anas Dawod and Josip Milovac.
 
 ## Fund
 This project is fundded by ARC discovery grand DP220101420. Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
