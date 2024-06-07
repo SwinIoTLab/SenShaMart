@@ -2,7 +2,8 @@
 Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
 SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
 SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
-![SSM archetecture](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/45881eee-0719-485c-8bf7-8511296b695f)
+![Picture 1](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/17fbd32d-864b-427f-a43c-5836794a3424)
+
 
 
 ## SenShaMart Components
