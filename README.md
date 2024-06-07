@@ -18,7 +18,7 @@ Miners mine blocks onto the SSM Blockchain.
   
 Wallets belong to users of the SenShaMart. They create, sign, and propagate new transactions to miners who then mine them into the chain.
 
-#### Brokers
+#### Brokers (SSM Brokers)
   
 Brokers act as proxies for sensor data and sit in between sensors and IoT applications. 
 
@@ -55,7 +55,7 @@ A hardened version of this utilising the atomic nature of the sqlite3 store used
 
 ##### Compensation
   This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
-### User Interface
+### User Interface (SSM UI)
 The User Interface runs on top of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
 
 
