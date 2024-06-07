@@ -26,7 +26,7 @@ Brokers act as access control for the sensors' data, only allowing IoT applicati
 Random subsets of brokers can also act as witnesses of integrations.
 These witnessing brokers can then vote on whether the integration completed successfully, or vote to refund the user if they believe the sensor misbehaved in some way.
 
-#### RDF Store
+#### RDF Store (uses SSM Ontology)
 
 SSM Blockchain has embedded distributed RDF store in all SSM Blockchain nodes. This RDF store uses our developed ontology (i.e., an extension of Semantic Sensor Netwrok (SSN) https://www.w3.org/TR/vocab-ssn/) to store the semantic metadata of IoT sensors.  The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
 To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
