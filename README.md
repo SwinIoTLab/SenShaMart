@@ -1,15 +1,9 @@
 #  SenShaMart - A Global Marketplace for Sharing Sensors in IoT
-Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain.
-These distributed nodes are public, and anyone can join the pool of the distributed nodes.
-Note that these nodes are not same as the IoT sensors.
-IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
+Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplace built on a collection of distributed nodes that interact via a peer-to-peer communication supported by a spesialised semantic Blockchain called SenShaMart (SSM)Blockchain. These distributed nodes are public, and anyone can join the pool of the distributed nodes. Note that these nodes are not same as the IoT sensors. IoT sensors only shares data and do not require to contribute to the SenShaMart Blockchain. 
+SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
+SenShaMart is a self-managed marketplace that does not need any individual/organisation to control it or own it. It relies on decentralisation and semantic technology to support autonomic share of data between providers and consumers.
 
-SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them.
-Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
-SenShaMart is a self-managed marketplace that does not need any individual/organisation to control it or own it.
-It relies on decentralisation and semantic technology to support autonomic share of data between providers and consumers.
-![Picture 1](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/17fbd32d-864b-427f-a43c-5836794a3424)
-
+![Picture 1](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/7254ce7b-64a7-4332-8a61-9c3e86888855)
 
 
 ## SenShaMart Components
@@ -24,7 +18,7 @@ Miners mine blocks onto the SSM Blockchain.
   
 Wallets belong to users of the SenShaMart. They create, sign, and propagate new transactions to miners who then mine them into the chain.
 
-#### Brokers
+#### Brokers (SSM Brokers)
   
 Brokers act as proxies for sensor data and sit in between sensors and IoT applications. 
 
@@ -32,7 +26,7 @@ Brokers act as access control for the sensors' data, only allowing IoT applicati
 Random subsets of brokers can also act as witnesses of integrations.
 These witnessing brokers can then vote on whether the integration completed successfully, or vote to refund the user if they believe the sensor misbehaved in some way.
 
-#### RDF Store
+#### RDF Store (uses SSM Ontology)
 
 SSM Blockchain has embedded distributed RDF store in all SSM Blockchain nodes. This RDF store uses our developed ontology (i.e., an extension of Semantic Sensor Netwrok (SSN) https://www.w3.org/TR/vocab-ssn/) to store the semantic metadata of IoT sensors.  The blockchain implementation in blockchain/blockchain.ts only holds the count of various RDF triples, but does not allow for efficient querying.
 To allow for efficient querying, the app can be told of the location of a apache fuseki instance, which it will populate with the RDF triples.
@@ -61,7 +55,7 @@ A hardened version of this utilising the atomic nature of the sqlite3 store used
 
 ##### Compensation
   This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
-### User Interface
+### User Interface (SSM UI)
 The User Interface runs on top of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
 
 

@@ -184,15 +184,15 @@ class SensorList {
 
         const sCell = dataRow.insertCell();
         sCell.style.border = "1px solid black";
-        sCell.innerHTML = tuple.s;
+        sCell.textContent = tuple.s;
 
         const pCell = dataRow.insertCell();
         pCell.style.border = "1px solid black";
-        pCell.innerHTML = tuple.p;
+        pCell.textContent = tuple.p;
 
         const oCell = dataRow.insertCell();
         oCell.style.border = "1px solid black";
-        oCell.innerHTML = tuple.o;
+        oCell.textContent = tuple.o;
       }
     }
     if ("extraLiterals" in sensor.metadata) {
@@ -201,15 +201,15 @@ class SensorList {
 
         const sCell = dataRow.insertCell();
         sCell.style.border = "1px solid black";
-        sCell.innerHTML = tuple.s;
+        sCell.textContent = tuple.s;
 
         const pCell = dataRow.insertCell();
         pCell.style.border = "1px solid black";
-        pCell.innerHTML = tuple.p;
+        pCell.textContent = tuple.p;
 
         const oCell = dataRow.insertCell();
         oCell.style.border = "1px solid black";
-        oCell.innerHTML = String(tuple.o);
+        oCell.textContent = String(tuple.o);
       }
     }
   }

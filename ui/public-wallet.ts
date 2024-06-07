@@ -987,15 +987,15 @@ export default () => {
     } else {
       input.extraLiteralMetadata = [];
       input.extraLiteralMetadata.push(
-        { s: 'SSMS://#observes', p: '<http://www.w3.org/2000/01/rdf-schema#label>', o: registerSensorMeasures.value },
-        { s: 'SSMS://#location', p: '<http://www.w3.org/2003/01/geo/wgs84_pos#lat>', o: registerSensorLatitude.value },
-        { s: 'SSMS://#location', p: '<http://www.w3.org/2003/01/geo/wgs84_pos#long>', o: registerSensorLongitude.value }
+        { s: 'SSMS://#observes', p: 'http://www.w3.org/2000/01/rdf-schema#label', o: registerSensorMeasures.value },
+        { s: 'SSMS://#location', p: 'http://www.w3.org/2003/01/geo/wgs84_pos#lat', o: registerSensorLatitude.value },
+        { s: 'SSMS://#location', p: 'http://www.w3.org/2003/01/geo/wgs84_pos#long', o: registerSensorLongitude.value }
       );
 
       input.extraNodeMetadata = [];
       input.extraNodeMetadata.push(
-        { s: 'SSMS://', p: '<http://www.w3.org/ns/sosa/observes>', o: 'SSMS://#observes' },
-        { s: 'SSMS://', p: '<http://www.w3.org/ns/sosa/hasFeatureOfInterest>', o: 'SSMS://#location' }
+        { s: 'SSMS://', p: 'http://www.w3.org/ns/sosa/observes', o: 'SSMS://#observes' },
+        { s: 'SSMS://', p: 'http://www.w3.org/ns/sosa/hasFeatureOfInterest', o: 'SSMS://#location' }
       );
     }
     if (registerSensorIntervalIsKnown) {
