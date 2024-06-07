@@ -51,10 +51,11 @@ A hardened version of this utilising the atomic nature of the sqlite3 store used
   This transaction pays for sensor data
 
 ##### Commit
-  This transaction is a witness voting that an integration has been completed successfully
+  This transaction is a witness voting that an integration has been completed successfully. Note that the witnesses will be used later for developing the compensation transactions.
 
 ##### Compensation
-  This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated
+  This transaction is a witness voting that an integration has been completed but the sensor misbehaved and the buyer should be compensated. Please note that the compensation transaction still under development.
+  
 ### User Interface (SSM UI)
 The User Interface runs on top of the the blockchain to ensure its self-managment. The dashboard provides several services for sensor providers and IoT client applications in two modes (Easy-to-use mode and Expert mode). the dashboard provides an easy to use services  some:
 
