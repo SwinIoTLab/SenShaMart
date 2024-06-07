@@ -138,7 +138,10 @@ A list of APIs provided by public-wallet-app is provided in APIs.md in this fold
 
 ## Contributions
 Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Milovac, and Ampalavanapillai Nirmalathas.
+
 Software Engineering: Anas Dawod and Josip Milovac.
 
 ## Fund
-This project is fundded by ARC discovery grand DP220101420. Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
+This project is fundded by ARC discovery grand DP220101420. 
+
+Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
