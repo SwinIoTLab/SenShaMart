@@ -3,7 +3,7 @@ Sensor Sharing Marketplace (SenShaMart) is a global and decentralised marketplac
 SenShaMart enables the owners of IoT sensors (i.e., providers) to share their data and get paid for them. Also, enables client IoT applications (i.e., consumers) to find available IoT sensors, pay them, and use their data. 
 SenShaMart is a self-managed marketplace that does not need for any individual/organisation to control it or own it. It relies on desentralisation and semantic technology to support autonomic share of data between providers and consumers.
 
-![Uploading image.jpeg…]()
+![Picture 1](https://github.com/SwinIoTLab/SenShaMart/assets/43335798/7254ce7b-64a7-4332-8a61-9c3e86888855)
 
 
 ## SenShaMart Components
