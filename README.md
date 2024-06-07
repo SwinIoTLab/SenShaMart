@@ -144,4 +144,4 @@ Software Engineering: Anas Dawod and Josip Milovac.
 ## Fund
 This project is fundded by ARC discovery grand DP220101420. 
 
-Origanaly, it is funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD thesis.
+Origanaly, it was funded by The University of Melbourne Scholarship as part of Anas Dawod's PhD.
