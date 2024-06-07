@@ -8,8 +8,6 @@ SenShaMart is a self-managed marketplace that does not need for any individual/o
 
 ## SenShaMart Components
 
-A deployed SenShaMart System comprises of several components
-
 ### SSM Blockchain
 SSM Blockchain is a semantic-based blockchain that provides self-managment for sharing IoT sensors. SSM Blockchain comprises of a collection of nodes. These nodes can play three main roles, which are Miners, Wallets, and Brokers. Each node can select one or more roles.
 #### Miner
