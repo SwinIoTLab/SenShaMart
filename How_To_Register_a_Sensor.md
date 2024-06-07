@@ -27,7 +27,7 @@ The User Interface can be used by the users of SenShaMart to register IoT sensor
 
 ## Using the API
 
-The IoT sensor registration API, which is provided in [API.md](./API.md) can be used to register IoT sensors. 
+The IoT sensor registration API, which is provided in [API.md](./APIs.md) can be used to register IoT sensors. 
 The IoT sensor provider needs to provide information about the sensor that is required by the API below.
 
 ```
