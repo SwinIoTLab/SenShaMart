@@ -22,7 +22,7 @@ The User Interface can be used by the users of SenShaMart to register IoT sensor
    The developer option allows the user to provide a file of RDF triples that contains the semantic description of IoT sensor.
    It also allows the user to chose the endpoint (Broker) that will share the sensors data with potential data consumers (IoT applications).
 4. Hit Create!
-5. If all is successful, the UI will tell you the connection address and connection topic. Note these down.
+5. If all is successful, the UI will tell you the connection address and connection topic. **Note these down**.
 6. To start sharing data, configure your sensing device to send its data to the MQTT broker at the connection address, and on the connection topic.
 
 ## Using the API
