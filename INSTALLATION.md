@@ -8,7 +8,9 @@ An `npm install` should find and install all base dependencies.
 A typescript compile is then required to transpile the typescript to javascript.
 This can be done with `tsc` or `npx tsc` from the repository directory.
 
-### Compilation errors are expected in the ui/ folder.**
+You will then be left with 3 apps and multiple tools.
+
+### Compilation errors are expected in the ui/ folder.
 
 - 4 errors in ui/application.ts
 - 2 errors in ui/broker.ts
@@ -16,10 +18,6 @@ This can be done with `tsc` or `npx tsc` from the repository directory.
 - 1 error in ui/public-wallet.ts:14
 
 We are working on fixing these errors.
-
-### Results
-
-You will then be left with 3 apps and multiple tools.
 
 ## Apps
 
@@ -108,11 +106,12 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
     This is the port on which the app listens to for people willing to share their blockchains
 
     Default: 3002
-  -  `miner-chain-server-peers`
-
+  - `miner-chain-server-peers`
+  
     These are the URIs the broker will attempt to connect to on startup to share and recieve new copies of the blockchain.
 
     Default: `[]`.
+ 
   - `miner-api-port`
   
     This is the port the miner will expose it's user facing API to.
