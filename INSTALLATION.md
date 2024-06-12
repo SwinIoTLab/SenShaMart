@@ -35,6 +35,14 @@ The 3 apps are
   
   This is located at `public__wallet/public-wallet-app.js`. This application acts as a wallet.
 
+### Running
+
+To run an app (for example a miner):
+
+0. Make sure you've compiled them with typescript through calling `tsc`
+1. You can run the Apps with the defult configurations. It is recomended to set the required configurations in the settings.json file as explained below in the configuration section.
+2. Run the app using node (e.g. `node miner/miner-app.js`). You can run multiole apps simultaneously.
+
 ### Configuration
 
 Each of these apps gets their configuration from a `./settings.json` file in the working directory.
@@ -177,13 +185,6 @@ We recommend the following settings be configured for the following apps:
 
     This is recommended so that your broker can engage in the propogation of the blockchain.
 
-### Running
-
-To run an app (for example a miner):
-
-0. Make sure you've compiled them with typescript through calling `tsc`
-1. Set the correct settings in the settings.json.
-2. Run the app using node (e.g. `node miner/miner-app.js`)
 
 ## Tools
 
