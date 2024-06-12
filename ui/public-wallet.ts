@@ -1016,7 +1016,7 @@ export default () => {
         return;
       }
       registerSensorConnectionDiv.style.display = 'grid';
-      registerSensorConnectionAddress.innerHTML = res.brokerIp;
+      registerSensorConnectionAddress.innerHTML = "mqtt://" + res.brokerIp;
       registerSensorConnectionTopic.innerHTML = 'in/'+input.sensorName;
       registerSensorResult.innerHTML = JSON.stringify(res.tx, null, 2);
       statusOK(operationStatus, "Submitted sensor registration");
@@ -1675,15 +1675,15 @@ export default () => {
 
         const sensorNameCell = dataRow.insertCell();
         sensorNameCell.style.border = "1px solid black";
-        sensorNameCell.innerHTML = display.sensor;
+        sensorNameCell.textContent = display.sensor;
 
         const brokerIpCell = dataRow.insertCell();
         brokerIpCell.style.border = "1px solid black";
-        brokerIpCell.innerHTML = display.brokerIp;
+        brokerIpCell.textContent = "mqtt://" + display.brokerIp;
 
         const topicCell = dataRow.insertCell();
         topicCell.style.border = "1px solid black";
-        topicCell.innerHTML = 'out/' + res.hash + '/' + display.index;
+        topicCell.textContent = 'out/' + res.hash + '/' + display.index;
       }
       integrateResult.innerHTML = JSON.stringify(res.tx, null, 2);
       statusOK(operationStatus, "Submitted Integration");

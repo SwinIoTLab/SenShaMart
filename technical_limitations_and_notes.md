@@ -6,7 +6,7 @@ We aim to polish everything over time but there are some current technical limit
 ## Replication
 
 Our replication is currently limited to half of the blocks that are in memory. 
-We only store an expected 1 days worth of blocks in memory at a time.
+We only store an expected 7 days worth of blocks in memory at a time.
 This can be changed by changing the MAX_BLOCKS_IN_MEMORY constant in blockchain/blockchain.ts.
 
 We want to change our replication algorithm and implementation (currently in network/blockchain-prop.ts) to be RPC based using something like grpc.

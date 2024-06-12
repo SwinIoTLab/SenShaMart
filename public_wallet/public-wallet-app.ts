@@ -247,7 +247,7 @@ app.post('/Integration/Register', (req, res) => {
     res.json({
       result: true,
       tx: integration.tx,
-      hash: integration.type.hashToSign(integration.tx)
+      hash: Integration.mqttTopic(integration.tx)
     });
   } catch (err) {
     console.log(err);

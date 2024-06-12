@@ -26,7 +26,7 @@ import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
 import { type Blockchain } from '../blockchain/blockchain.js';
 import { ChainUtil, type KeyPair, type LiteralMetadata, type NodeMetadata } from '../util/chain-util.js';
-import { type AnyTransaction } from '../blockchain/transaction_base.js';
+import type { TransactionWrapper } from '../blockchain/transaction_base.js';
 
 //TODO: keep track of issued transactions, so we don't accidently try and double spend
 class Wallet {
@@ -76,7 +76,7 @@ class Wallet {
     return new Payment(keyPair, counter, outputs, rewardAmount);
   }
 
-  createPaymentAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, outputs: PaymentOutput[]): AnyTransaction {
+  createPaymentAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, outputs: PaymentOutput[]): TransactionWrapper<Payment> {
     return {
       tx: this.createPayment(keyPair, blockchain, rewardAmount, outputs),
       type: Payment
@@ -109,7 +109,7 @@ class Wallet {
     return new Integration(keyPair, counter, outputs, witnessCount, rewardAmount);
   }
 
-  createIntegrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, witnessCount: number, outputs: IntegrationOutput[]): AnyTransaction {
+  createIntegrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, witnessCount: number, outputs: IntegrationOutput[]): TransactionWrapper<Integration> {
     return {
       tx: this.createIntegration(keyPair, blockchain, rewardAmount, witnessCount, outputs),
       type: Integration
@@ -143,7 +143,7 @@ class Wallet {
       extraLiteralMetadata);
   }
 
-  createBrokerRegistrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, brokerName: string, endpoint: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
+  createBrokerRegistrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, brokerName: string, endpoint: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): TransactionWrapper<BrokerRegistration> {
     return {
       tx: this.createBrokerRegistration(keyPair, blockchain, rewardAmount, brokerName, endpoint, extraNodeMetadata, extraLiteralMetadata),
       type: BrokerRegistration
@@ -201,7 +201,7 @@ class Wallet {
     interval: number | null,
     integrationBroker: string,
     extraNodeMetadata: NodeMetadata[],
-    extraLiteralMetadata: LiteralMetadata[]): AnyTransaction {
+    extraLiteralMetadata: LiteralMetadata[]): TransactionWrapper<SensorRegistration> {
     return {
       tx: this.createSensorRegistration(keyPair, blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, interval, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
       type: SensorRegistration

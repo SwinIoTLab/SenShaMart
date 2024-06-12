@@ -5,28 +5,27 @@ if (process.argv.length < 2) {
   process.exit(-1);
 }
 if (process.argv.length < 4) {
-  console.error(`Expected 'node "${process.argv[1]}" <path to blockchain db> <MQTT endpoint> <MQTT topic>`);
+  console.error(`Expected 'node "${process.argv[1]}" <MQTT endpoint> <MQTT topic>`);
   process.exit(-2);
 }
 
 const client = mqtt.connect(process.argv[2]);
 
+client.on("connect", () => {
+  console.log("Connected");
+});
+
+client.on("disconnect", () => {
+  console.log("Disconnected");
+  client.connect();
+});
+
 setInterval(() => {
+  const sending = JSON.stringify({ time: new Date().toTimeString() });
   if (client.connected) {
-    client.publish(process.argv[3], JSON.stringify({ time: new Date().toTimeString() }));
+    client.publish(process.argv[3], sending);
+    console.log(`published: ${sending}`);
+  } else {
+    console.log(`Couldn't publish, not connected: ${sending}`);
   }
 }, 1000);
-
-client.on("connect", () => {
-  client.subscribe("presence", (err) => {
-    if (!err) {
-      client.publish("presence", "Hello mqtt");
-    }
-  });
-});
-
-client.on("message", (topic, message) => {
-  // message is Buffer
-  console.log(message.toString());
-  client.end();
-});

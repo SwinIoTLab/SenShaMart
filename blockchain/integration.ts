@@ -105,12 +105,16 @@ class Integration implements RepeatableTransaction {
     };
   }
 
-  static hashToSign(integration:Integration):string {
+  static hashToSign(integration: Integration): string {
     return ChainUtil.hash([
       integration.counter,
       integration.rewardAmount,
       integration.witnessCount,
       integration.outputs]);
+  }
+  static mqttTopic(integration: Integration): string {
+    // TODO : think of a smarter way to get valid mqtt topics from this
+    return Integration.hashToSign(integration).replaceAll('+', '-');//need to change + to - for MQTT topics
   }
 
   static wrap(tx: Integration): TransactionWrapper<Integration> {

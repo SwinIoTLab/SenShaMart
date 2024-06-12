@@ -326,13 +326,8 @@ function genDatas(): Datas {
   };
 }
 
-//helper type to create a literal, this used to do something fancier, and is kept in case it needs to again
-function literal<T>(t: T): T {
-  return t;
-}
-
-//store 24 hours worth in memory
-export const MAX_BLOCKS_IN_MEMORY = Math.ceil(24 * 60 * 60 * 1000 / MINE_RATE);
+//store 7*24 hours (1 week) worth in memory
+export const MAX_BLOCKS_IN_MEMORY = Math.ceil(7 * 24 * 60 * 60 * 1000 / MINE_RATE);
 
 //a block and extra information needed to undo the block
 class ChainLink {
@@ -509,7 +504,7 @@ async function rollbackErr(chain: Blockchain, orig: Error) {
 async function onUpdateFinish(updater: Updater) {
   const chain = updater.parent;
 
-  //debug checks
+  /*//debug checks
   let foundBad = false;
   for (let i = 0; i < chain.links.length - 1; i++) {
     if (!verifyBlockHash(chain.links[i].block, chain.links[i + 1].block).result) {
@@ -522,7 +517,7 @@ async function onUpdateFinish(updater: Updater) {
     console.trace(`Pre Found bad, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, chain.linksStartI: ${chain.linksStartI}, chain.links.length: ${chain.links.length}`);
     process.exit(-1);
   }
-  //debug checks end
+  //debug checks end*/
 
   if (updater.links.length >= MAX_BLOCKS_IN_MEMORY) { //if the new links are larger than MAX BLOCKS IN MEMORY
     //only the tail end of links will fit, adjust linksStartI and slice links accordingly
@@ -548,7 +543,7 @@ async function onUpdateFinish(updater: Updater) {
     chain.links = updater.links;
   }
 
-  //debug checks
+  /*//debug checks
   for (let i = 0; i < chain.links.length - 1; i++) {
     if (!verifyBlockHash(chain.links[i].block, chain.links[i + 1].block).result) {
       console.error(`Bad internal link at ${i}->${i + 1}`);
@@ -560,7 +555,7 @@ async function onUpdateFinish(updater: Updater) {
     console.trace(`Post Found bad, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, chain.linksStartI: ${chain.linksStartI}, chain.links.length: ${chain.links.length}`);
     process.exit(-1);
   }
-  //debug checks end
+  //debug checks end*/
 
   const changes: UpdaterChanges = genChanges();
 

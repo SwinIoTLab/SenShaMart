@@ -29,12 +29,13 @@ import Aedes from 'aedes';
 import Config from '../util/config.js';
 import { ChainUtil, isFailure } from '../util/chain-util.js';
 
-import { Blockchain, type UpdaterChanges } from '../blockchain/blockchain.js';
+import { Blockchain, type UpdaterChanges, INTEGRATION_STATE } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as FsProvider } from '../blockchain/persistence.js';
 import Block from '../blockchain/block.js';
 import Net from 'net';
 import Commit from '../blockchain/commit.js';
 import { WebSocket, WebSocketServer } from 'ws';
+import Integration from '../blockchain/integration.js';
 //import fs from 'fs';
 
 'use strict';
@@ -98,6 +99,7 @@ function minutesNow(now: number = Date.now()) {
 }
 
 type SensorIntegration = {
+  topic: string;
   integrationInput: string;
   integrationCounter: number;
   outputIndex: number;
@@ -164,6 +166,11 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
 
     console.log(`Not undefined: ${integration}`);
 
+    if (integration.state !== INTEGRATION_STATE.RUNNING) {
+      console.log(`Integration ${integrationKey} has been set to state: ${integration.state}`);
+      continue;
+    }
+
     for (let i = 0; i < integration.outputs.length; i++) { //for every output
       const output = integration.outputs[i]; //get the output
       const outputExtra = integration.outputsExtra[i]; //get the output extra information
@@ -186,6 +193,7 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
         console.log(`Starting to integrate for integration: ${integrationKey}, sensor: ${output.sensorName}, perMin: ${outputExtra.sensorCostPerMin}, costPerKB: ${outputExtra.sensorCostPerKB}`);
         ourIntegration.integrations.set(integrationKey, //add this integration to our information, using the extra output information for correct costs
           {
+            topic: Integration.mqttTopic(integration),
             integrationInput: integration.input,
             integrationCounter: integration.counter,
             outputIndex: i,
@@ -279,7 +287,7 @@ function onNewPacket(sensor: string, data:string | Buffer) {
         retain: true,
         dup: false,
         qos: 2,
-        topic: "out/" + hash + '/' + info.index,
+        topic: "out/" + info.topic + '/' + info.index,
         payload: data
       },
         (err: Error) => {
