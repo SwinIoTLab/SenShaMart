@@ -61,7 +61,49 @@ ResultFailure | {
 
 If the integrationBroker is null, a random broker is selected for you. If interval is null, the sensor is assumed to not be periodic.
 
+## Sharing Sensor's data
+
 To start sharing data, configure your sensing device to send its data to the MQTT broker at the broker IP returned by the API, and on the connection topic given by `in/${SENSOR_NAME}`.
 
 `${SENSOR_NAME}` is the name of your sensor.
 
+Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need ....
+
+``
+import paho.mqtt.client as mqtt
+import time
+import random
+
+# MQTT settings
+broker = "brokker address"  # the connection address provided by the API
+port = 1883
+topic = "example topic" # the topic provided by the API
+
+# Create an MQTT client instance
+client = mqtt.Client()
+
+# Connect to the broker
+client.connect(broker, port, 60)
+
+def publish_temperature():
+    while True:
+        # Simulate reading a temperature value
+        temperature = round(random.uniform(20.0, 30.0), 2)
+        # Publish the temperature value to the MQTT topic
+        result = client.publish(topic, temperature)
+        # Result: [0, 2]
+        status = result[0]
+        if status == 0:
+            print(f"Sent `{temperature}` to topic `{topic}`")
+        else:
+            print(f"Failed to send message to topic {topic}")
+        # Wait before sending the next value
+        time.sleep(5)
+
+if __name__ == "__main__":
+    try:
+        publish_temperature()
+    except KeyboardInterrupt:
+        print("Exited by user")
+        client.disconnect()
+``
