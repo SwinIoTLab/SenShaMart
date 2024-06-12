@@ -69,7 +69,7 @@ To start sharing data, configure your sensing device to send its data to the MQT
 
 Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need ....
 
-``
+```
 import paho.mqtt.client as mqtt
 import time
 import random
@@ -106,4 +106,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Exited by user")
         client.disconnect()
-``
+```
