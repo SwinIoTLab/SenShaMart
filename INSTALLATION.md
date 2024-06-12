@@ -54,7 +54,7 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
 - `broker-app`
   - `broker-keypair`
 
-    This is the keypair of the owner of this broker. It is used to sign witnessed transactions when the broker believes an integration it is witnessing completed.
+    This is the keypair of the owner of this broker. It is used to sign completed transactions.
 
     No default. The app will fail to start without this.
   - `broker-name`
