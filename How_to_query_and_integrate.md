@@ -127,7 +127,7 @@ If these headers are present their values will be used in the UI to display more
 
 ## Integrating with the UI
 
-Once a sensor has been added to the selected sensors control the user can click it, and set how many coins they wish to spend on it.
+Once a sensor has been added to the selected sensors control, the user can click it, and set how many coins they wish to spend on it.
 They can also choose to deselect it if they made a mistake or no longer want that sensor.
 
 The pay and integrate button will send the input information to the wallet, which will create, sign, and propagate your integration transaction.
