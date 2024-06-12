@@ -40,7 +40,7 @@ The 3 apps are
 To run an app (for example a miner):
 
 0. Make sure you've compiled them with typescript through calling `tsc`
-1. You can run the Apps with the defult configurations. It is recomended to set the required configurations in the settings.json file as explained below in the configuration section.
+1. You can run the Apps with the defult configurations. It is recomended to set the required configurations in the `./settings.json` file as explained below in the configuration section.
 2. Run the app using node (e.g. `node miner/miner-app.js`). You can run multiole apps simultaneously.
 
 ### Configuration
