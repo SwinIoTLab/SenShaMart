@@ -185,6 +185,8 @@ We recommend the following settings be configured for the following apps:
 
     This is recommended so that your broker can engage in the propogation of the blockchain.
 
+## Connect to our Testing Network
+
 
 ## Tools
 
