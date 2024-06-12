@@ -61,6 +61,7 @@ ResultFailure | {
 
 If the integrationBroker is null, a random broker is selected for you. If interval is null, the sensor is assumed to not be periodic.
 
-To start sharing data, configure your sensing device to send its data to the MQTT broker at the brokerIp returned by the API, and on the connection topic given by `in/${SENSOR_NAME}`.
+To start sharing data, configure your sensing device to send its data to the MQTT broker at the broker IP returned by the API, and on the connection topic given by `in/${SENSOR_NAME}`.
+
 `${SENSOR_NAME}` is the name of your sensor.
 
