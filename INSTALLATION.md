@@ -215,40 +215,46 @@ If two nodes diverge by more than MAX_BLOCKS_IN_MEMORY / 2 blocks, the best way 
 - regenerate the fuseki dataset if necessary
 - start the stopped node again
 
-We provide a blockchain sharer node running at 136.186.108.19/blockchain.db to download a copy of the blockchain made hourly.
+We provide a blockchain sharer node running at http://136.186.108.19:6002/blockchain.db to download a copy of the blockchain made hourly.
 
 ## Tools
 
 We also provide some tools to help with some administrative actions. These are found in tools
 
-- regenerate_fuseki
+- regenerate_fuseki.js
 
   This takes an existing persisted blockchain, and writes all its RDF triples into the specified Fuseki Instance.
   This is useful for when you need to recreate the Fuseki database.
 
-- gen_blockchain
+- gen_blockchain.js
 
   This generates a new blockchain at `./test_blockchain.db` of the specified depth for use in testing
 
-- clean_fuseki
+- clean_fuseki.js
 
   This deletes all RDF triples and data stores from a fuseki instance.
   This can be used to fully remove a dataset from fuseki, so that you can then regenerate a new blockchain into it for testing.
 
-- dummy_sensor
+- dummy_sensor.js
 
   This sends timestamps to the specified MQTT broker and topic.
   It can be used to simulate a sensor.
 
-- dummy_consumer
+- dummy_consumer.js
 
   This connects to the specific MQTT broker and topic and prints recieved messsages to the console.
   It can be used to simulate a consumer.
 
-- keygen
+- keygen.js
 
   This generates a new keypair, and outputs it to the console.
   It can be used to generate new keypairs without having to run a wallet.
+
+- blockchain_sharer.js
+
+  This can be used to share a copy of the chain. 
+  It makes a copy of the active chain every hour, and this copied chain can be downloaded through `/blockchain.db`.
+  It is used to work around limitations in our current propogation protocol.
 
 ## Install Fuseki / Enabling SPARQL support
 
