@@ -64,7 +64,8 @@ If the integrationBroker is null, a random broker is selected for you. If interv
 ## Sharing Sensor's data
 
 To start sharing data, configure your sensing device to send its data to the MQTT broker at the broker IP returned by the API, and on the connection topic given by `in/${SENSOR_NAME}`.
-`${SENSOR_NAME}` is the name of your sensor.
+`${SENSOR_NAME}` is the name of your sensor. For Example: the API will return the following `Connection address:
+mqtt://136.186.108.94:5003` and  `Connection topic:in/TestSwin`
 
 Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need paho-MQTT library ``pip install paho-mqtt``
 
@@ -74,9 +75,9 @@ import time
 import random
 
 # MQTT settings
-broker = "brokker address"  # the connection address provided by the API
-port = 1*** # It will be provided by the API along with the address.
-topic = "example topic" # the topic provided by the API
+broker = "136.186.108.94"  # the connection address provided by the API
+port = 5003 # It will be provided by the API along with the address.
+topic = "in/TestSwin" # the topic provided by the API
 
 # Create an MQTT client instance
 client = mqtt.Client()
