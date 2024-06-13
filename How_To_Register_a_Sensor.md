@@ -67,7 +67,7 @@ To start sharing data, configure your sensing device to send its data to the MQT
 `${SENSOR_NAME}` is the name of your sensor. For Example: the API will return the following `Connection address:
 mqtt://136.186.108.94:5003` and  `Connection topic:in/TestSwin`
 
-Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need paho-MQTT library ``pip install paho-mqtt``
+Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need paho-MQTT library ``pip install paho-mqtt``. Also, you can use the dummy sensor provided tools section.
 
 ```
 import paho.mqtt.client as mqtt
