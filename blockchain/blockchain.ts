@@ -492,6 +492,7 @@ type Insert_result = {
 
 async function rollbackErr(chain: Blockchain, orig: Error) {
   try {
+    console.log(`Rolling back: ${orig.message} at ${orig.stack}`);
     chain.persistence.run("ROLLBACK;");
   } catch (err) {
     if (err) {
@@ -504,7 +505,7 @@ async function rollbackErr(chain: Blockchain, orig: Error) {
 async function onUpdateFinish(updater: Updater) {
   const chain = updater.parent;
 
-  /*//debug checks
+  //debug checks
   let foundBad = false;
   for (let i = 0; i < chain.links.length - 1; i++) {
     if (!verifyBlockHash(chain.links[i].block, chain.links[i + 1].block).result) {
@@ -517,7 +518,7 @@ async function onUpdateFinish(updater: Updater) {
     console.trace(`Pre Found bad, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, chain.linksStartI: ${chain.linksStartI}, chain.links.length: ${chain.links.length}`);
     process.exit(-1);
   }
-  //debug checks end*/
+  //debug checks end
 
   if (updater.links.length >= MAX_BLOCKS_IN_MEMORY) { //if the new links are larger than MAX BLOCKS IN MEMORY
     //only the tail end of links will fit, adjust linksStartI and slice links accordingly
@@ -527,7 +528,11 @@ async function onUpdateFinish(updater: Updater) {
     //we're going to have to do some chopping, using a certain amount of tail of current blockchain links, concattenated with our links
     const oldLinksStartI = chain.linksStartI;
     //for debug
-    //console.log(`chain.linksStartI: ${chain.linksStartI}, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, oldLinksStartI: ${oldLinksStartI}`);
+    //console.log(`chain.linksStartI: ${chain.linksStartI}, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, chain.length():${chain.length()}`);
+    //first remove any blocks from the blockchain that have been undone
+    if (updater.startIndex < chain.length()) {
+      chain.links = chain.links.slice(0, updater.startIndex - chain.linksStartI);
+    }
     chain.linksStartI = Math.max(updater.startIndex + updater.links.length - MAX_BLOCKS_IN_MEMORY, oldLinksStartI);
     if (updater.startIndex === chain.linksStartI) {
       chain.links = updater.links;
@@ -543,7 +548,7 @@ async function onUpdateFinish(updater: Updater) {
     chain.links = updater.links;
   }
 
-  /*//debug checks
+  //debug checks
   for (let i = 0; i < chain.links.length - 1; i++) {
     if (!verifyBlockHash(chain.links[i].block, chain.links[i + 1].block).result) {
       console.error(`Bad internal link at ${i}->${i + 1}`);
@@ -555,7 +560,7 @@ async function onUpdateFinish(updater: Updater) {
     console.trace(`Post Found bad, updater.startIndex: ${updater.startIndex}, updater.links.length: ${updater.links.length}, chain.linksStartI: ${chain.linksStartI}, chain.links.length: ${chain.links.length}`);
     process.exit(-1);
   }
-  //debug checks end*/
+  //debug checks end
 
   const changes: UpdaterChanges = genChanges();
 
@@ -641,7 +646,7 @@ async function onUpdateFinish(updater: Updater) {
   let deleteQuery: string = DELETE_QUERY_INITIAL;
 
   for (const [escaped, count] of updater.prevData.NODE_RDF) {
-    let existing = updater.parent.data.NODE_RDF.get(escaped);
+    const existing = updater.parent.data.NODE_RDF.get(escaped);
     const triple = unEscapeNodeMetadata(escaped);
     if (existing === undefined) {
       if (count > 0) { //only write if count > 0, otherwise it should be 0, and no point writing it as default is 0
@@ -672,7 +677,7 @@ async function onUpdateFinish(updater: Updater) {
     }
   }
   for (const [escaped, count] of updater.prevData.LITERAL_RDF) {
-    let existing = updater.parent.data.LITERAL_RDF.get(escaped);
+    const existing = updater.parent.data.LITERAL_RDF.get(escaped);
     const triple = unEscapeNodeMetadata(escaped);
     if (existing === undefined) {
       if (count > 0) { //only write if count > 0, otherwise it should be 0, and no point writing it as default is 0
@@ -1436,7 +1441,7 @@ function checkIntegrationsForTimeout(updater: Updater, timestamp: number) {
       //costNow = (now - startTime) * (costPerMin / minute_ms)
       //now = costNow / (costPerMin / minute_ms) + startTime
       const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-      console.log(`curData checking for timeout: ${key} ${i}: ${delta}`);
+      //console.log(`curData checking for timeout: ${key} ${i}: ${delta}`);
       if (0 < delta) {
         all_timedout = false;
         break;
@@ -1467,7 +1472,7 @@ function checkIntegrationsForTimeout(updater: Updater, timestamp: number) {
       //costNow = (now - startTime) * (costPerMin / minute_ms)
       //now = costNow / (costPerMin / minute_ms) + startTime
       const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-      console.log(`prevData checking for timeout: ${key} ${i}: ${delta}`);
+      //console.log(`prevData checking for timeout: ${key} ${i}: ${delta}`);
       if (0 < delta) {
         all_timedout = false;
         break;
@@ -1498,7 +1503,7 @@ function checkIntegrationsForTimeout(updater: Updater, timestamp: number) {
       //costNow = (now - startTime) * (costPerMin / minute_ms)
       //now = costNow / (costPerMin / minute_ms) + startTime
       const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.base.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-      console.log(`parent checking for timeout: ${key} ${i}: ${delta}`);
+      //console.log(`parent checking for timeout: ${key} ${i}: ${delta}`);
       if (0 < delta) {
         all_timedout = false;
         break;
@@ -1645,8 +1650,8 @@ async function writeBlocks(chain: Blockchain, startIndex: number, links: ChainLi
   for (let i = 0; i < links.length; ++i) {
     await chain.persistence.run("INSERT INTO Blocks(id, parseable) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET parseable = excluded.parseable;",
       startIndex + i, links[i].serialize());
-    console.info(`wrote block ${startIndex + i}`);
   }
+  console.log(`Wrote blocks [${startIndex},${startIndex + links.length})`);
 }
 
 //read a block from persistence
@@ -1659,11 +1664,18 @@ async function readBlock(chain: Blockchain, i: number): Promise<ChainLink> {
   return ChainLink.deserialize(row.parseable);
 }
 
-type OpFunc = (op: Op, chain: Blockchain) => Promise<void>;
-interface Op {
+type OpFunc = () => Promise<unknown>;
+
+class Op {
   op: OpFunc;
   resolve: ResolveCb;
   reject: RejectCb;
+
+  constructor(op: OpFunc, resolve: ResolveCb, reject: RejectCb) {
+    this.op = op;
+    this.resolve = resolve;
+    this.reject = reject;
+  }
 }
 
 
@@ -1671,137 +1683,91 @@ interface Op {
 async function addOp(blockchain: Blockchain, op: Op) {
   blockchain.queue.push(op);
 
-  if (blockchain.queue.length === 1) {
-    while (blockchain.queue.length > 0) {
+  if (!blockchain.queuePumping) {
+    blockchain.queuePumping = true;
+      while (blockchain.queue.length > 0) {
       const running = blockchain.queue.pop();
       try {
-        await running.op(running, blockchain);
+        running.resolve(await running.op());
       } catch (err) {
         running.reject(err);
       }
     }
+    blockchain.queuePumping = false ;
   }
 }
 
 //logic to replace the current chain with a new chain
-async function replaceImpl(me: Op, blockchain: Blockchain): Promise<void> {
-  const op = me as ReplaceChainOp;
+async function replaceImpl(blockchain: Blockchain, newChain: Block[], startI: number): Promise<void> {
 
-  if (op.newChain.length + op.startI <= blockchain.linksStartI + blockchain.links.length) { //if the new chain wouldn't be longer than the current
-    op.resolve();
+  if (newChain.length + startI <= blockchain.linksStartI + blockchain.links.length) { //if the new chain wouldn't be longer than the current
     return;
   }
-  if (op.startI > blockchain.linksStartI + blockchain.links.length) { //if we start before what we have in memory
-    op.reject(new Error(`NewBlocks start after our current chain ends, we're missing bits in the middle. op.startI: ${op.startI}, blockchain.linksStartI: ${blockchain.linksStartI}, blockchain.links.length: ${blockchain.links.length}`));
-    return;
+  if (startI > blockchain.linksStartI + blockchain.links.length) { //if we start before what we have in memory
+    throw new Error(`NewBlocks start after our current chain ends, we're missing bits in the middle. startI: ${startI}, blockchain.linksStartI: ${blockchain.linksStartI}, blockchain.links.length: ${blockchain.links.length}`);
   }
 
   //as newblocks must be longer then current, we start from current and walk backwards
   //start with blocks in memory, then start reading from disk (when we implement it)
 
-  try {
+  let index = blockchain.linksStartI + blockchain.links.length; //current block we're looking at, start at last block in our current chain
+  const updater = new Updater(blockchain);
 
-    let index = blockchain.linksStartI + blockchain.links.length; //current block we're looking at, start at last block in our current chain
-    const updater = new Updater(blockchain);
-
-    for (; ;) { //no guard here, one of the first two checks will eventually end the loop
-      if (index < op.startI) { //if we have hit before the new chain start, we haven't found where they diverge
-        op.reject(new Error(`Received chain diverges from our chain before received chain's start. recved chain start: ${op.startI}`));
-        process.exit(-1);
-      }
-      if (index < blockchain.linksStartI) { //if links aren't in memory, we need to load them from persistence
-        //currently NYI, return an error
-        op.reject(new Error("We currently can't replace the chain if the divergence happens out of memory"));
-        return;
-      }
-
-      const oldHash = index === 0 ? Block.genesis().hash : blockchain.links[index - blockchain.linksStartI - 1].block.hash;
-      const newBlock = op.newChain[index - op.startI];
-      if (oldHash !== newBlock.lastHash) { //if the last hashes don't match, trhey don't have a common ancestor, and so we haven't found the point of divergence
-        updater.undoBlock();
-      } else { //else we've found where we have a common ancestor, so we replace everything from here
-        const res = verifyBlocks(updater, op.newChain.slice(index - op.startI)); //verify the blocks
-        if (isFailure(res)) { //if verify failed
-          op.reject(new Error("Verify blockc failed", { cause: res }));
-          return;
-        }
-
-        const finishRes = await updater.persist();
-
-        const newBlocks: Block[] = []; //make blocks array
-        for (const link of finishRes.newBlocks) { //for every link
-          newBlocks.push(link.block); //add it to newBlocks
-        }
-
-        onChange(blockchain, newBlocks, finishRes.changes, blockchain.linksStartI + blockchain.links.length - newBlocks.length); //call handlers
-        op.resolve();
-        return;
-      }
-      --index;
+  for (; ;) { //no guard here, one of the first two checks will eventually end the loop
+    if (index < startI) { //if we have hit before the new chain start, we haven't found where they diverge
+      throw new Error(`Received chain diverges from our chain before received chain's start. recved chain start: ${startI}`);
     }
-  } catch (err) {
-    op.reject(err);
-  }
-}
+    if (index < blockchain.linksStartI) { //if links aren't in memory, we need to load them from persistence
+      //currently NYI, return an error
+      throw new Error("We currently can't replace the chain if the divergence happens out of memory");
+    }
 
-class ReplaceChainOp implements Op {
-  op: OpFunc;
-  newChain: Block[];
-  startI: number;
-  resolve: ResolveCb;
-  reject: RejectCb;
-  accumulatedUndos: Datas;
-  constructor(newChain: Block[], startI: number, resolve: ResolveCb, reject: RejectCb) {
-    this.op = replaceImpl;
-    this.newChain = newChain;
-    this.startI = startI;
-    this.resolve = resolve;
-    this.reject = reject;
-    this.accumulatedUndos = genDatas();
+    const oldHash = index === 0 ? Block.genesis().hash : blockchain.links[index - blockchain.linksStartI - 1].block.hash;
+    const newBlock = newChain[index - startI];
+    if (oldHash !== newBlock.lastHash) { //if the last hashes don't match, trhey don't have a common ancestor, and so we haven't found the point of divergence
+      console.log(`Undoing block ${index}`);
+      updater.undoBlock();
+    } else { //else we've found where we have a common ancestor, so we replace everything from here
+      const res = verifyBlocks(updater, newChain.slice(index - startI)); //verify the blocks
+      if (isFailure(res)) { //if verify failed
+        throw new Error(`Verify block failed: ${res.reason}`, { cause: res });
+      }
+
+      const finishRes = await updater.persist();
+
+      const newBlocks: Block[] = []; //make blocks array
+      for (const link of finishRes.newBlocks) { //for every link
+        newBlocks.push(link.block); //add it to newBlocks
+      }
+
+      onChange(blockchain, newBlocks, finishRes.changes, blockchain.linksStartI + blockchain.links.length - newBlocks.length); //call handlers
+      return;
+    }
+    --index;
   }
 }
 
 //logic to add a block to the current chain
-async function addBlockImpl(me: Op, blockchain: Blockchain): Promise<void> {
-  const op = me as AddBlockOp;
+async function addBlockImpl(blockchain: Blockchain, newBlock: Block): Promise<void> {
 
-  try {
-    const updater = new Updater(blockchain);
+  const updater = new Updater(blockchain);
 
-    const verifyResult = verifyBlock(updater, op.newBlock);
+  const verifyResult = verifyBlock(updater, newBlock);
 
-    if (isFailure(verifyResult)) {
-      op.reject(new Error("Verify failed", { cause: verifyResult }));
-      return;
-    }
-
-    const finishRes = await updater.persist();
-
-    const newBlocks: Block[] = [];
-    for (const link of finishRes.newBlocks) {
-      const block = link.block;
-      newBlocks.push(block);
-    }
-
-    onChange(blockchain, newBlocks, finishRes.changes, blockchain.linksStartI + blockchain.links.length - 1);
-    op.resolve();
-  } catch (err) {
-    op.reject(err);
+  if (isFailure(verifyResult)) {
+    throw new Error("Verify failed", { cause: verifyResult });
+    return;
   }
-}
 
-class AddBlockOp implements Op {
-  op: OpFunc;
-  newBlock: Block;
-  resolve: ResolveCb;
-  reject: RejectCb;
+  const finishRes = await updater.persist();
 
-  constructor(newBlock: Block, resolve: ResolveCb, reject: RejectCb) {
-    this.op = addBlockImpl;
-    this.newBlock = newBlock;
-    this.resolve = resolve;
-    this.reject = reject;
+  const newBlocks: Block[] = [];
+  for (const link of finishRes.newBlocks) {
+    const block = link.block;
+    newBlocks.push(block);
   }
+
+  onChange(blockchain, newBlocks, finishRes.changes, blockchain.linksStartI + blockchain.links.length - 1);
 }
 
 type ReadBlock_result = {
@@ -1809,74 +1775,29 @@ type ReadBlock_result = {
 };
 
 //logic to read a block from the current chain
-async function readBlockImpl(me: Op, blockchain: Blockchain): Promise<void> {
-  const op = me as ReadBlockOp;
-
-  try {
-    const link = await readBlock(blockchain, op.i);
-    op.resolve(link.block);
-  } catch (err) {
-    op.reject(err);
-  }
-}
-
-class ReadBlockOp implements Op {
-  op: OpFunc;
-  i: number;
-  resolve: ResolveCb;
-  reject: RejectCb;
-
-  constructor(i: number, resolve: ResolveCb, reject: RejectCb) {
-    this.op = readBlockImpl;
-    this.i = i;
-    this.resolve = resolve;
-    this.reject = reject;
-  }
+async function readBlockImpl(blockchain: Blockchain, i: number): Promise<Block> {
+  return (await readBlock(blockchain, i)).block;
 }
 
 //logic to where a given chain diverges from the current chain
-async function checkForDivergenceImpl(me: Op, blockchain: Blockchain): Promise<void> {
-  const op = me as CheckForDivergenceOp;
-  for (let i = 0; i < op.blocks.length; ++i) {
-    if (i + op.startIndex >= blockchain.linksStartI + blockchain.links.length) {
-      op.resolve(i);
-      return;
+async function checkForDivergenceImpl(blockchain: Blockchain, startIndex: number, blocks: Block[]): Promise<number> {
+  for (let i = 0; i < blocks.length; ++i) {
+    if (i + startIndex >= blockchain.linksStartI + blockchain.links.length) {
+      return i;
     }
-    if (i + op.startIndex >= blockchain.linksStartI) {
-      if (blockchain.links[i + op.startIndex - blockchain.linksStartI].block.hash !== op.blocks[i].hash) {
-        op.resolve(i);
-        return;
+    if (i + startIndex >= blockchain.linksStartI) {
+      if (blockchain.links[i + startIndex - blockchain.linksStartI].block.hash !== blocks[i].hash) {
+        return i;
       }
     } else {
-      try {
-        const link = await readBlock(blockchain, op.startIndex + i);
+      const link = await readBlock(blockchain, startIndex + i);
 
-        if (link.block.hash !== op.blocks[i].hash) {
-          op.resolve(i);
-        }
-      } catch (err) {
-        op.reject(err);
+      if (link.block.hash !== blocks[i].hash) {
+        return i;
       }
     }
   }
-  op.resolve(op.blocks.length);
-}
-
-class CheckForDivergenceOp implements Op {
-  op: OpFunc;
-  startIndex: number;
-  blocks: Block[];
-  resolve: ResolveCb;
-  reject: RejectCb;
-
-
-  constructor(startIndex: number, blocks: Block[], resolve: ResolveCb, reject: RejectCb) {
-    this.op = checkForDivergenceImpl;
-    this.startIndex = startIndex;
-    this.blocks = blocks;
-    this.resolve = resolve;
-    this.reject = reject;
-  }
+  return blocks.length;
 }
 
 type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number) => void;
@@ -2116,6 +2037,7 @@ class Blockchain {
   linksStartI: number; //where the links in memory start
   listeners: Listener[]; //listeners to blockchain changed events
   persistence: Persistence; //our wrapper to the sqlite3 based persitence
+  queuePumping: boolean; //whether someone is currently pumping the queue
   queue: Op[]; //queue of operations. These are queued to stop race conditions
   fuseki_location: string | null; //the URL of a fuseki instance
 
@@ -2126,6 +2048,7 @@ class Blockchain {
     this.listeners = [];
     sqlite3.verbose();
     this.queue = [];
+    this.queuePumping = false;
     this.fuseki_location = fuseki_location;
   }
 
@@ -2192,7 +2115,7 @@ class Blockchain {
     if (i >= this.linksStartI) {
       return this.links[i - this.linksStartI].block;
     } else {
-      return await new Promise<Block>((resolve, reject) => addOp(this, new ReadBlockOp(i, resolve, reject)));
+      return await new Promise<Block>((resolve, reject) => addOp(this, new Op(() => readBlockImpl(this, i), resolve, reject)));
     }
   }
 
@@ -2205,7 +2128,11 @@ class Blockchain {
 
   //adds an existing block to the blockchain, returns false if the block can't be added, true if it was added
   async addBlock(newBlock: Block) : Promise<void> {
-    await new Promise<void>((resolve,reject) => addOp(this, new AddBlockOp(newBlock, resolve, reject)));
+    await new Promise<void>((resolve,reject) => addOp(this, new Op(() => addBlockImpl(this, newBlock), resolve, reject)));
+  }
+
+  async addOp<T>(func: () => Promise<T>) {
+    await new Promise<T>((resolve, reject) => addOp(this, new Op(func, resolve, reject)));
   }
 
   wouldBeValidBlock(rewardee: string, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], commits: Commit[]) {
@@ -2226,11 +2153,11 @@ class Blockchain {
       throw new Error("Recieved chain is empty");
     }
 
-    await new Promise<void>((resolve, reject) => addOp(this, new ReplaceChainOp(newBlocks, startIndex, resolve, reject)));
+    await new Promise<void>((resolve, reject) => addOp(this, new Op(() => replaceImpl(this, newBlocks, startIndex), resolve, reject)));
   }
 
   async checkForDivergence(blocks: Block[], startIndex: number): Promise<number> {
-    return await new Promise<number>((resolve, reject) => addOp(this, new CheckForDivergenceOp(startIndex, blocks, resolve, reject)));
+    return await new Promise<number>((resolve, reject) => addOp(this, new Op(() => checkForDivergenceImpl(this, startIndex, blocks), resolve, reject)));
   }
 
   addListener(listener:Listener): void {

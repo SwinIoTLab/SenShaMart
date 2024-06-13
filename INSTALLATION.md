@@ -40,8 +40,10 @@ The 3 apps are
 To run an app (for example a miner):
 
 0. Make sure you've compiled them with typescript through calling `tsc`
-1. You can run the Apps with the defult configurations. It is recomended to set the required configurations in the `./settings.json` file as explained below in the configuration section.
-2. Run the app using node (e.g. `node miner/miner-app.js`). You can run multiole apps simultaneously.
+1. You can run the Apps with the defult configurations. 
+   It is recomended to set the required configurations in the `./settings.json` file as explained below in the configuration section.
+2. Run the app using node (e.g. `node miner/miner-app.js`).
+   You can run multiple apps simultaneously.
 
 ### Configuration
 
@@ -64,7 +66,7 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
     Default: The public key of the keypair serialized as a string.
   - `broker-fuseki`
 
-    This is the URI of a fuseki instance to use.
+    This is the URI of a fuseki instance to use. How, and why to use it is explained in the later section 'Install Fuseki / Enabling SPARQL support'
 
     Default: null
   - `broker-api-port`
@@ -106,7 +108,7 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
     Default: ./miner_blockchain.db
   - `miner-fuseki`
 
-    This is the URI of a fuseki instance to use.
+    This is the URI of a fuseki instance to use. How, and why to use it is explained in the later section 'Install Fuseki / Enabling SPARQL support'
 
     Default: null
   - `miner-chain-server-port`
@@ -145,7 +147,7 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
     Default: 7002
   - `public-wallet-fuseki`
 
-    This is the URI of a fuseki instance to use.
+    This is the URI of a fuseki instance to use. How, and why to use it is explained in the later section 'Install Fuseki / Enabling SPARQL support'
 
     Default: null
   - `public-wallet-chain-server-peers`
@@ -179,14 +181,41 @@ We recommend the following settings be configured for the following apps:
     This is recommended so that you can be compensated for the blocks the miner mines.
   - `miner-chain-server-peers`
 
-    This is recommended so that your broker can engage in the propogation of the blockchain.
+    This is recommended so that your miner can engage in the propogation of the blockchain.
 - `public-wallet-app`
   - `public-wallet-chain-server-peers`
 
-    This is recommended so that your broker can engage in the propogation of the blockchain.
+    This is recommended so that your wallet can engage in the propogation of the blockchain.
 
 ## Connect to our Testing Network
 
+We have nodes running on the ARDC Nectar Research Cloud.
+You can connect your nodes to our network by setting their `chain-server-peers` to one (or all) of the following miners:
+
+```
+[
+  "ws://136.186.108.192:3002",
+  "ws://136.186.108.83:3002"
+]
+```
+
+Our replication algorithm is currently limited to half of the blocks that are in memory. 
+We only store an expected 7 days worth of blocks in memory at a time.
+This can be changed by changing the MAX_BLOCKS_IN_MEMORY constant in blockchain/blockchain.ts.
+
+We want to change our replication algorithm and implementation (currently in network/blockchain-prop.ts) to be RPC based using something like grpc.
+This is an item of future work.
+
+### Work around
+
+If two nodes diverge by more than MAX_BLOCKS_IN_MEMORY / 2 blocks, the best way to reconcile them is to:
+- stop the node with the smallest chain
+- copy the longest chain to the other node and rename it if necessary
+- clean the fuseki database and remake the dataset if necessary
+- regenerate the fuseki dataset if necessary
+- start the stopped node again
+
+We provide a blockchain sharer node running at 136.186.108.19/blockchain.db to download a copy of the blockchain made hourly.
 
 ## Tools
 
@@ -224,7 +253,8 @@ We also provide some tools to help with some administrative actions. These are f
 ## Install Fuseki / Enabling SPARQL support
 
 A fuseki instance may be optionally linked to any of the apps.
-If a fuseki instance is not linked, the app will run, but without SPARQL query support.
+If a fuseki instance is not linked, the app will still run, but without SPARQL query support.
+This SPARQL query support is most important for the public wallet app, as the integration flow uses SPARQL to query for sensors.
 
 If you want to support SPARQL queries, an Apache Fuseki instance must be available and configured. 
 Installation instructions can be found at [Apache Jena Fuseki](https://jena.apache.org/documentation/fuseki2/).
@@ -232,15 +262,17 @@ Installation instructions can be found at [Apache Jena Fuseki](https://jena.apac
 We will summarise the main points here:
 
 - Apache Jena Fuseki requires Java 17 or later
-- [Download Apache Jena Fuseki](https://jena.apache.org/documentation/fuseki2/#download-fuseki-with-ui)
-- Unpack the archive into a folder
-- Run the server with `fuseki-server [--loc=DIR] [[--update] /NAME]` or `fuseki-server --mem /NAME`
+- [Download Apache Jena Fuseki with ui](https://jena.apache.org/documentation/fuseki2/#download-fuseki-with-ui).
+  We tested with [5.0.0-rc1](https://repo1.maven.org/maven2/org/apache/jena/jena-fuseki-server/5.0.0-rc1/jena-fuseki-server-5.0.0-rc1.jar)
+- Run the server with `java -jar jena-fuseki-server-5.0.0-rc1.jar [--loc=DIR] [[--update] /NAME]` or `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /NAME`.
+  `/NAME` is the name of the database created, `DIR` is the location where the data will be persisted, `--update` allows updates.
   
-  e.g. `fuseki-server --mem /public-wallet-app` is what is what we use during testing, as it creates an in-memory database that is lost on restart.
-  `fuseki-server --update /public-wallet-app` creates a persistent version of the database that allows updates.
-  Updates are required as we write triples for each block.
+  e.g. `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /public-wallet-app` is what is what we use during testing, as it creates an in-memory database that is lost on restart.
+  `java -jar jena-fuseki-server-5.0.0-rc1.jar --update /public-wallet-app` creates a persistent version of the database that allows updates.
+  **Updates are required as we write triples for each block**.
 
 ### Linking an app to a fuseki instance
 
-To tell an app to use a fuseki instance, set its `fuseki` option to point to the fuseki service.
-e.g. `"public-wallet-fuseki": "http://127.0.0.1:3030/public-wallet-app"`
+To tell an app to use a fuseki instance, set its `fuseki` setting in its settings.json file to point to the fuseki service.
+e.g. `"public-wallet-fuseki": "http://127.0.0.1:3030/public-wallet-app"`. 
+This is the `/public-wallet-app` database on the default fuseki port on the local machine.

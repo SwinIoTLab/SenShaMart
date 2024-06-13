@@ -68,8 +68,6 @@ Sensors create the data that are to be shared, searched for, and paid for. We ex
   
 IoT Applications are the clients of sensor data. We expect IoT applications to query required sensors, select them, pay them and use their data.
 
-
-
 ## Repository Structure
 
 The repository is split into multiple parts
@@ -115,26 +113,19 @@ The repository is split into multiple parts
 
   This where shared utility logic such as validation of data and reading settings is.
 
-## Configuration
+## Installation, Configuration, and Running
 
-System components are configured via a settings file.
-All setings have defaults in /util/constants.ts.
-The settings themselves are listed at the top of every -app file, along with what their default settings is.
-The default settings file is 'settings.json'.
-Each application's settings is prefixed by which application it belongs to, allowing all settings to coexist in the same file.
-
-
-## Running
-
-As this project is a typescript node project, be sure to install all dependencies first (`npm install`), and then run the typescript compiler (`tsc`).
-
-The working directory is assumed to be the root of the repository.
-As such, starting the miner can be done with `node ./miner/miner-app.js`, broker with `node ./broker/broker-app.js`, etc.
+Please refer to our [install guide](./INSTALL.md)
 
 ## APIs
 to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: http://127.0.0.1, 3002, /gen-key for http://127.0.0.1/3002/gen-key.
 
-A list of APIs provided by public-wallet-app is provided in APIs.md in this folder
+A list of APIs provided by public-wallet-app is provided in our [APIs guide](./APIs.md) in this folder
+
+## Public UI
+
+We also have a public node on the ARDC Nectar Research Cloud. 
+You can access it at [http://136.186.108.87:7001/wallet.html](http://136.186.108.87:7001/wallet.html).
 
 ## Contributions
 Conceptualisation: Anas Dawod, Dimitrios Georgakopoulos, Prem P. Jayaraman, Josip Milovac, and Ampalavanapillai Nirmalathas.

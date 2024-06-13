@@ -84,8 +84,8 @@ function mine(miner: Miner) {
         miner.txs.integration.mining,
         miner.txs.commit.mining,
         miner.nonce,
-        difficulty)).catch((err) => {
-          console.log(`Couldn't add mined block: ${err.reason}`);
+        difficulty)).catch((err: Error) => {
+          console.log(`Couldn't add mined block: ${err.message}`);
         }).finally(() =>
           //even on error we try again
           startMine(miner)

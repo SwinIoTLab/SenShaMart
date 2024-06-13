@@ -456,10 +456,7 @@ class Connection implements ConnectionListNode{
   //whenever our own chain changes, we need to check if the point at which we differ with our peer has changed
   newChain(_newBlocks: Block[], _changes: UpdaterChanges, difference: number) {
     if (difference < this.differing) {
-      console.log(`${this.logName}: Adjusting difference from ${this.differing} to ${difference}`);
       this.differing = difference;
-    } else {
-      console.log(`${this.logName}: Didn't adjust difference from ${this.differing} to ${difference}`);
     }
   }
 

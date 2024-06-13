@@ -123,6 +123,9 @@ const cachedIntegrations = new Map<string, string[]>();
 //return true
 function applyCost(hash: string, info: SensorIntegration, now: number, data_length: number) {
   const timeDelta = now - info.dataLastAt;
+  if (timeDelta < 0) {
+    return;
+  }
   const cost =
     timeDelta * info.perMin
     + data_length / 1024 * info.perKB;
