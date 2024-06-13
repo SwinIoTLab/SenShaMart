@@ -75,7 +75,7 @@ import random
 
 # MQTT settings
 broker = "brokker address"  # the connection address provided by the API
-port = 1883
+port = 1*** # It will be provided by the API along with the address.
 topic = "example topic" # the topic provided by the API
 
 # Create an MQTT client instance
