@@ -67,7 +67,13 @@ To start sharing data, configure your sensing device to send its data to the MQT
 `${SENSOR_NAME}` is the name of your sensor. For Example: the API will return the following `Connection address:
 mqtt://136.186.108.94:5003` and  `Connection topic:in/TestSwin`
 
-Here is an example code (written in python)for sharing random temperature values via MQTT broker. To run this code, you need paho-MQTT library ``pip install paho-mqtt``. Also, you can use the dummy sensor provided tools section.
+You can use the `dummy Sensor` provided in `Tools` to connect a sensor to SenShaMart using the information returned form the API. to that you need to do the following:
+
+1. run the dummy sensor by `node tools/dummy_sensor.js.
+2. enter the connection address `mqtt://136.186.108.94:5003` and Connection topic:`in/TestSwin`
+3. Now, your sensors is sharing data. You can test the data by integrating to it, which is explained in How_to_query_and_integrate.md file 
+
+Also, Here is an example code (written in python) for sharing random temperature values via MQTT broker. To run this code, you need paho-MQTT library ``pip install paho-mqtt``. Also, you can use the dummy sensor provided tools section.
 
 ```
 import paho.mqtt.client as mqtt
