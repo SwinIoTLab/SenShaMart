@@ -39,10 +39,9 @@ The 3 apps are
 
 To run an app (for example a miner):
 
-0. Make sure you've compiled them with typescript through calling `tsc`
-1. You can run the Apps with the defult configurations. 
-   It is recomended to set the required configurations in the `./settings.json` file as explained below in the configuration section.
-2. Run the app using node (e.g. `node miner/miner-app.js`).
+1. Make sure you've compiled them with typescript through calling `tsc`
+2. You can run the Apps with the defult configurations except for the Broker App. See the Essential Configurations below to coonfigure the Broker App. Also, it is highly recomended to follow the configuration in the  Recomended Configuration section.
+3. Run the app using node (e.g. `node miner/miner-app.js`).
    You can run multiple apps simultaneously.
 
 ### Configuration
@@ -161,14 +160,16 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
 
     Default: `./ui/`
 
-### Recommended Configuration
-
-We recommend the following settings be configured for the following apps:
-
+### Essential Configuration
 - `broker-app`
   - `broker-keypair`
 
     This is required for the brokers functionality
+
+### Recommended Configuration
+
+We recommend the following settings be configured for the following apps:
+
   - `broker-name`
 
     This is required so that the app knows which broker it is.
