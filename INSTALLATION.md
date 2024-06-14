@@ -33,7 +33,10 @@ The 3 apps are
 
 - `public-wallet-app`
   
-  This is located at `public__wallet/public-wallet-app.js`. This application acts as a wallet.
+  This is located at `public__wallet/public-wallet-app.js`.
+  This application acts as a wallet.
+  It exposes a html based UI at /wallet.html.
+  If the public-wallet-app is running on your local computer, and using the default API port of 7001, you can open the UI by going to `http://127.0.0.1:7001/wallet.html` in your favourite web browser.
 
 ### Running
 
