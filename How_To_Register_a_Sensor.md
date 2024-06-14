@@ -67,9 +67,9 @@ To start sharing data, configure your sensing device to send its data to the MQT
 `${SENSOR_NAME}` is the name of your sensor. For Example: the API will return the following `Connection address:
 mqtt://136.186.108.94:5003` and  `Connection topic:in/TestSwin`
 
-You can use the `dummy Sensor` provided in `Tools` to connect a sensor to SenShaMart using the information returned form the API. to that you need to do the following:
+You can use the `dummy_sensor.js` provided in `Tools` folder to connect a sensor to SenShaMart using the information returned form the API. You need to do the following:
 
-1. run the dummy sensor by `node tools/dummy_sensor.js.
+1. run the dummy sensor code by `node tools/dummy_sensor.js.
 2. enter the connection address `mqtt://136.186.108.94:5003` and Connection topic:`in/TestSwin`
 3. Now, your sensors is sharing data. You can test the data by integrating to it, which is explained in How_to_query_and_integrate.md file 
 
