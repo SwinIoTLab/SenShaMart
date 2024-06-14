@@ -131,15 +131,16 @@ Once a sensor has been added to the selected sensors control, the user can click
 They can also choose to deselect it if they made a mistake or no longer want that sensor.
 
 The pay and integrate button will send the input information to the wallet, which will create, sign, and propagate your integration transaction.
-After this has happened, connection information will appear below for every sensor integrated against. 
-It will show which sensor the information row belongs to, the IP of the MQTT broker servicing it, and the MQTT topic on which to connect to.
+After this has happened, connection information will appear below for every sensor integrated against.  
+It will show which sensor the information row belongs to, the IP of the MQTT broker servicing it, and the MQTT topic on which to connect to. For Example: `Broker IP:
+mqtt://136.186.108.94:5003` and  `MQTT topic:out/BMnQDb6nveqKDBRW3Lb76NuwFF3DMs9dmOCzxa1pwUw=/0`
 
 Due to the asynchronous nature of the blockchain, some time may be needed before the brokers servicing the sensors validate and accept this integration, and start forwarding the data to the user.
 
 You can use the `dummy_consumer.js` provided in `Tools` folder to integrate with the selected sensor using the information returned form the API. You need to do the following:
 
 1. Run the dummy consumer code by `node tools/dummy_consume.js.
-2. Enter the connection address mqtt://136.186.108.94:5003 and Connection topic:
+2. Enter the Broker IP `mqtt://136.186.108.94:5003` and MQTT topic:`out/BMnQDb6nveqKDBRW3Lb76NuwFF3DMs9dmOCzxa1pwUw=/0`
 3. Now, you start reciving data
 
 ## Querying via API
