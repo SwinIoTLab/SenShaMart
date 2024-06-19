@@ -2166,4 +2166,4 @@ class Blockchain {
 }
 
 export default Blockchain;
-export { Blockchain, type Data_type, ALL_DATA_TYPES, DATA_TYPE, type UpdaterChanges, type IntegrationExpanded };
+export { Blockchain, Persistence, type Data_type, ALL_DATA_TYPES, DATA_TYPE, type UpdaterChanges, type IntegrationExpanded };

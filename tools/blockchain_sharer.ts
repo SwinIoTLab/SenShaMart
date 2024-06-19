@@ -1,4 +1,4 @@
-import Blockchain from '../blockchain/blockchain.js';
+import { Blockchain, Persistence } from '../blockchain/blockchain.js';
 import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
 import { WebSocket, WebSocketServer } from 'ws';
 import { promises as fs } from 'fs';
@@ -27,7 +27,25 @@ const chainServer = new PropServer("Chain-server", blockchain, WebSocket as unkn
 chainServer.start(chainServerPort, '', JSON.parse(peers));
 
 async function copyBlockchain() {
+  console.log("Creating sharing blockchain");
+  for (const stmt of blockchain.persistence.stmts.values()) {
+    await new Promise<void>((resolve, reject) => stmt.finalize((err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    }));
+  }
+  await new Promise<void>((resolve, reject) => blockchain.persistence.db.close((err) => {
+    if (err) {
+      reject(err);
+    } else {
+      resolve();
+    }
+  }));
   await fs.copyFile(activeBlockchainLocation, passiveBlockchainLocation);
+  blockchain.persistence = await Persistence.openDb(activeBlockchainLocation);
   setTimeout(copyBlockchain, UPDATE_TIME);
 }
 
