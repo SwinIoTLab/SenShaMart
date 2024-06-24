@@ -40,38 +40,41 @@ let currentSharingFile: SharingFile = {
 };
 
 async function copyBlockchain() {
-  console.log("Creating sharing blockchain");
-  for (const stmt of blockchain.persistence.stmts.values()) {
-    await new Promise<void>((resolve, reject) => stmt.finalize((err) => {
+  console.log("Queueing create sharing blockchain");
+  blockchain.addOp(async () => {
+    console.log("Creating sharing blockchain");
+    for (const stmt of blockchain.persistence.stmts.values()) {
+      await new Promise<void>((resolve, reject) => stmt.finalize((err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }));
+    }
+    await new Promise<void>((resolve, reject) => blockchain.persistence.db.close((err) => {
       if (err) {
         reject(err);
       } else {
         resolve();
       }
     }));
-  }
-  await new Promise<void>((resolve, reject) => blockchain.persistence.db.close((err) => {
-    if (err) {
-      reject(err);
-    } else {
-      resolve();
+    const prevSharing = currentSharingFile;
+    ++sharingFileOn;
+    const newSharing = {
+      location: `${passiveBlockchainLocation}.${sharingFileOn}.db`,
+      usingCount: 1 //start with us using it
+    };
+    await fsPromises.copyFile(activeBlockchainLocation, newSharing.location);
+    currentSharingFile = newSharing;
+    --prevSharing.usingCount; //we aren't using the prev any more
+    if (prevSharing.usingCount === 0) {
+      //we don't wait on this, because we don't care about if it fails, and it doesn't impact anything as it's just cleanup of unused files
+      fsPromises.rm(prevSharing.location);
     }
-  }));
-  const prevSharing = currentSharingFile;
-  ++sharingFileOn;
-  const newSharing = {
-    location: `${passiveBlockchainLocation}.${sharingFileOn}.db`,
-    usingCount: 1 //start with us using it
-  };
-  await fsPromises.copyFile(activeBlockchainLocation, newSharing.location);
-  currentSharingFile = newSharing;
-  --prevSharing.usingCount; //we aren't using the prev any more
-  if (prevSharing.usingCount === 0) {
-    //we don't wait on this, because we don't care about if it fails, and it doesn't impact anything as it's just cleanup of unused files
-    fsPromises.rm(prevSharing.location);
-  }
-  blockchain.persistence = await Persistence.openDb(activeBlockchainLocation);
-  setTimeout(copyBlockchain, UPDATE_TIME);
+    blockchain.persistence = await Persistence.openDb(activeBlockchainLocation);
+    setTimeout(copyBlockchain, UPDATE_TIME);
+  });
 }
 
 copyBlockchain();
