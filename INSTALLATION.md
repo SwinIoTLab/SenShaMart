@@ -260,6 +260,31 @@ We also provide some tools to help with some administrative actions. These are f
   It makes a copy of the active chain every hour, and this copied chain can be downloaded through `/blockchain.db`.
   It is used to work around limitations in our current propogation protocol.
 
+## Running multiple apps at the same time
+
+Unix style command lines allow the running of processes in the background by appending a `&` to the end of the command.
+This allows us to run multiple apps at the same time, such as running the `miner-app` and the `public-wallet-app` together by using the following command
+
+```
+
+node miner/miner-app.js &
+node public__wallet/public-wallet-app.js &
+
+```
+
+These two applications will now print their outputs to the console at the same time, and can lead to a mess.
+We suggest in this case to send their outputs to a file so that the console is still usable, this can be done with the `>` operator.
+
+For example, to do this for the miner, broker, and public-wallet apps:
+
+```
+
+node miner/miner-app.js > miner.out &
+node public__wallet/public-wallet-app.js > wallet.out &
+node broker/broker-app.js > broker.out &
+
+```
+
 ## Install Fuseki / Enabling SPARQL support
 
 A fuseki instance may be optionally linked to any of the apps.
