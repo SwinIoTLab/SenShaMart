@@ -34,8 +34,8 @@
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr">
       <button id="noKeyBrokerGo" style="display:none"><h3>SenShaMart Broker</h3> <br /> You provide MQTT brokers for Senshamart to help sensors share their data, and get paid doing so</button>
-      <button id="noKeyProviderGo"><h3>Provider</h3> <br /> You register and share your IoT sensors, and get paid by applications using your data</button>
-      <button id="noKeyApplicationGo"><h3>Consumer</h3> <br /> You find, use, and pay for data from available third party sensors</button>
+      <button id="noKeyProviderGo"><h3>Sensor Provider</h3> <br /> You register and share your IoT sensors, and get paid by applications using your data</button>
+      <button id="noKeyApplicationGo"><h3>Sensor Client</h3> <br /> You find, use, and pay for data from available third party sensors</button>
     </div>
     <hr/>
     <div>
@@ -114,7 +114,7 @@
         <span id="registerSensorLatitudeInfo">Latitude:</span><input id="registerSensorLatitude" type="number" min="-90" max="90" value="0"/>
         <span id="registerSensorLongitudeInfo">Longitude:</span><input id="registerSensorLongitude" type="number" min="-180" max="180" value="0"/>
         <span id="registerSensorMeasuresInfo">Measures:</span><input id="registerSensorMeasures" />
-        <span>Measurement Interval:</span><span><button id="registerSensorUnknownInterval">Set to not periodic</button><input id="registerSensorInterval" type="number" min="0" value="1000"/><span id="registerSensorIntervalFooter">ms</span></span>
+        <span style="display:none">Measurement Interval:</span><span style="display:none"><button id="registerSensorUnknownInterval">Set to not periodic</button><input id="registerSensorInterval" type="number" min="0" value="1000"/><span id="registerSensorIntervalFooter">ms</span></span>
         <span>Reward amount:</span><input id="registerSensorReward" type="number" min="0" value="0" required />
         <button id="registerSensorGo">Create</button>
       </div>
