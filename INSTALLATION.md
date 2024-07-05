@@ -1,6 +1,6 @@
-# Base Installation
+# Installation
 
-## To run the base applications, node, and npm are required.
+## To run SenShaMart, node and npm are required.
 
 Node can be installed from the [node.js website](https://nodejs.org/en) or by following the [detailed instructions](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm).
 
