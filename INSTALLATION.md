@@ -1,7 +1,7 @@
 # Instaling, configuring, and Running SenShaMart
 There are two ways to use SenShaMart software. The first one is to create your own network. The second one is to join our established network.
 
-## Instalation
+## installation
 To install SenShaMart, node and npm are required. Node can be installed from the [node.js website](https://nodejs.org/en) or by following the [detailed instructions](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm).
 
 An `npm install` should find and install all base dependencies.
