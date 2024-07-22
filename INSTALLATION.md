@@ -17,7 +17,7 @@ This can be done with `tsc` or `npx tsc`(for mac users) from the repository dire
 
 Please ignore these errors, we are working on fixing them.
 
-## Essentail Configuration
+## Essential Configuration
 The default configuration dosenot include a keypair. Therefore, there is a need to create a keypair and update `settings.json`. To do that, you need to:
 
 1- Use the keygen.js tool to creat a keypair by using this command `node tool/keygen.js`.
