@@ -1,7 +1,7 @@
 # Instaling, configuring, and Running SenShaMart
 There are two ways to use SenShaMart software. The first one is to create your own network. The second one is to join our established network.
 
-## installation
+## Installation
 To install SenShaMart, node and npm are required. Node can be installed from the [node.js website](https://nodejs.org/en) or by following the [detailed instructions](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm).
 
 An `npm install` should find and install all base dependencies.
@@ -94,6 +94,33 @@ This can be changed by changing the MAX_BLOCKS_IN_MEMORY constant in blockchain/
 We want to change our replication algorithm and implementation (currently in network/blockchain-prop.ts) to be RPC based using something like grpc.
 This is an item of future work.
 
+
+## Enabling SPARQL support (Using Fuseki)
+
+A fuseki instance may be optionally linked to any of the apps.
+If a fuseki instance is not linked, the app will still run, but without SPARQL query support.
+This SPARQL query support is most important for the public wallet app, as the integration flow uses SPARQL to query for sensors.
+
+If you want to support SPARQL queries, an Apache Fuseki instance must be available and configured. 
+Installation instructions can be found at [Apache Jena Fuseki](https://jena.apache.org/documentation/fuseki2/).
+
+We will summarise the main points here:
+
+- Apache Jena Fuseki requires Java 17 or later
+- [Download Apache Jena Fuseki with ui](https://jena.apache.org/documentation/fuseki2/#download-fuseki-with-ui).
+  We tested with [5.0.0-rc1](https://repo1.maven.org/maven2/org/apache/jena/jena-fuseki-server/5.0.0-rc1/jena-fuseki-server-5.0.0-rc1.jar)
+- Run the server with `java -jar jena-fuseki-server-5.0.0-rc1.jar [--loc=DIR] [[--update] /NAME]` or `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /NAME`.
+  `/NAME` is the name of the database created, `DIR` is the location where the data will be persisted, `--update` allows updates.
+  
+  e.g. `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /public-wallet-app` is what is what we use during testing, as it creates an in-memory database that is lost on restart.
+  `java -jar jena-fuseki-server-5.0.0-rc1.jar --update /public-wallet-app` creates a persistent version of the database that allows updates.
+  **Updates are required as we write triples for each block**.
+
+### Linking an app to a fuseki instance
+
+To tell an app to use a fuseki instance, set its `fuseki` setting in its settings.json file to point to the fuseki service.
+e.g. `"public-wallet-fuseki": "http://127.0.0.1:3030/public-wallet-app"`. 
+This is the `/public-wallet-app` database on the default fuseki port on the local machine.
 
 ## Other Configuration
 
@@ -212,16 +239,6 @@ For example, the `blockchain` setting is `public-wallet-blockchain` in `public-w
     Default: `./ui/`
 
 
-## Work around
-
-If two nodes diverge by more than MAX_BLOCKS_IN_MEMORY / 2 blocks, the best way to reconcile them is to:
-- stop the node with the smallest chain
-- copy the longest chain to the other node and rename it if necessary
-- clean the fuseki database and remake the dataset if necessary
-- regenerate the fuseki dataset if necessary
-- start the stopped node again
-
-We provide a blockchain sharer node running at http://136.186.108.19:6002/blockchain.db to download a copy of the blockchain made hourly.
 
 ## Tools
 
@@ -263,29 +280,13 @@ We also provide some tools to help with some administrative actions. These are f
   It is used to work around limitations in our current propogation protocol.
 
 
-## Enabling SPARQL support (Using Fuseki)
+## Work around
 
-A fuseki instance may be optionally linked to any of the apps.
-If a fuseki instance is not linked, the app will still run, but without SPARQL query support.
-This SPARQL query support is most important for the public wallet app, as the integration flow uses SPARQL to query for sensors.
+If two nodes diverge by more than MAX_BLOCKS_IN_MEMORY / 2 blocks, the best way to reconcile them is to:
+- stop the node with the smallest chain
+- copy the longest chain to the other node and rename it if necessary
+- clean the fuseki database and remake the dataset if necessary
+- regenerate the fuseki dataset if necessary
+- start the stopped node again
 
-If you want to support SPARQL queries, an Apache Fuseki instance must be available and configured. 
-Installation instructions can be found at [Apache Jena Fuseki](https://jena.apache.org/documentation/fuseki2/).
-
-We will summarise the main points here:
-
-- Apache Jena Fuseki requires Java 17 or later
-- [Download Apache Jena Fuseki with ui](https://jena.apache.org/documentation/fuseki2/#download-fuseki-with-ui).
-  We tested with [5.0.0-rc1](https://repo1.maven.org/maven2/org/apache/jena/jena-fuseki-server/5.0.0-rc1/jena-fuseki-server-5.0.0-rc1.jar)
-- Run the server with `java -jar jena-fuseki-server-5.0.0-rc1.jar [--loc=DIR] [[--update] /NAME]` or `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /NAME`.
-  `/NAME` is the name of the database created, `DIR` is the location where the data will be persisted, `--update` allows updates.
-  
-  e.g. `java -jar jena-fuseki-server-5.0.0-rc1.jar --mem /public-wallet-app` is what is what we use during testing, as it creates an in-memory database that is lost on restart.
-  `java -jar jena-fuseki-server-5.0.0-rc1.jar --update /public-wallet-app` creates a persistent version of the database that allows updates.
-  **Updates are required as we write triples for each block**.
-
-### Linking an app to a fuseki instance
-
-To tell an app to use a fuseki instance, set its `fuseki` setting in its settings.json file to point to the fuseki service.
-e.g. `"public-wallet-fuseki": "http://127.0.0.1:3030/public-wallet-app"`. 
-This is the `/public-wallet-app` database on the default fuseki port on the local machine.
+We provide a blockchain sharer node running at http://136.186.108.19:6002/blockchain.db to download a copy of the blockchain made hourly.
