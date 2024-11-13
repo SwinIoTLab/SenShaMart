@@ -117,7 +117,7 @@ The repository is split into multiple parts
 Please refer to our [install guide](./INSTALLATION.md)
 
 ## APIs
-to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: http://127.0.0.1, 3002, /gen-key for http://127.0.0.1/3002/gen-key.
+to access any of these APIs, you need to know 1) the IP of the machine that is running as a server (peer), 2) HTTP_PORT, and 3) the API name. For example: http://127.0.0.1, 3002, /gen-key for http://127.0.0.1:3002/gen-key.
 
 A list of APIs provided by public-wallet-app is provided in our [APIs guide](./APIs.md) in this folder
 
