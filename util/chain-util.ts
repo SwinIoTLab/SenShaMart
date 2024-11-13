@@ -152,6 +152,14 @@ class ChainUtil {
     if (returning.endsWith(PRIVATE_PEM_FOOTER)) {
       returning = returning.substring(0,returning.length - PRIVATE_PEM_FOOTER.length);
     }
+    let found_newline = 0;
+    for (; ;) {
+      found_newline = returning.indexOf('\n', found_newline);
+      if (found_newline === -1) {
+        break;
+      }
+      returning = returning.substring(0, found_newline).concat(returning.substring(found_newline + 1));
+    }
     return returning;
   }
   //serialize a key pair

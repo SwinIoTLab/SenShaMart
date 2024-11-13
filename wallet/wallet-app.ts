@@ -124,9 +124,11 @@ type PubKeyedBody = {
 };
 
 app.get('/gen-key', (_req, res) => {
+  const genned = ChainUtil.genKeyPair();
   res.json({
     result: true,
-    value: ChainUtil.serializeKeyPair(ChainUtil.genKeyPair())
+    keyPair: ChainUtil.serializeKeyPair(genned),
+    pubKey: genned.pubSerialized
   });
 });
 
