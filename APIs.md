@@ -106,7 +106,11 @@ This generates a new keypair and returns it on success
     '/gen-key'
     void
     =>
-    ValuedResult<string>
+    ResultFailure | {
+      result: true;
+      keyPair: string;
+      pubKey: string
+    }
 
 This gets the public key for the given keypair
 
