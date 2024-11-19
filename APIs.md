@@ -352,6 +352,36 @@ This directs the app to create, sign, and propagate for mining a transaction to 
       brokerIp: string;
     }
 
+This directs the app to create, sign, and propagate for mining a transaction to register a sensor.
+This is a helper api to allow the wallet to do some of the RDF construction for the user.
+If any of the helping values (past rewardAmount) are empty strings, they will be ignored.
+
+    '/SensorRegistration/Register/Simple'
+    {
+      keyPair: string;
+      sensorName: string;
+      costPerMinute: number;
+      costPerKB: number;
+      integrationBroker: string | null;
+      interval: number | null;
+      rewardAmount: number;
+      lat: string;
+      long: string;
+      sensorType: string;
+      sensorPlatform: string;
+      sensorSystemHardware: string;
+      sensorSystemSoftware: string;
+      gmakeLocation: string;
+      sensorSystemProtocol: string;
+      extraMetadata: string;
+    }
+    =>
+    ResultFailure | {
+      result: true;
+      tx: SensorRegistration;
+      brokerIp: string;
+    }
+
 This gets all sensor registrations owned by the given public key
 
     '/SensorRegistration/OwnedBy'
