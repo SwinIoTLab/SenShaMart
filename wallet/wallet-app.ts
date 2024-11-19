@@ -28,12 +28,13 @@ import { PropServer as BlockchainProp, type SocketConstructor } from '../network
 
 import Wallet from './wallet.js';
 import Config from '../util/config.js';
-import { ChainUtil, isFailure, type ResultSuccess } from '../util/chain-util.js';
+import { ChainUtil, isFailure, type ResultSuccess, type NodeMetadata, type LiteralMetadata, type KeyPair } from '../util/chain-util.js';
 
-import { Blockchain, type IntegrationExpanded, INTEGRATION_STATE} from '../blockchain/blockchain.js';
+import { Blockchain, type IntegrationExpanded, INTEGRATION_STATE } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 //import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
+import N3 from 'n3';
 
 import {
   DEFAULT_PUBLIC_WALLET_UI_BASE,
@@ -462,6 +463,26 @@ app.get('/SensorRegistration/All', (_req, res) => {
   res.json(returning);
 });
 
+function sensorRegistrationRegister(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number,
+  interval: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): SensorRegistration {
+
+  const reg = wallet.createSensorRegistrationAsTransaction(
+    keyPair,
+    blockchain,
+    rewardAmount,
+    sensorName,
+    costPerMinute,
+    costPerKB,
+    interval,
+    integrationBroker,
+    extraNodeMetadata,
+    extraLiteralMetadata);
+
+  chainServer.sendTx(reg);
+
+  return reg.tx;
+}
+
 const sensorRegistrationRegisterValidators = {
   keyPair: ChainUtil.validateIsKeyPair,
   sensorName: ChainUtil.validateIsString,
@@ -501,9 +522,7 @@ app.post('/SensorRegistration/Register', (req, res) => {
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
 
-    const reg = wallet.createSensorRegistrationAsTransaction(
-      keyPair,
-      blockchain,
+    const tx = sensorRegistrationRegister(keyPair, blockchain,
       req.body.rewardAmount,
       req.body.sensorName,
       req.body.costPerMinute,
@@ -513,12 +532,213 @@ app.post('/SensorRegistration/Register', (req, res) => {
       req.body.extraNodeMetadata,
       req.body.extraLiteralMetadata);
 
-    chainServer.sendTx(reg);
+    res.json({
+      result: true,
+      tx: tx,
+      brokerIp: blockchain.getBrokerInfo((tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
+    });
+  } catch (err) {
+    console.log(err);
+    res.json({
+      result: false,
+      reason: err.message
+    });
+  }
+});
+
+const sensorRegistrationRegisterSimpleValidators = {
+  keyPair: ChainUtil.validateIsKeyPair,
+  sensorName: ChainUtil.validateIsString,
+  costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
+  costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
+  integrationBroker: ChainUtil.createValidateIsEither(ChainUtil.validateIsString, ChainUtil.validateIsNull),
+  interval: ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull),
+  rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
+  lat: ChainUtil.validateIsString,
+  long: ChainUtil.validateIsString,
+  sensorType: ChainUtil.validateIsString,
+  sensorPlatform: ChainUtil.validateIsString,
+  sensorSystemHardware: ChainUtil.validateIsString,
+  sensorSystemSoftware: ChainUtil.validateIsString,
+  gmapsLocation: ChainUtil.validateIsString,
+  sensorSystemProtocol: ChainUtil.validateIsString,
+  extraMetadata: ChainUtil.validateIsString
+} as const;
+app.post('/SensorRegistration/Register/Simple', (req, res) => {
+  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationRegisterSimpleValidators);
+
+  if (isFailure(validateRes)) {
+    res.json({
+      result: false,
+      reason: validateRes.reason
+    });
+    return
+  }
+
+  if (req.body.integrationBroker === null) {
+    if (blockchain.data.BROKER.size === 0) {
+      res.json({
+        result: false,
+        reason: "There are no brokers with which to select a default broker with"
+      });
+    }
+    const brokers = Array.from(blockchain.data.BROKER.keys());
+    const rand_i = randomInt(0, brokers.length);
+    req.body.integrationBroker = brokers[rand_i];
+  }
+
+  const nodeMetadata: NodeMetadata[] = [];
+  const literalMetadata: LiteralMetadata[] = [];
+
+  nodeMetadata.push({
+    s: "SSMS://",
+    p: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+    o: "http://www.w3.org/ns/sosa/Platform"
+  });
+  nodeMetadata.push({
+    s: "SSMS://",
+    p: "http://www.w3.org/ns/sosa/hosts",
+    o: "SSMS://#sensor",
+  });
+  nodeMetadata.push({
+    s: "SSMS://#sensor",
+    p: "http://www.w3.org/ns/sosa/isHostedBy",
+    o: "SSMS://"
+  });
+
+  if (req.body.lat !== "" || req.body.long !== "" || req.body.gmapsLocation !== "") {
+    nodeMetadata.push({
+      s: "SSMS://#sensor",
+      p: "http://www.w3.org/ns/sosa/hasFeatureOfInterest",
+      o: "SSMS://#location"
+    });
+    nodeMetadata.push({
+      s: "SSMS://#location",
+      p: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+      o: "http://www.w3.org/ns/sosa/FeatureOfInterest"
+    });
+    if (req.body.lat !== "") {
+      const parsed = Number.parseFloat(req.body.lat);
+      if (Number.isNaN(parsed)) {
+        res.json({
+          result: false,
+          reason: "Couldn't convert lat to float"
+        });
+        return;
+      }
+      if (parsed < -90 || parsed > 90) {
+        res.json({
+          result: false,
+          reason: "Lat isn't in range [-90,90]"
+        });
+        return;
+      }
+      literalMetadata.push({
+        s: "SSMS://#location",
+        p: "http://www.w3.org/2003/01/geo/wgs84_pos#lat",
+        o: parsed
+      });
+    }
+    if (req.body.long !== "") {
+      const parsed = Number.parseFloat(req.body.long);
+      if (Number.isNaN(parsed)) {
+        res.json({
+          result: false,
+          reason: "Couldn't convert long to float"
+        });
+        return;
+      }
+      if (parsed < -180 || parsed > 180) {
+        res.json({
+          result: false,
+          reason: "Long isn't in range [-180,180]"
+        });
+        return;
+      }
+      literalMetadata.push({
+        s: "SSMS://#location",
+        p: "http://www.w3.org/2003/01/geo/wgs84_pos#long",
+        o: parsed
+      });
+    }
+    if (req.body.gmapsLocation !== "") {
+      literalMetadata.push({
+        s: "SSMS://#location",
+        p: "http://www.w3.org/2000/01/rdf-schema#label",
+        o: req.body.gmapsLocation
+      });
+    }
+  }
+  
+  if (req.body.sensorType !== "") {
+    literalMetadata.push({
+      s: "SSMS://#sensor",
+      p: "http://www.w3.org/2000/01/rdf-schema#label",
+      o: req.body.sensorType
+    });
+  }
+  if (req.body.sensorPlatform !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "http://www.w3.org/2000/01/rdf-schema#label",
+      o: req.body.sensorPlatform
+    });
+  }
+  if (req.body.extraMetadata !== "") {
+    const parser = new N3.Parser();
+    const tuples = parser.parse(req.body.extraMetadata);
+    for (const tuple of tuples) {
+      const adding = {
+        s: tuple.subject.value,
+        p: tuple.predicate.value,
+        o: tuple.object.value
+      };
+      if (tuple.object.termType === "Literal") {
+        literalMetadata.push(adding);
+      } else {
+        nodeMetadata.push(adding);
+      }
+    }
+  }
+  if (req.body.sensorSystemHardware !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "ssmu://systemHardware",
+      o: req.body.sensorSystemHardware
+    });
+  }
+  if (req.body.sensorSystemSoftware !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "ssmu://systemSoftware",
+      o: req.body.sensorSystemSoftware
+    });
+  }
+  if (req.body.sensorSystemProtocol !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "ssmu://systemProtocol",
+      o: req.body.sensorSystemProtocol
+    });
+  }
+
+  try {
+    const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
+
+    const tx = sensorRegistrationRegister(keyPair, blockchain,
+      req.body.rewardAmount,
+      req.body.sensorName,
+      req.body.costPerMinute,
+      req.body.costPerKB,
+      req.body.interval,
+      req.body.integrationBroker,
+      nodeMetadata,
+      literalMetadata);
 
     res.json({
       result: true,
-      tx: reg.tx,
-      brokerIp: blockchain.getBrokerInfo((reg.tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
+      tx: tx,
+      brokerIp: blockchain.getBrokerInfo((tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
     });
   } catch (err) {
     console.log(err);
