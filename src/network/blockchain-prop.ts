@@ -392,7 +392,7 @@ class Connection implements ConnectionListNode{
       if (Object.hasOwn(txs, key)) {
         console.log(`${key} txs found`);
         for (const tx of txs[key]) {
-          if (!this.parent.txsSeen.has((type as TransactionClass<Transaction>).hashToSign(tx))) {
+          if (!this.parent.txsSeen.has(ChainUtil.hash((type as TransactionClass<Transaction>).toHash(tx)))) {
             const newTx: AnyTransaction = {
               tx: tx,
               type: type
@@ -637,7 +637,7 @@ class PropServer {
 
   //add a tx to be sent to peers
   sendTx(transaction: AnyTransaction) {
-    const hash = transaction.type.hashToSign(transaction.tx);
+    const hash = ChainUtil.hash(transaction.type.toHash(transaction.tx));
 
     if (this.txsSeen.has(hash)) {
       return;

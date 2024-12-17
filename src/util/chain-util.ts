@@ -1,4 +1,4 @@
-import { generateKeyPairSync, createPublicKey, type KeyObject, createPrivateKey, createSign, createVerify, createHash } from 'node:crypto';
+import { generateKeyPairSync, createPublicKey, type KeyObject, createPrivateKey, createSign, createVerify, createHash, type Encoding } from 'node:crypto';
 import { SENSHAMART_URI_PREFIX } from './constants.js';
 
 export { ChainUtil, type ResultSuccess, type ResultValue, type ResultFailure, type Result, type ValuedResult, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure, resultFromError };
@@ -88,24 +88,29 @@ class ChainUtil {
   }
 
   //hash some unknown data
-  static hash(data: unknown): string {
+  static hashUnknown(data: unknown): string {
     const hash = createHash(HASH_ALG);
     hash.update(ChainUtil.stableStringify(data));
     return hash.digest('base64');
   }
+  static hash(data: string, type: Encoding = 'utf8'): string {
+    const hash = createHash(HASH_ALG);
+    hash.update(data, type);
+    return hash.digest('base64');
+  }
 
   //sign something
-  static createSignature(privateKey: KeyObject, dataHash: string) : string {
+  static createSignature(privateKey: KeyObject, toHash: string) : string {
     const sign = createSign(SIGN_ALG);
-    sign.update(dataHash, 'hex');
+    sign.update(toHash);
     sign.end();
     return sign.sign(privateKey, 'base64');
   }
 
   //verify a signature
-  static verifySignature(publicKey: KeyObject, signature: string, dataHash: string): Result {
+  static verifySignature(publicKey: KeyObject, signature: string, toHash: string): Result {
     const verify = createVerify(SIGN_ALG);
-    verify.update(dataHash, 'hex');
+    verify.update(toHash);
     verify.end();
     if (verify.verify(publicKey, signature, 'base64')) {
       return {

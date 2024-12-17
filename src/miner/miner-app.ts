@@ -175,7 +175,7 @@ app.get('/brokers', (_req, res) => {
   } = {};
   for (const [key, value] of Object.entries(blockchain.data.BROKER)) {
     returning[key] = Object.assign({}, value);
-    returning[key].hash = BrokerRegistration.hashToSign(value);
+    returning[key].hash = ChainUtil.hash(BrokerRegistration.toHash(value));
   }
   res.json(returning);
 });
@@ -186,7 +186,7 @@ app.get('/sensors', (_req, res) => {
   } = {};
   for (const [key, value] of Object.entries(blockchain.data.SENSOR)) {
     returning[key] = Object.assign({}, value);
-    returning[key].hash = SensorRegistration.hashToSign(value);
+    returning[key].hash = ChainUtil.hash(SensorRegistration.toHash(value));
   }
   res.json(returning);
   console.log("/Sensors called");

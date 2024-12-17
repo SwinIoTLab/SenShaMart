@@ -92,7 +92,7 @@ class SensorRegistration implements RepeatableTransaction {
     if (literalMetadata !== undefined && literalMetadata !== null) {
       this.metadata.extraLiterals = literalMetadata;
     }
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, SensorRegistration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, SensorRegistration.toHash(this));
 
     const verification = SensorRegistration.verify(this);
     if (isFailure(verification)) {
@@ -140,8 +140,8 @@ class SensorRegistration implements RepeatableTransaction {
     }
   }
 
-  static hashToSign(registration: SensorRegistration):string {
-    return ChainUtil.hash([
+  static toHash(registration: SensorRegistration): string {
+    return ChainUtil.stableStringify([
       registration.counter,
       registration.rewardAmount,
       registration.metadata]);
@@ -156,7 +156,7 @@ class SensorRegistration implements RepeatableTransaction {
     const verifyRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(registration.input),
       registration.signature,
-      SensorRegistration.hashToSign(registration));
+      SensorRegistration.toHash(registration));
     if (!verifyRes.result) {
       return verifyRes;
     }

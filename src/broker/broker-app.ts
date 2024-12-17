@@ -151,7 +151,7 @@ function onBlockchainChange(_newBlocks: Block[], changes: UpdaterChanges, _diffe
     const integration = blockchain.getIntegration(integrationKey); //get the integration
     const cached = cachedIntegrations.get(integrationKey); //get what we think the integration used to be
 
-    console.log(`New integration: ${integrationKey}`);
+    console.log(`New integration: key: ${integrationKey}, hash: ${ChainUtil.hash(Integration.toHash(integration))}`);
 
     if (integration === undefined) { //if the integration no longer exists
       console.log("No longer exists");
@@ -268,6 +268,7 @@ function onNewPacket(sensor: string, data:string | Buffer) {
 
   //if we aren't brokering this sensor, ignore
   if (foundSensor === undefined) {
+    console.log(`We aren't brokering this sensor`);
     return;
   }
 

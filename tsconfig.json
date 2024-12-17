@@ -1,24 +1,18 @@
 {
   "compilerOptions": {
-    "module": "nodenext",
+    "module": "NodeNext",
     "noImplicitAny": true,
     "removeComments": true,
     "preserveConstEnums": true,
     "verbatimModuleSyntax": true,
     "sourceMap": true,
-    "target": "ES2022"
+    "target": "ESNext",
+    "esModuleInterop": true,
+    "moduleResolution": "nodenext",
+    "outDir": "build",
+    "sourceRoot": "src"
   },
   "include": [
-    "blockchain/*.ts",
-    "util/*.ts",
-    "network/*.ts",
-    "wallet/*.ts",
-    "miner/*.ts",
-    "broker/*.ts",
-    "keygen/*.ts",
-    "ui/*.ts",
-    "public_wallet/*.ts",
-    "testing/*.ts",
-    "tools/*.ts"
+    "src/*/*.ts"
   ]
 }

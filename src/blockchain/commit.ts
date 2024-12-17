@@ -61,7 +61,7 @@ class Commit implements Transaction {
       counter: integrationCounter
     };
     this.outputs = outputs;
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.toHash(this));
 
     const verification = Commit.verify(this);
     if (isFailure(verification)) {
@@ -69,8 +69,8 @@ class Commit implements Transaction {
     }
   }
 
-  static hashToSign(transaction: Commit): string {
-    return ChainUtil.hash([
+  static toHash(transaction: Commit): string {
+    return ChainUtil.stableStringify([
       transaction.input,
       transaction.integration.counter,
       transaction.integration.input,
@@ -86,7 +86,7 @@ class Commit implements Transaction {
     const verifyRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(transaction.input),
       transaction.signature,
-      Commit.hashToSign(transaction));
+      Commit.toHash(transaction));
     if (!verifyRes.result) {
       return verifyRes;
     }

@@ -88,7 +88,7 @@ class Integration implements RepeatableTransaction {
     this.outputs = outputs;
     this.witnessCount = witnessCount;
 
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Integration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Integration.toHash(this));
 
     const verification = Integration.verify(this);
     if (isFailure(verification)) {
@@ -105,8 +105,8 @@ class Integration implements RepeatableTransaction {
     };
   }
 
-  static hashToSign(integration: Integration): string {
-    return ChainUtil.hash([
+  static toHash(integration: Integration): string {
+    return ChainUtil.stableStringify([
       integration.counter,
       integration.rewardAmount,
       integration.witnessCount,
@@ -114,7 +114,7 @@ class Integration implements RepeatableTransaction {
   }
   static mqttTopic(integration: Integration): string {
     // TODO : think of a smarter way to get valid mqtt topics from this
-    return Integration.hashToSign(integration).replaceAll('+', '-');//need to change + to - for MQTT topics
+    return ChainUtil.hash(Integration.toHash(integration)).replaceAll('+', '-');//need to change + to - for MQTT topics
   }
 
   static wrap(tx: Integration): TransactionWrapper<Integration> {
@@ -133,7 +133,7 @@ class Integration implements RepeatableTransaction {
     const verifyRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(integration.input),
       integration.signature,
-      Integration.hashToSign(integration));
+      Integration.toHash(integration));
     if (!verifyRes.result) {
       return verifyRes;
     }
@@ -163,7 +163,7 @@ class Integration implements RepeatableTransaction {
       };
     }
 
-    const rng = SeedRandom.alea(integration.signature + Integration.hashToSign(integration)) as SeedRandom.PRNG;
+    const rng = SeedRandom.alea(integration.signature + ChainUtil.hash(Integration.toHash(integration))) as SeedRandom.PRNG;
 
     const witnesses = [];
 

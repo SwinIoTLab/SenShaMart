@@ -81,7 +81,7 @@ class BrokerRegistration implements RepeatableTransaction {
     if (literalMetadata !== undefined && literalMetadata !== null) {
       this.metadata.extraLiterals = literalMetadata;
     }
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, BrokerRegistration.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, BrokerRegistration.toHash(this));
 
     const verification = BrokerRegistration.verify(this);
     if (isFailure(verification)) {
@@ -113,8 +113,8 @@ class BrokerRegistration implements RepeatableTransaction {
     }
   }
 
-  static hashToSign(registration: BrokerRegistration):string {
-    return ChainUtil.hash([
+  static toHash(registration: BrokerRegistration): string {
+    return ChainUtil.stableStringify([
       registration.counter,
       registration.rewardAmount,
       registration.metadata]);
@@ -136,7 +136,7 @@ class BrokerRegistration implements RepeatableTransaction {
     const signatureRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(registration.input),
       registration.signature,
-      BrokerRegistration.hashToSign(registration));
+      BrokerRegistration.toHash(registration));
 
     if (!signatureRes.result) {
       return signatureRes;

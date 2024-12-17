@@ -18,24 +18,20 @@
 /**
  * @author Josip Milovac
  */
-const Integration = require('./integration');
-const ChainUtil = require('../util/chain-util');
+import Integration from './integration.js';
+import { ChainUtil, type KeyPair } from '../util/chain-util.js';
 
-function createDummyIntegration(keyPair, witnesses) {
+function createDummyIntegration(keyPair: KeyPair, witnesses: number) {
   return new Integration(
     keyPair,
     1,
-    [Integration.createOutput(keyPair.getPublic().encode('hex'), 'a', 5, 1)],
+    [Integration.createOutput(1, 'a', 'b', 'c')],
     witnesses,
     0);
 }
 
 describe('Integration', () => {
-  let keyPair;
-
-  beforeEach(() => {
-    keyPair = ChainUtil.genKeyPair();
-  });
+  const keyPair = ChainUtil.genKeyPair();
 
   it("Choose witnesses doesn't care about brokers ordering, 1 witness", () => {
     const brokers_f = ['a', 'b', 'c'];
@@ -59,5 +55,47 @@ describe('Integration', () => {
 
     const integration = createDummyIntegration(keyPair, 3);
     expect(Integration.chooseWitnesses(integration, brokers_f)).toEqual(Integration.chooseWitnesses(integration, brokers_b));
+  });
+  it("Construct an integration with no extra witnesses", () => {
+    createDummyIntegration(keyPair, 0);
+  });
+  it("Construct an integration with 1 witness", () => {
+    createDummyIntegration(keyPair, 1);
+  });
+  it("Changing input fails verify", () => {
+    const changing = createDummyIntegration(keyPair, 0);
+
+    expect(Integration.verify(changing).result).toBe(true);
+
+    changing.input = ChainUtil.genKeyPair().pubSerialized;
+
+    expect(Integration.verify(changing).result).toBe(false);
+  });
+  it("Changing counter fails verify", () => {
+    const changing = createDummyIntegration(keyPair, 0);
+
+    expect(Integration.verify(changing).result).toBe(true);
+
+    changing.counter++;
+
+    expect(Integration.verify(changing).result).toBe(false);
+  });
+  it("Changing rewardAmount fails verify", () => {
+    const changing = createDummyIntegration(keyPair, 0);
+
+    expect(Integration.verify(changing).result).toBe(true);
+
+    changing.rewardAmount++;
+
+    expect(Integration.verify(changing).result).toBe(false);
+  });
+  it("Changing witnessCount fails verify", () => {
+    const changing = createDummyIntegration(keyPair, 0);
+
+    expect(Integration.verify(changing).result).toBe(true);
+
+    changing.witnessCount++;
+
+    expect(Integration.verify(changing).result).toBe(false);
   });
 });

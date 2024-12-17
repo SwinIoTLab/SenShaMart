@@ -26,6 +26,7 @@ import Commit from './commit.js';
 import {
   type Result,
   isFailure,
+  ChainUtil,
   type LiteralMetadata,
   type NodeMetadata,
   type RejectCb,
@@ -720,13 +721,16 @@ updater.prevData = genDatas();
       sending += createQuery + "};";
     }
 
-    await fetch(updater.parent.fuseki_location + "/update", {
+    const res = await fetch(updater.parent.fuseki_location + "/update", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
       },
       body: 'update=' + encodeURIComponent(sending)
     });
+    if (res.status !== 200) {
+      console.log(`fuseki update non 200: ${res.statusText}`);
+    }
   }
 
   await updater.parent.persistence.run("COMMIT;");
@@ -747,23 +751,23 @@ function makeBlockName(hash: string): string {
 }
 
 function makePaymentTransactionName(payment: Payment): string {
-  return URIS.OBJECT.PAYMENT_TX + '/' + Payment.hashToSign(payment);
+  return URIS.OBJECT.PAYMENT_TX + '/' + ChainUtil.hash(Payment.toHash(payment));
 }
 
 function makeIntegrationTransactionName(integration: Integration): string {
-  return URIS.OBJECT.INTEGRATION_TX + '/' + Integration.hashToSign(integration);
+  return URIS.OBJECT.INTEGRATION_TX + '/' + ChainUtil.hash(Integration.toHash(integration));
 }
 
 function makeCommitTransactionName(commit: Commit): string {
-  return URIS.OBJECT.COMPENSATION_TX + '/' + Commit.hashToSign(commit);
+  return URIS.OBJECT.COMPENSATION_TX + '/' + ChainUtil.hash(Commit.toHash(commit));
 }
 
 function makeSensorTransactionName(sensorRegistration: SensorRegistration): string {
-  return URIS.OBJECT.SENSOR_REGISTRATION_TX + '/' + SensorRegistration.hashToSign(sensorRegistration);
+  return URIS.OBJECT.SENSOR_REGISTRATION_TX + '/' + ChainUtil.hash(SensorRegistration.toHash(sensorRegistration));
 }
 
 function makeBrokerTransactionName(brokerName: BrokerRegistration): string {
-  return URIS.OBJECT.BROKER_REGISTRATION_TX + '/' + BrokerRegistration.hashToSign(brokerName);
+  return URIS.OBJECT.BROKER_REGISTRATION_TX + '/' + ChainUtil.hash(BrokerRegistration.toHash(brokerName));
 }
 
 function makeWalletName(input: string): string {
@@ -1035,7 +1039,7 @@ function genIntegrationRDF(updater: Updater, blockName: string, tx: Integration)
   plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_INTEGRATION, transactionName);
 
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, Integration.hashToSign(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(Integration.toHash(tx)));
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.INTEGRATION_TX);
 }
 
@@ -1090,7 +1094,7 @@ function stepIntegration(updater: Updater, reward: string, startTime: number, tx
         reason: `Integration references non-existant sensor: ${output.sensorName}`
       };
     }
-    if (SensorRegistration.hashToSign(foundSensor) !== output.sensorHash) {
+    if (ChainUtil.hash(SensorRegistration.toHash(foundSensor)) !== output.sensorHash) {
       return {
         result: false,
         reason: "Integration references non-current version of sensor"
@@ -1106,7 +1110,7 @@ function stepIntegration(updater: Updater, reward: string, startTime: number, tx
       };
     }
 
-    if (BrokerRegistration.hashToSign(foundBroker) !== output.brokerHash) {
+    if (ChainUtil.hash(BrokerRegistration.toHash(foundBroker)) !== output.brokerHash) {
       return {
         result: false,
         reason: "Integration references non-current version of sensor's broker"
@@ -1261,7 +1265,7 @@ function genSensorRegistrationRDF(updater: Updater, blockName: string, tx: Senso
   plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION, transactionName);
 
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, SensorRegistration.hashToSign(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(SensorRegistration.toHash(tx)));
 
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.SENSOR_REGISTRATION_TX);
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
@@ -1355,7 +1359,7 @@ function genBrokerRegistrationRDF(updater: Updater, blockName: string, tx: Broke
   plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_BROKER_REGISTRATION, transactionName);
 
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, BrokerRegistration.hashToSign(tx));
+  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(BrokerRegistration.toHash(tx)));
 
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.BROKER_REGISTRATION_TX);
   plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
@@ -1863,7 +1867,7 @@ async function open_db(chain: Blockchain, db_location: string) {
   await chain.persistence.each<Tx_result>("SELECT id,parseable FROM Integration;", (row) => {
     const integration = JSON.parse(row.parseable) as IntegrationExpanded;
 
-    chain.data.INTEGRATION.set(Integration.hashToSign(integration), {
+    chain.data.INTEGRATION.set(ChainUtil.hash(Integration.toHash(integration)), {
       dbId: row.id,
       base: integration
     });

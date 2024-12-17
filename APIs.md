@@ -365,15 +365,18 @@ If any of the helping values (past rewardAmount) are empty strings, they will be
       integrationBroker: string | null;
       interval: number | null;
       rewardAmount: number;
-      lat: string;
-      long: string;
-      sensorType: string;
-      sensorPlatform: string;
-      sensorSystemHardware: string;
-      sensorSystemSoftware: string;
-      gmakeLocation: string;
-      sensorSystemProtocol: string;
-      extraMetadata: string;
+      lat: string | undefined;
+      long: string | undefined;
+      measures: string | undefined;
+      sensorType: string | undefined;
+      sensorPlatform: string | undefined;
+      sensorSystemHardware: string | undefined;
+      sensorSystemSoftware: string | undefined;
+      gmapsLocation: string | undefined;
+      sensorSystemProtocol: string | undefined;
+      extraMetadata: string | undefined;
+      machineProtocolDesc: string | undefined;
+      humanProtocolDesc: string | undefined;
     }
     =>
     ResultFailure | {

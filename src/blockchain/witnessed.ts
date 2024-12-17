@@ -61,7 +61,7 @@ class Witnessed implements Transaction {
       counter: integrationCounter
     };
     this.outputs = outputs;
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Witnessed.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Witnessed.toHash(this));
 
     const verification = Witnessed.verify(this);
     if (isFailure(verification)) {
@@ -69,8 +69,8 @@ class Witnessed implements Transaction {
     }
   }
 
-  static hashToSign(transaction: Witnessed): string {
-    return ChainUtil.hash([
+  static toHash(transaction: Witnessed): string {
+    return ChainUtil.stableStringify([
       transaction.input,
       transaction.integration.counter,
       transaction.integration.input,
@@ -86,7 +86,7 @@ class Witnessed implements Transaction {
     const verifyRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(transaction.input),
       transaction.signature,
-      Witnessed.hashToSign(transaction));
+      Witnessed.toHash(transaction));
     if (!verifyRes.result) {
       return verifyRes;
     }

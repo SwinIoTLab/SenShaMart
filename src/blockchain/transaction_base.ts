@@ -33,7 +33,7 @@ interface RepeatableTransaction extends Transaction {
 
 interface TransactionClass<Tx extends Transaction> {
   verify(tx: Tx): Result;
-  hashToSign(tx: Tx): string;
+  toHash(tx: Tx): string;
   txName(): string;
   wrap(tx: Tx): TransactionWrapper<Tx>;
 }

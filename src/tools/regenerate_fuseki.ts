@@ -25,6 +25,7 @@ async function sendUpdate(query: string) {
   console.log(`Response status: ${response.status}`);
 
   if (response.status !== 200) {
+    console.log(`Reason: ${response.statusText}`);
     process.exit(-1);
   }
 }
@@ -33,15 +34,19 @@ const chain = await Blockchain.create(process.argv[2], null);
 
 let createQuery: string = QUERY_HEADER;
 
+let n = 0;
+
 for (const node of chain.getAll(DATA_TYPE.NODE_RDF).keys()) {
   const triple = unEscapeNodeMetadata(node);
 
   createQuery += `<${triple.s}> <${triple.p}> <${triple.o}>.`;
-  console.log(`<${triple.s}> <${triple.p}> <${triple.o}>.`);
+  n = n + 1;
 
   if (createQuery.length >= MAX_MESSAGE_SIZE) {
     createQuery += QUERY_FOOTER;
+    console.log(`Sending ${n} triples}`);
     await sendUpdate(createQuery);
+    n = 0;
     createQuery = QUERY_HEADER
   }
 }
@@ -50,11 +55,13 @@ for (const literal of chain.getAll(DATA_TYPE.LITERAL_RDF).keys()) {
   const triple = unEscapeLiteralMetadata(literal);
 
   createQuery += `<${triple.s}> <${triple.p}> "${triple.o}".`;
-  console.log(`<${triple.s}> <${triple.p}> <${triple.o}>.`);
+  n = n + 1;
 
   if (createQuery.length >= MAX_MESSAGE_SIZE) {
     createQuery += QUERY_FOOTER;
+    console.log(`Sending ${n} triples}`);
     await sendUpdate(createQuery);
+    n = 0;
     createQuery = QUERY_HEADER;
   }
 }

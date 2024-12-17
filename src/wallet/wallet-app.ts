@@ -361,7 +361,7 @@ app.get('/BrokerRegistration/All', (_req, res) => {
   };
   for (const [key, value] of blockchain.data.BROKER) {
     returning.value[key] = Object.assign({
-      hash: BrokerRegistration.hashToSign(value.base)
+      hash: ChainUtil.hash(BrokerRegistration.toHash(value.base))
     }, value.base);
   }
   res.json(returning);
@@ -437,7 +437,7 @@ app.post('/BrokerRegistration/OwnedBy', (req, res) => {
       continue;
     }
     returning.value[key] = Object.assign({
-      hash: BrokerRegistration.hashToSign(value.base)
+      hash: ChainUtil.hash(BrokerRegistration.toHash(value.base))
     }, value.base);
   }
   res.json(returning);
@@ -457,7 +457,7 @@ app.get('/SensorRegistration/All', (_req, res) => {
   };
   for (const [key, value] of blockchain.data.SENSOR) {
     returning.value[key] = Object.assign({
-      hash: SensorRegistration.hashToSign(value.base)
+      hash: ChainUtil.hash(SensorRegistration.toHash(value.base))
     }, value.base);
   }
   res.json(returning);
@@ -513,10 +513,17 @@ app.post('/SensorRegistration/Register', (req, res) => {
         result: false,
         reason: "There are no brokers with which to select a default broker with"
       });
+      return;
     }
     const brokers = Array.from(blockchain.data.BROKER.keys());
     const rand_i = randomInt(0, brokers.length);
     req.body.integrationBroker = brokers[rand_i];
+  } else if (blockchain.getBrokerInfo(req.body.integrationBroker) === null) {
+    res.json({
+      result: false,
+      reason: "Couldn't find the named broker"
+    });
+    return;
   }
 
   try {
@@ -551,18 +558,21 @@ const sensorRegistrationRegisterSimpleValidators = {
   sensorName: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
-  integrationBroker: ChainUtil.createValidateIsEither(ChainUtil.validateIsString, ChainUtil.validateIsNull),
-  interval: ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull),
-  rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
-  lat: ChainUtil.validateIsString,
-  long: ChainUtil.validateIsString,
-  sensorType: ChainUtil.validateIsString,
-  sensorPlatform: ChainUtil.validateIsString,
-  sensorSystemHardware: ChainUtil.validateIsString,
-  sensorSystemSoftware: ChainUtil.validateIsString,
-  gmapsLocation: ChainUtil.validateIsString,
-  sensorSystemProtocol: ChainUtil.validateIsString,
-  extraMetadata: ChainUtil.validateIsString
+  integrationBroker: ChainUtil.createValidateOptional(ChainUtil.createValidateIsEither(ChainUtil.validateIsString, ChainUtil.validateIsNull)),
+  interval: ChainUtil.createValidateOptional(ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull)),
+  rewardAmount: ChainUtil.createValidateOptional(ChainUtil.createValidateIsIntegerWithMin(0)),
+  lat: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  long: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  measures: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  sensorType: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  sensorPlatform: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  sensorSystemHardware: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  sensorSystemSoftware: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  gmapsLocation: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  sensorSystemProtocol: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  extraMetadata: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  machineProtocolDesc: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  humanProtocolDesc: ChainUtil.createValidateOptional(ChainUtil.validateIsString)
 } as const;
 app.post('/SensorRegistration/Register/Simple', (req, res) => {
   const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationRegisterSimpleValidators);
@@ -575,7 +585,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
     return
   }
 
-  if (req.body.integrationBroker === null) {
+  if (req.body.integrationBroker === undefined || req.body.integrationBroker === null) {
     if (blockchain.data.BROKER.size === 0) {
       res.json({
         result: false,
@@ -585,6 +595,18 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
     const brokers = Array.from(blockchain.data.BROKER.keys());
     const rand_i = randomInt(0, brokers.length);
     req.body.integrationBroker = brokers[rand_i];
+  } else if (blockchain.getBrokerInfo(req.body.integrationBroker) === null) {
+    res.json({
+      result: false,
+      reason: "Couldn't find the named broker"
+    });
+    return;
+  }
+  if (req.body.rewardAmount === undefined) {
+    req.body.rewardAmount = 0;
+  }
+  if (req.body.interval === undefined) {
+    req.body.interval = null;
   }
 
   const nodeMetadata: NodeMetadata[] = [];
@@ -593,22 +615,27 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
   nodeMetadata.push({
     s: "SSMS://",
     p: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-    o: "http://www.w3.org/ns/sosa/Platform"
-  });
-  nodeMetadata.push({
-    s: "SSMS://",
-    p: "http://www.w3.org/ns/sosa/hosts",
-    o: "SSMS://#sensor",
-  });
-  nodeMetadata.push({
-    s: "SSMS://#sensor",
-    p: "http://www.w3.org/ns/sosa/isHostedBy",
-    o: "SSMS://"
+    o: "http://www.w3.org/ns/sosa/Sensor"
   });
 
-  if (req.body.lat !== "" || req.body.long !== "" || req.body.gmapsLocation !== "") {
+  if (req.body.measures !== undefined && req.body.measures !== "") {
     nodeMetadata.push({
-      s: "SSMS://#sensor",
+      s: "SSMS://",
+      p: "http://www.w3.org/ns/sosa/observes",
+      o: "SSMS://#observes"
+    });
+    literalMetadata.push({
+      s: "SSMS://#observes",
+      p: "http://www.w3.org/2000/01/rdf-schema#label",
+      o: req.body.measures
+    });
+  }
+
+  if ((req.body.lat !== undefined && req.body.lat !== "")
+    || (req.body.long !== undefined && req.body.long !== "")
+    || (req.body.gmapsLocation !== undefined && req.body.gmapsLocation !== "")) {
+    nodeMetadata.push({
+      s: "SSMS://",
       p: "http://www.w3.org/ns/sosa/hasFeatureOfInterest",
       o: "SSMS://#location"
     });
@@ -617,7 +644,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
       p: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
       o: "http://www.w3.org/ns/sosa/FeatureOfInterest"
     });
-    if (req.body.lat !== "") {
+    if (req.body.lat !== undefined && req.body.lat !== "") {
       const parsed = Number.parseFloat(req.body.lat);
       if (Number.isNaN(parsed)) {
         res.json({
@@ -639,7 +666,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
         o: parsed
       });
     }
-    if (req.body.long !== "") {
+    if (req.body.long !== undefined && req.body.long !== "") {
       const parsed = Number.parseFloat(req.body.long);
       if (Number.isNaN(parsed)) {
         res.json({
@@ -661,7 +688,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
         o: parsed
       });
     }
-    if (req.body.gmapsLocation !== "") {
+    if (req.body.gmapsLocation !== undefined && req.body.gmapsLocation !== "") {
       literalMetadata.push({
         s: "SSMS://#location",
         p: "http://www.w3.org/2000/01/rdf-schema#label",
@@ -670,21 +697,21 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
     }
   }
   
-  if (req.body.sensorType !== "") {
+  if (req.body.sensorType !== undefined && req.body.sensorType !== "") {
     literalMetadata.push({
-      s: "SSMS://#sensor",
+      s: "SSMS://",
       p: "http://www.w3.org/2000/01/rdf-schema#label",
       o: req.body.sensorType
     });
   }
-  if (req.body.sensorPlatform !== "") {
+  if (req.body.sensorPlatform !== undefined && req.body.sensorPlatform !== "") {
     literalMetadata.push({
       s: "SSMS://",
       p: "http://www.w3.org/2000/01/rdf-schema#label",
       o: req.body.sensorPlatform
     });
   }
-  if (req.body.extraMetadata !== "") {
+  if (req.body.extraMetadata !== undefined && req.body.extraMetadata !== "") {
     const parser = new N3.Parser();
     const tuples = parser.parse(req.body.extraMetadata);
     for (const tuple of tuples) {
@@ -700,25 +727,39 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
       }
     }
   }
-  if (req.body.sensorSystemHardware !== "") {
+  if (req.body.sensorSystemHardware !== undefined && req.body.sensorSystemHardware !== "") {
     literalMetadata.push({
       s: "SSMS://",
       p: "ssmu://systemHardware",
       o: req.body.sensorSystemHardware
     });
   }
-  if (req.body.sensorSystemSoftware !== "") {
+  if (req.body.sensorSystemSoftware !== undefined && req.body.sensorSystemSoftware !== "") {
     literalMetadata.push({
       s: "SSMS://",
       p: "ssmu://systemSoftware",
       o: req.body.sensorSystemSoftware
     });
   }
-  if (req.body.sensorSystemProtocol !== "") {
+  if (req.body.sensorSystemProtocol !== undefined && req.body.sensorSystemProtocol !== "") {
     literalMetadata.push({
       s: "SSMS://",
       p: "ssmu://systemProtocol",
       o: req.body.sensorSystemProtocol
+    });
+  }
+  if (req.body.machineProtocolDesc !== undefined && req.body.machineProtocolDesc !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "ssmu://machineProtocolDesc",
+      o: req.body.machineProtocolDesc
+    });
+  }
+  if (req.body.humanProtocolDesc !== undefined && req.body.humanProtocolDesc !== "") {
+    literalMetadata.push({
+      s: "SSMS://",
+      p: "ssmu://humanProtocolDesc",
+      o: req.body.humanProtocolDesc
     });
   }
 
@@ -773,7 +814,7 @@ app.post('/SensorRegistration/OwnedBy', (req, res) => {
       continue;
     }
     returning.value[key] = Object.assign({
-      hash: SensorRegistration.hashToSign(value.base)
+      hash: ChainUtil.hash(SensorRegistration.toHash(value.base))
     }, value.base);
   }
   res.json(returning);

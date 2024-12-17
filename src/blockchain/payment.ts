@@ -72,7 +72,7 @@ class Payment implements RepeatableTransaction {
     this.counter = counter;
     this.rewardAmount = rewardAmount;
     this.outputs = outputs;
-    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Payment.hashToSign(this));
+    this.signature = ChainUtil.createSignature(senderKeyPair.priv, Payment.toHash(this));
 
     const verification = Payment.verify(this);
     if (isFailure(verification)) {
@@ -80,8 +80,8 @@ class Payment implements RepeatableTransaction {
     }
   }
 
-  static hashToSign(transaction: Payment): string {
-    return ChainUtil.hash([
+  static toHash(transaction: Payment): string {
+    return ChainUtil.stableStringify([
       transaction.counter,
       transaction.rewardAmount,
       transaction.outputs]);
@@ -106,7 +106,7 @@ class Payment implements RepeatableTransaction {
     const verifyRes = ChainUtil.verifySignature(
       ChainUtil.deserializePublicKey(transaction.input),
       transaction.signature,
-      Payment.hashToSign(transaction));
+      Payment.toHash(transaction));
     if (!verifyRes.result) {
       return verifyRes;
     }
