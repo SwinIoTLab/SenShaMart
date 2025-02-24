@@ -19,11 +19,11 @@
  * @author Anas Dawod e-mail: adawod@swin.edu.au
           Josip Milovac
  */
-import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure, type KeyPair, isFailure } from '../util/chain-util.js';
 import { type Transaction, type TransactionWrapper } from './transaction_base.js';
 
 const integrationValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1)
 };
 
@@ -33,7 +33,7 @@ const outputValidation = {
 };
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   integration: ChainUtil.createValidateObject(integrationValidation),
   outputs: ChainUtil.createValidateArray(ChainUtil.createValidateObject(outputValidation)),
   signature: ChainUtil.validateIsSignature
@@ -63,10 +63,17 @@ class Commit implements Transaction {
     this.outputs = outputs;
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.toHash(this));
 
-    const verification = Commit.verify(this);
-    if (isFailure(verification)) {
-      throw new Error(verification.reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+    if (!Commit.verify(this, fail)) {
+      throw new Error(fail.reason);
     }
+  }
+
+  static createOutput(idx: number, commitRatio: number): Output {
+    return {
+      i: idx,
+      commitRatio: commitRatio
+    };
   }
 
   static toHash(transaction: Commit): string {
@@ -77,23 +84,22 @@ class Commit implements Transaction {
       transaction.outputs]);
   }
 
-  static verify(transaction: Commit): Result {
-    const validationRes = ChainUtil.validateObject(transaction, baseValidation);
-    if (!validationRes.result) {
-      return validationRes;
+  static verify(t: unknown, fail: ResultFailure): t is Commit {
+    if (!ChainUtil.validateObject<Commit>(t, baseValidation, fail)) {
+      fail.reason = "Is not a commit\n" + fail.reason;
+      return false;
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(transaction.input),
-      transaction.signature,
-      Commit.toHash(transaction));
-    if (!verifyRes.result) {
-      return verifyRes;
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      Commit.toHash(t));
+    if (isFailure(verifyRes)) {
+      fail.reason = "Is not a commit\n" + verifyRes.reason;
+      return false;
     }
 
-    return {
-      result: true,
-    };
+    return true;
   }
 
   static wrap(tx: Commit): TransactionWrapper<Commit> {

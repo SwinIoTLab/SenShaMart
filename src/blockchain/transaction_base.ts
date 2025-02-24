@@ -18,7 +18,7 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { type Result } from '../util/chain-util.js';
+import { type ResultFailure } from '../util/chain-util.js';
 
 //some basic types and functions to try and make the txs polymorphic
 
@@ -32,7 +32,7 @@ interface RepeatableTransaction extends Transaction {
 }
 
 interface TransactionClass<Tx extends Transaction> {
-  verify(tx: Tx): Result;
+  verify(tx: unknown, fail: ResultFailure): boolean;
   toHash(tx: Tx): string;
   txName(): string;
   wrap(tx: Tx): TransactionWrapper<Tx>;

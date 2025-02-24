@@ -18,11 +18,11 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure, isFailure, type KeyPair } from '../util/chain-util.js';
 import type { RepeatableTransaction, TransactionWrapper } from './transaction_base.js';
 
 const outputValidation = {
-  publicKey: ChainUtil.validateIsPublicKey,
+  publicKey: ChainUtil.validateIsSerializedPublicKey,
   amount: ChainUtil.createValidateIsIntegerWithMin(1)
 };
 
@@ -31,30 +31,21 @@ type Output = {
   amount: number
 };
 
-function validateOutputs(t:unknown):Result {
-  const validateRes = ChainUtil.validateArray(t, function (output) {
-      return ChainUtil.validateObject(output, outputValidation);
-    });
-  if (isFailure(validateRes)) {
-    return validateRes
+function validateOutputs(t:unknown, fail: ResultFailure): boolean {
+  if (!ChainUtil.validateArray(t, function (output, fail) { return ChainUtil.validateObject(output, outputValidation, fail); }, fail)) {
+    return false;
   }
 
-  const t_array = t as object[];
-
-  if (t_array.length <= 0) {
-    return {
-      result: false,
-      reason: "Outputs length isn't positive"
-    };
+  if (t.length <= 0) {
+    fail.reason = "Output lengths must be greater than 0";
+    return false;
   }
 
-  return {
-    result: true
-  };
+  return true;
 }
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   outputs: validateOutputs,
@@ -74,9 +65,9 @@ class Payment implements RepeatableTransaction {
     this.outputs = outputs;
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Payment.toHash(this));
 
-    const verification = Payment.verify(this);
-    if (isFailure(verification)) {
-      throw new Error(verification.reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+    if (!Payment.verify(this,fail)) {
+      throw new Error(fail.reason);
     }
   }
 
@@ -97,23 +88,22 @@ class Payment implements RepeatableTransaction {
     };
   }
 
-  static verify(transaction: Payment):Result {
-    const validationRes = ChainUtil.validateObject(transaction, baseValidation);
-    if (!validationRes.result) {
-      return validationRes;
+  static verify(t: unknown, fail: ResultFailure): t is Payment {
+    if (!ChainUtil.validateObject<Payment>(t, baseValidation, fail)) {
+      fail.reason = "Is not a payment\n" + fail.reason;
+      return false;
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(transaction.input),
-      transaction.signature,
-      Payment.toHash(transaction));
-    if (!verifyRes.result) {
-      return verifyRes;
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      Payment.toHash(t));
+    if (isFailure(verifyRes)) {
+      fail.reason = "Is not a payment\n" + verifyRes.reason;
+      return false;
     }
 
-    return {
-      result: true,
-    };
+    return true;
   }
 
   static wrap(tx: Payment): TransactionWrapper<Payment> {

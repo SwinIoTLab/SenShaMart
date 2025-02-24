@@ -18,7 +18,7 @@
  * @author Josip Milovac
  */
 import Payment from './payment.js';
-import { ChainUtil } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure } from '../util/chain-util.js';
 
 describe('Payment', () => {
 
@@ -40,50 +40,64 @@ describe('Payment', () => {
   it("Changing input fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.input = kp2.pubSerialized;
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Changing counter fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.counter++;
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Adding output fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.outputs.push(Payment.createOutput(kp4.pubSerialized, 3));
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Removing output fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.outputs.pop();
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Changing output key fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.outputs[0].publicKey = kp4.pubSerialized;
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Changing output amount fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.outputs[0].amount++;
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
   it("Changing rewardAmount fails verify", () => {
     const changing = new Payment(skp, 1, [Payment.createOutput(kp2.pubSerialized, 1), Payment.createOutput(kp3.pubSerialized, 2)], 0);
 
-    expect(Payment.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Payment.verify(changing, fail)).toBe(true);
     changing.rewardAmount++;
-    expect(Payment.verify(changing).result).toBe(false);
+    expect(Payment.verify(changing, fail)).toBe(false);
   });
 });

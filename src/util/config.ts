@@ -33,7 +33,7 @@ class Config {
   get<T>(config: ConfigParam<T>): T {
     if (Object.prototype.hasOwnProperty.call(this.settings, config.key)) {
       const value = this.settings[config.key];
-      if (Object.prototype.hasOwnProperty.call(config, 'transform')) {
+      if (config.transform !== undefined) {
         return config.transform(value);
       } else {
         return value as T;

@@ -18,18 +18,18 @@
  * @author Josip Milovac
  */
 import BrokerRegistration from './broker-registration.js';
-import { ChainUtil } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure } from '../util/chain-util.js';
 import { SENSHAMART_URI_PREFIX } from '../util/constants.js';
 
 describe('Broker Registration', () => {
   const keyPair = ChainUtil.genKeyPair();
 
   it("Construct a broker", () => {
-    new BrokerRegistration(keyPair, 1, "test", "", 0, null, null);
+    new BrokerRegistration(keyPair, 1, "test", "", 0);
   });
 
   it("Construct a broker with negative rewardAmount", () => {
-    expect(() => new BrokerRegistration(keyPair, 1, "test", "", -1, null, null)).toThrow();
+    expect(() => new BrokerRegistration(keyPair, 1, "test", "", -1)).toThrow();
   });
 
   it("Construct a broker with extra metadata", () => {
@@ -37,7 +37,7 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null));
+    }]));
   });
 
   it("Construct a broker reserved subject in extra metadata", () => {
@@ -45,7 +45,7 @@ describe('Broker Registration', () => {
       s: SENSHAMART_URI_PREFIX + "something",
       p: "and",
       o: "something else"
-    }], null)).toThrow();
+    }])).toThrow();
   });
 
   it("Construct a broker with reserved predicate in extra metadata", () => {
@@ -53,7 +53,7 @@ describe('Broker Registration', () => {
       s: "something",
       p: SENSHAMART_URI_PREFIX + "and",
       o: "something else"
-    }], null)).toThrow();
+    }])).toThrow();
   });
 
   it("Construct a broker with reserved object in extra metadata", () => {
@@ -61,7 +61,7 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: SENSHAMART_URI_PREFIX + "something else"
-    }], null)).toThrow();
+    }])).toThrow();
   });
 
   it("Changing input fails verify", () => {
@@ -69,13 +69,15 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null);
+    }]);
 
-    expect(BrokerRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(BrokerRegistration.verify(changing,fail)).toBe(true);
 
     changing.input = "invalid key";
 
-    expect(BrokerRegistration.verify(changing).result).toBe(false);
+    expect(BrokerRegistration.verify(changing,fail)).toBe(false);
   });
 
   it("Changing counter fails verify", () => {
@@ -83,13 +85,15 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null);
+    }]);
 
-    expect(BrokerRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(BrokerRegistration.verify(changing, fail)).toBe(true);
 
     changing.counter++;
 
-    expect(BrokerRegistration.verify(changing).result).toBe(false);
+    expect(BrokerRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing rewardAmount fails verify", () => {
@@ -97,13 +101,15 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null);
+    }]);
 
-    expect(BrokerRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(BrokerRegistration.verify(changing, fail)).toBe(true);
 
     changing.rewardAmount++;
 
-    expect(BrokerRegistration.verify(changing).result).toBe(false);
+    expect(BrokerRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata name fails verify", () => {
@@ -111,13 +117,15 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null);
+    }]);
 
-    expect(BrokerRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(BrokerRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.name = "else";
 
-    expect(BrokerRegistration.verify(changing).result).toBe(false);
+    expect(BrokerRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata endpoint fails verify", () => {
@@ -125,12 +133,14 @@ describe('Broker Registration', () => {
       s: "something",
       p: "and",
       o: "something else"
-    }], null);
+    }]);
 
-    expect(BrokerRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(BrokerRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.endpoint += "a";
 
-    expect(BrokerRegistration.verify(changing).result).toBe(false);
+    expect(BrokerRegistration.verify(changing, fail)).toBe(false);
   });
 });

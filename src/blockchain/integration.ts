@@ -19,7 +19,7 @@
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  *         Josip Milovac
  */
-import { ChainUtil, type KeyPair, type ResultFailure, type Result, isFailure } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 import SeedRandom from 'seedrandom';
 
@@ -37,31 +37,21 @@ type Output = {
   brokerHash: string
 }
 
-function validateOutputs(t: unknown): Result {
-  const validateArrayRes = ChainUtil.validateArray(t, (output) => {
-    return ChainUtil.validateObject(output, outputValidation);
-  });
-
-  if (!validateArrayRes.result) {
-    return validateArrayRes;
+function validateOutputs(t: unknown, fail: ResultFailure): t is Output[] {
+  if (!ChainUtil.validateArray<Output>(t, (output, fail) => { return ChainUtil.validateObject(output, outputValidation, fail); }, fail)) {
+    return false;
   }
 
-  const t_array = t as Output[];
-
-  if (t_array.length <= 0) {
-    return {
-      result: false,
-      reason: "Integration must have at least 1 output"
-    };
+  if (t.length <= 0) {
+    fail.reason = "Length must be at least 1";
+    return false;
   }
 
-  return {
-    result: true
-  };
+  return true;
 }
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   outputs: validateOutputs,
@@ -90,9 +80,9 @@ class Integration implements RepeatableTransaction {
 
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Integration.toHash(this));
 
-    const verification = Integration.verify(this);
-    if (isFailure(verification)) {
-      throw new Error(verification.reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+    if (!Integration.verify(this, fail)) {
+      throw new Error(fail.reason);
     }
   }
 
@@ -124,23 +114,22 @@ class Integration implements RepeatableTransaction {
     };
   }
 
-  static verify(integration:Integration):Result {
-    const validationRes = ChainUtil.validateObject(integration, baseValidation);
-    if (!validationRes.result) {
-      return validationRes;
+  static verify(t:unknown, fail: ResultFailure): t is Integration {
+    if (!ChainUtil.validateObject<Integration>(t, baseValidation, fail)) {
+      fail.reason = "Is not an integration\n" + fail.reason;
+      return false;
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(integration.input),
-      integration.signature,
-      Integration.toHash(integration));
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      Integration.toHash(t));
     if (!verifyRes.result) {
-      return verifyRes;
+      fail.reason = "Is not an integration\n" + verifyRes.reason;
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
   static chooseWitnesses(integration: Integration, brokerList: string[]): ResultWitnesses | ResultFailure{

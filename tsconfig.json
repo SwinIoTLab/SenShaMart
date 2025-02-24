@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
     "module": "NodeNext",
-    "noImplicitAny": true,
     "removeComments": true,
     "preserveConstEnums": true,
     "verbatimModuleSyntax": true,
@@ -10,7 +9,9 @@
     "esModuleInterop": true,
     "moduleResolution": "nodenext",
     "outDir": "build",
-    "sourceRoot": "src"
+    "sourceRoot": "src",
+    "strict": true,
+    "allowUnreachableCode": false
   },
   "include": [
     "src/*/*.ts"

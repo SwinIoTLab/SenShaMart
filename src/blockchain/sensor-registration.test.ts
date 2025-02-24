@@ -19,7 +19,7 @@
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
 import SensorRegistration  from './sensor-registration.js';
-import { ChainUtil } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure } from '../util/chain-util.js';
 import { SENSHAMART_URI_PREFIX } from '../util/constants.js';
 
 describe('Sensor Registration', () => {
@@ -92,11 +92,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.input = ChainUtil.genKeyPair().pubSerialized;
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing counter fails verify", () => {
@@ -106,11 +108,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.counter++;
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing rewardAmount fails verify", () => {
@@ -120,11 +124,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.rewardAmount++;
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata name fails verify", () => {
@@ -134,11 +140,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.name = "else";
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata costPerMinute fails verify", () => {
@@ -148,11 +156,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.costPerMinute++;
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata costPerKB fails verify", () => {
@@ -162,11 +172,13 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.costPerKB++;
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 
   it("Changing metadata integrationBroker fails verify", () => {
@@ -176,10 +188,12 @@ describe('Sensor Registration', () => {
       o: "something else"
     }]);
 
-    expect(SensorRegistration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(SensorRegistration.verify(changing, fail)).toBe(true);
 
     changing.metadata.integrationBroker += "a";
 
-    expect(SensorRegistration.verify(changing).result).toBe(false);
+    expect(SensorRegistration.verify(changing, fail)).toBe(false);
   });
 });

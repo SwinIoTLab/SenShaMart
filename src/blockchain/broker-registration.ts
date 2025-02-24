@@ -18,7 +18,7 @@
  * @author Josip Milovac
  */
 
-import { ChainUtil, type KeyPair, type Result, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
@@ -47,7 +47,7 @@ const metadataValidation = {
 }
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(0),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   metadata: ChainUtil.createValidateObject(metadataValidation),
@@ -83,9 +83,10 @@ class BrokerRegistration implements RepeatableTransaction {
     }
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, BrokerRegistration.toHash(this));
 
-    const verification = BrokerRegistration.verify(this);
-    if (isFailure(verification)) {
-      throw new Error(verification.reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    if (!BrokerRegistration.verify(this, fail)) {
+      throw new Error(fail.reason);
     }
   }
 
@@ -98,7 +99,7 @@ class BrokerRegistration implements RepeatableTransaction {
   }
 
   static getExtraNodeMetadata(registration: BrokerRegistration): NodeMetadata[] {
-    if ("extraNodes" in registration.metadata) {
+    if (registration.metadata.extraNodes !== undefined) {
       return registration.metadata.extraNodes;
     } else {
       return [];
@@ -106,7 +107,7 @@ class BrokerRegistration implements RepeatableTransaction {
   }
 
   static getExtraLiteralMetadata(registration: BrokerRegistration): LiteralMetadata[] {
-    if ("extraLiterals" in registration.metadata) {
+    if (registration.metadata.extraLiterals !== undefined) {
       return registration.metadata.extraLiterals;
     } else {
       return [];
@@ -127,24 +128,23 @@ class BrokerRegistration implements RepeatableTransaction {
     };
   }
 
-  static verify(registration: BrokerRegistration): Result {
-    const validationRes = ChainUtil.validateObject(registration, baseValidation);
-    if (!validationRes.result) {
-      return validationRes;
+  static verify(t: unknown, fail: ResultFailure): t is BrokerRegistration {
+    if (!ChainUtil.validateObject<BrokerRegistration>(t, baseValidation, fail)) {
+      fail.reason = "Is not broker registration\n" + fail.reason;
+      return false;
     }
 
     const signatureRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(registration.input),
-      registration.signature,
-      BrokerRegistration.toHash(registration));
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      BrokerRegistration.toHash(t));
 
-    if (!signatureRes.result) {
-      return signatureRes;
+    if (isFailure(signatureRes)) {
+      fail.reason = "Is not broker registration\n" + signatureRes.reason;
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
   static txName(): string {

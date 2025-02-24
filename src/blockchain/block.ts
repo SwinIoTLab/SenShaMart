@@ -17,8 +17,8 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { ChainUtil, type Result } from '../util/chain-util.js';
-import { MINE_DIFFICULTY, MINE_RATE } from '../util/constants.js';
+import { ChainUtil, type Result, isFailure, type ResultFailure } from '../util/chain-util.js';
+import { INITIAL_MINE_DIFFICULTY, MINE_RATE } from '../util/constants.js';
 import { type Transaction } from './transaction_base.js';
 import BrokerRegistration from './broker-registration.js';
 import SensorRegistration from './sensor-registration.js';
@@ -31,8 +31,8 @@ import Commit from './commit.js';
   Any set of transactions types that doesn't exist isn't included in what is hashed (including not having an empty set).
   This allows the hash of blocks to not change when new transactions types are added
 */
-function concatIfNotUndefined(concatTo: string, prefix: string, concatting: Transaction[] | null): string {
-  if (typeof concatting !== "undefined" && concatting !== null && concatting.length > 0) {
+function concatIfNotUndefined(concatTo: string, prefix: string, concatting: Transaction[] | undefined): string {
+  if (concatting !== undefined && concatting !== null && concatting.length > 0) {
     concatTo += prefix;
     for (const tx of concatting) {
       concatTo += tx.signature;
@@ -46,7 +46,7 @@ function concatIfNotUndefined(concatTo: string, prefix: string, concatting: Tran
   If undefined or null returns an empty list, otherwise what exists
 */
 function getData<T>(map?:T[]): T[] {
-  if (typeof map !== "undefined" && map !== null) {
+  if (map !== undefined && map !== null) {
     return map;
   } else {
     return [];
@@ -60,25 +60,69 @@ const baseValidation = {
   timestamp: ChainUtil.createValidateIsIntegerWithMin(0),
   lastHash: ChainUtil.validateIsString,
   hash: ChainUtil.validateIsString,
-  reward: ChainUtil.validateIsPublicKey,
+  reward: ChainUtil.validateIsSerializedPublicKey,
   nonce: ChainUtil.createValidateIsIntegerWithMin(0),
-  difficulty: ChainUtil.createValidateIsIntegerWithMin(0),
-  sensorRegistrations: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(SensorRegistration.verify)),
-  brokerRegistrations: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(BrokerRegistration.verify)),
-  integrations: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(Integration.verify)),
-  payments: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(Payment.verify)),
-  commits: ChainUtil.createValidateOptional(
-    ChainUtil.createValidateArray(Commit.verify))
+  txs: ChainUtil.createValidateObject({
+    sensorRegistrations: ChainUtil.createValidateOptional(
+      ChainUtil.createValidateArray(SensorRegistration.verify)),
+    brokerRegistrations: ChainUtil.createValidateOptional(
+      ChainUtil.createValidateArray(BrokerRegistration.verify)),
+    integrations: ChainUtil.createValidateOptional(
+      ChainUtil.createValidateArray(Integration.verify)),
+    payments: ChainUtil.createValidateOptional(
+      ChainUtil.createValidateArray(Payment.verify)),
+    commits: ChainUtil.createValidateOptional(
+      ChainUtil.createValidateArray(Commit.verify))
+  })
 }
+
+export class BlockTxs {
+  //arrays of txs
+  payments ?: Payment[];
+  sensorRegistrations ?: SensorRegistration[];
+  brokerRegistrations ?: BrokerRegistration[];
+  integrations ?: Integration[];
+  commits?: Commit[];
+
+  static getPayments(txs: BlockTxs): Payment[] {
+    return getData(txs.payments);
+  }
+
+  static getSensorRegistrations(txs: BlockTxs): SensorRegistration[] {
+    return getData(txs.sensorRegistrations);
+  }
+
+  static getBrokerRegistrations(txs: BlockTxs): BrokerRegistration[] {
+    return getData(txs.brokerRegistrations);
+  }
+
+  static getIntegrations(txs: BlockTxs): Integration[] {
+    return getData(txs.integrations);
+  }
+
+  static getCommits(txs: BlockTxs): Commit[] {
+    return getData(txs.commits);
+  }
+}
+
+const genesis : Block = {
+  timestamp: 0,
+  lastHash: '-----',
+  hash: 'f1r57-h45h',
+  reward: '',
+  txs: {},
+  nonce: 0
+} as const;
+
+export type DebugMined = {
+  block: Block,
+  difficulty: number
+};
 
 /*
   A block in the blockchain
 */
-class Block {
+export class Block {
   //when this block was mined
   timestamp: number;
   //the hash of the previous block
@@ -89,78 +133,38 @@ class Block {
   reward: string;
   //a chosen number to make the hash valid
   nonce: number;
-  //the difficulty of this block
-  difficulty: number;
-  //arrays of txs
-  payments?: Payment[];
-  sensorRegistrations?: SensorRegistration[];
-  brokerRegistrations?: BrokerRegistration[];
-  integrations?: Integration[];
-  commits?: Commit[];
+  //txs
+  txs: BlockTxs;
 
-  constructor(timestamp: number, lastHash: string, hash: string, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, commits: Commit[] | null, nonce: number, difficulty: number) {
+  constructor(timestamp: number, lastHash: string, hash: string, reward: string, txs: BlockTxs, nonce: number) {
     this.timestamp = timestamp;
     this.lastHash = lastHash;
     this.hash = hash;
     this.reward = reward;
-    if (payments !== null && payments.length !== 0) {
-      this.payments = payments;
-    }
-    if (sensorRegistrations !== null && sensorRegistrations.length !== 0) {
-      this.sensorRegistrations = sensorRegistrations;
-    }
-    if (brokerRegistrations !== null && brokerRegistrations.length !== 0) {
-      this.brokerRegistrations = brokerRegistrations;
-    }
-    if (integrations !== null && integrations.length !== 0) {
-      this.integrations = integrations;
-    }
-    if (commits !== null && commits.length !== 0) {
-      this.commits = commits;
-    }
+    this.txs = txs;
     this.nonce = nonce;
-    if (difficulty === undefined) {
-      this.difficulty = MINE_DIFFICULTY;
-    } else {
-      this.difficulty = difficulty;
+
+    const verifyRes = Block.verify(this);
+    if (isFailure(verifyRes)) {
+      throw new Error("Failed to construct block\n" + verifyRes.reason);
     }
-  }
-
-  static getPayments(block: Block): Payment[] {
-    return getData(block.payments);
-  }
-
-  static getSensorRegistrations(block: Block): SensorRegistration[] {
-    return getData(block.sensorRegistrations);
-  }
-
-  static getBrokerRegistrations(block: Block): BrokerRegistration[] {
-    return getData(block.brokerRegistrations);
-  }
-
-  static getIntegrations(block: Block): Integration[] {
-    return getData(block.integrations);
-  }
-
-  static getCommits(block: Block): Commit[] {
-    return getData(block.commits);
   }
 
   //the initial block
   static genesis(): Block {
-    return new this(0, '-----', 'f1r57-h45h', '', null, null, null, null, null, 0, MINE_DIFFICULTY);
+    return structuredClone(genesis);
   }
 
   //hash the individual components of a block
-  static hash(timestamp: number, lastHash: string, reward: string, payments: Payment[]|null, sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations:Integration[], commits:Commit[] | null, nonce: number, difficulty: number): string {
+  static hash(timestamp: number, lastHash: string, reward: string, txs: BlockTxs, nonce: number): string {
     //backwards compatible hashing:
     //if we add a new type of thing to the chain, the hash of previous blocks won't change as it will be undefined
-    let hashing = `${timestamp}${lastHash}${nonce}${difficulty}${reward}`;
-    hashing = concatIfNotUndefined(hashing, 'payments', payments);
-    hashing = concatIfNotUndefined(hashing, 'sensorRegistrations', sensorRegistrations);
-    hashing = concatIfNotUndefined(hashing, 'brokerRegistrations', brokerRegistrations);
-    hashing = concatIfNotUndefined(hashing, 'integrations', integrations);
-    hashing = concatIfNotUndefined(hashing, 'commits', commits);
+    let hashing = `${timestamp}${lastHash}${nonce}${reward}`;
+    hashing = concatIfNotUndefined(hashing, 'payments', txs.payments);
+    hashing = concatIfNotUndefined(hashing, 'sensorRegistrations', txs.sensorRegistrations);
+    hashing = concatIfNotUndefined(hashing, 'brokerRegistrations', txs.brokerRegistrations);
+    hashing = concatIfNotUndefined(hashing, 'integrations', txs.integrations);
+    hashing = concatIfNotUndefined(hashing, 'commits', txs.commits);
 
     return ChainUtil.hash(hashing).toString();
   }
@@ -171,30 +175,16 @@ class Block {
       block.timestamp,
       block.lastHash,
       block.reward,
-      block.payments,
-      block.sensorRegistrations,
-      block.brokerRegistrations,
-      block.integrations,
-      block.commits,
-      block.nonce,
-      block.difficulty);
+      block.txs,
+      block.nonce);
   }
 
   //Check if block's hash doesn't match internals
-  static checkHash(block: Block): Result {
-    const computedHash = Block.blockHash(block);
-
-    if (computedHash !== block.hash) {
+  static checkHashDifficulty(block: Block, difficulty: number): Result {
+    if (block.hash.substring(0, difficulty) !== '0'.repeat(difficulty)) {
       return {
         result: false,
-        reason: "Computed hash doesn't match stored hash"
-      };
-    }
-
-    if (block.hash.substring(0, block.difficulty) !== '0'.repeat(block.difficulty)) {
-      return {
-        result: false,
-        reason: "Stored hash doesn't match stored difficulty"
+        reason: "Stored hash doesn't match computed difficulty"
       }
     }
 
@@ -204,19 +194,30 @@ class Block {
   }
 
   //get the expected difficulty at currentTime with previous block lastBlock
-  static adjustDifficulty(lastBlock: Block, currentTime: number): number {
-    const prevDifficulty = lastBlock.difficulty;
-    if (lastBlock.timestamp + MINE_RATE > currentTime) {
+  static adjustDifficulty(lastBlockTimestamp: number, lastBlockDifficulty: number, currentTime: number): number {
+    const prevDifficulty = lastBlockDifficulty;
+    if (lastBlockTimestamp + MINE_RATE > currentTime) {
       return prevDifficulty + 1;
     } else {
       return Math.max(0, prevDifficulty - 1);
     }
   }
 
+  static debugGenesis(): DebugMined {
+    return {
+      block: Block.genesis(),
+      difficulty: INITIAL_MINE_DIFFICULTY
+    };
+  }
+
   //simple blocking implementation of mining a block, used for debugging
-  static debugMine(lastBlock: Block, reward: string, payments: Payment[] | null, sensorRegistrations: SensorRegistration[] | null, brokerRegistrations: BrokerRegistration[] | null, integrations: Integration[] | null, commits: Commit[] | null): Block {
-    const timestamp = lastBlock.timestamp + MINE_RATE;
-    const difficulty = Block.adjustDifficulty(lastBlock, timestamp);
+  static debugMine(lastBlock: DebugMined, reward: string, txs: BlockTxs, timestamp?: number): DebugMined {
+    if (timestamp === undefined) {
+      timestamp = lastBlock.block.timestamp + MINE_RATE;
+    } else if (timestamp <= lastBlock.block.timestamp) {
+      throw new Error(`Trying to debug mine with an invalid timestamp, ${timestamp} <= ${lastBlock.block.timestamp}`);
+    }
+    const difficulty = Block.adjustDifficulty(lastBlock.block.timestamp, lastBlock.difficulty, timestamp);
 
     let nonce = 0;
     let hash = '';
@@ -225,43 +226,38 @@ class Block {
       nonce++;
       hash = Block.hash(
         timestamp,
-        lastBlock.hash,
+        lastBlock.block.hash,
         reward,
-        payments,
-        sensorRegistrations,
-        brokerRegistrations,
-        integrations,
-        commits,
-        nonce,
-        difficulty);
+        txs,
+        nonce);
     } while (hash.substring(0, difficulty) !== '0'.repeat(difficulty));
 
-    return new Block(
-      timestamp,
-      lastBlock.hash,
-      hash,
-      reward,
-      payments,
-      sensorRegistrations,
-      brokerRegistrations,
-      integrations,
-      commits,
-      nonce,
-      difficulty);
+    return {
+      block: new Block(
+        timestamp,
+        lastBlock.block.hash,
+        hash,
+        reward,
+        txs,
+        nonce),
+      difficulty: difficulty
+    };
   }
 
   //verify an object is a valid block by checking members and hash
   static verify(block: Block): Result {
-    const validationRes = ChainUtil.validateObject(block, baseValidation);
+    const fail: ResultFailure = { result: false, reason: "" };
 
-    if (!validationRes.result) {
-      return validationRes;
-    } 
+    if (!ChainUtil.validateObject(block, baseValidation, fail)) {
+      return fail;
+    }
 
-    if (!Block.checkHash(block)) {
+    const computedHash = Block.blockHash(block);
+
+    if (computedHash !== block.hash) {
       return {
         result: false,
-        reason: "Couldn't verify hash"
+        reason: "Computed hash doesn't match stored hash"
       };
     }
 

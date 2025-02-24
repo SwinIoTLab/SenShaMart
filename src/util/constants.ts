@@ -1,7 +1,8 @@
-export const MINE_DIFFICULTY = 3;
+export const INITIAL_MINE_DIFFICULTY = 3;
 export const MINE_RATE= 3000;
 export const MINING_REWARD = 50;
 export const INITIAL_BALANCE = 1000;
+export const INITIAL_COUNTER = 0;
 export const MINUTE_MS = 60 * 1000;
 export const BROKER_DEAD_BUFFER_TIME_MS = 60 * 5 * 1000; // 5 minutes
 export const BROKER_COMMISION = 0.1;

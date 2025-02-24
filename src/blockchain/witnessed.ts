@@ -19,11 +19,11 @@
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  *         Josip Milovac
  */
-import { ChainUtil, type Result, isFailure, type KeyPair } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure, isFailure, type KeyPair } from '../util/chain-util.js';
 import { type Transaction, type TransactionWrapper } from './transaction_base.js';
 
 const integrationValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1)
 };
 
@@ -33,7 +33,7 @@ const outputValidation = {
 };
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   integration: ChainUtil.createValidateObject(integrationValidation),
   outputs: ChainUtil.createValidateArray(ChainUtil.createValidateObject(outputValidation)),
   signature: ChainUtil.validateIsSignature
@@ -63,9 +63,9 @@ class Witnessed implements Transaction {
     this.outputs = outputs;
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Witnessed.toHash(this));
 
-    const verification = Witnessed.verify(this);
-    if (isFailure(verification)) {
-      throw new Error(verification.reason);
+    const fail : ResultFailure = { result: false, reason: "" };
+    if (!Witnessed.verify(this, fail)) {
+      throw new Error(fail.reason);
     }
   }
 
@@ -77,23 +77,22 @@ class Witnessed implements Transaction {
       transaction.outputs]);
   }
 
-  static verify(transaction: Witnessed): Result {
-    const validationRes = ChainUtil.validateObject(transaction, baseValidation);
-    if (!validationRes.result) {
-      return validationRes;
+  static verify(t: unknown, fail: ResultFailure): t is Witnessed {
+    if (!ChainUtil.validateObject<Witnessed>(t, baseValidation, fail)) {
+      fail.reason = "Is not a witnessed\n" + fail.reason;
+      return false;
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(transaction.input),
-      transaction.signature,
-      Witnessed.toHash(transaction));
-    if (!verifyRes.result) {
-      return verifyRes;
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      Witnessed.toHash(t));
+    if (isFailure(verifyRes)) {
+      fail.reason = "Is not a witnessed\n" + verifyRes.reason;
+      return false;
     }
 
-    return {
-      result: true,
-    };
+    return true;
   }
 
   static wrap(tx: Witnessed): TransactionWrapper<Witnessed> {

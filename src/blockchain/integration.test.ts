@@ -19,7 +19,7 @@
  * @author Josip Milovac
  */
 import Integration from './integration.js';
-import { ChainUtil, type KeyPair } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure } from '../util/chain-util.js';
 
 function createDummyIntegration(keyPair: KeyPair, witnesses: number) {
   return new Integration(
@@ -65,37 +65,45 @@ describe('Integration', () => {
   it("Changing input fails verify", () => {
     const changing = createDummyIntegration(keyPair, 0);
 
-    expect(Integration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Integration.verify(changing, fail)).toBe(true);
 
     changing.input = ChainUtil.genKeyPair().pubSerialized;
 
-    expect(Integration.verify(changing).result).toBe(false);
+    expect(Integration.verify(changing, fail)).toBe(false);
   });
   it("Changing counter fails verify", () => {
     const changing = createDummyIntegration(keyPair, 0);
 
-    expect(Integration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Integration.verify(changing, fail)).toBe(true);
 
     changing.counter++;
 
-    expect(Integration.verify(changing).result).toBe(false);
+    expect(Integration.verify(changing, fail)).toBe(false);
   });
   it("Changing rewardAmount fails verify", () => {
     const changing = createDummyIntegration(keyPair, 0);
 
-    expect(Integration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Integration.verify(changing, fail)).toBe(true);
 
     changing.rewardAmount++;
 
-    expect(Integration.verify(changing).result).toBe(false);
+    expect(Integration.verify(changing, fail)).toBe(false);
   });
   it("Changing witnessCount fails verify", () => {
     const changing = createDummyIntegration(keyPair, 0);
 
-    expect(Integration.verify(changing).result).toBe(true);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    expect(Integration.verify(changing, fail)).toBe(true);
 
     changing.witnessCount++;
 
-    expect(Integration.verify(changing).result).toBe(false);
+    expect(Integration.verify(changing, fail)).toBe(false);
   });
 });

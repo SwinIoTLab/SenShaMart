@@ -27,7 +27,7 @@ type LiteralMetadata = {
 
 type Metadata = NodeMetadata | LiteralMetadata;
 
-export type ResolveCb = (res?: unknown) => void;
+export type ResolveCb = (res: unknown) => void;
 export type RejectCb = (err: Error) => void;
 
 interface ResultSuccess {
@@ -70,7 +70,7 @@ interface KeyPair {
   pubSerialized: string
 }
 
-type ValidatorI = (v: unknown) => Result;
+type ValidatorI = (v: unknown, fail: ResultFailure) => boolean;
 
 //an object to store a bunch of static utility functions
 class ChainUtil {
@@ -232,322 +232,240 @@ class ChainUtil {
   }
 
   //the following functions are used for validation, the names should be self explanatory
-  static validateExists(t?: unknown): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateExists(t: unknown, fail: ResultFailure): t is unknown {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
     }
 
-    return {
-      result: true
-    };
-  } 
+    return true;
+  }
 
-  static createValidateIsEither(...validators: ValidatorI[]) {
-    return (t: unknown): Result => {
-      let failString = "Failed all validators:";
-      for (const v of validators) {
-        const res = v(t);
-        if (!isFailure(res)) {
-          return {
-            result: true
-          };
-        } else {
-          failString += "\n  " + res.reason;
-        }
+  static validateIsEither(t: unknown, fail: ResultFailure, validators: ValidatorI[]): boolean {
+    let failString = "Failed all validators:";
+    for (const v of validators) {
+      if (v(t, fail)) {
+        return true;
+      } else {
+        failString += "\n  " + fail.reason;
       }
-      return {
-        result: false,
-        reason: failString
-      };
+    }
+    fail.reason = failString;
+    return false;
+  }
+
+  static createValidateIsEither(...validators: ValidatorI[]): ValidatorI {
+    return (t: unknown, fail: ResultFailure): boolean => {
+      return ChainUtil.validateIsEither(t, fail, validators);
     };
   }
 
-  static validateIsNull(t?: unknown): Result {
+  static validateIsNull(t: unknown, fail: ResultFailure): t is null {
     if (t === undefined) {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+      fail.reason = "Is undefined"
+      return false;
     }
     if (t !== null) {
-      return {
-        result: false,
-        reason: "Is not null"
-      };
+      fail.reason = "Is not null"
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsObject(t?: unknown): Result {
+  static validateIsObject(t: unknown, fail: ResultFailure): t is object {
     if (t === undefined) {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+      fail.reason = "Is undefined";
+      return false;
     }
     if (typeof t !== 'object') {
-      return {
-        result: false,
-        reason: "Is not an object"
-      };
+      fail.reason = "Is not an object";
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsString(t: unknown): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateIsString(t: unknown, fail: ResultFailure): t is string {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
     }
     if (typeof t === 'string') {
-      return {
-        result: true
-      };
+      return true;
     } else {
-      return {
-        result: false,
-        reason: "Is not string"
-      };
+      fail.reason = "Is not string";
+      return false;
     }
   }
 
-  static validateIsNumber(t: unknown): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateIsNumber(t: unknown, fail: ResultFailure): t is number {
+    if (t === undefined) {
+      fail.reason = "Is undefined"
+      return false;
     }
     if (typeof t !== 'number') {
-      return {
-        result: false,
-        reason: "Is not number"
-      };
+      fail.reason = "Is not number";
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsInteger(t: unknown): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateIsInteger(t: unknown, fail: ResultFailure): t is number {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
     }
     if (typeof t !== 'number') {
-      return {
-        result: false,
-        reason: "Is not number"
-      };
+      fail.reason = "Is not number";
+      return false;
 
-    } else if (!Number.isInteger(t)) {
-      return {
-        result: false,
-        reason: "Is not integer"
-      };
     }
-    return {
-      result: true
-    };
+    if (!Number.isInteger(t)) {
+      fail.reason = "Is not integer";
+      return false;
+    }
+    return true;
   }
 
   //includes minimum
-  static validateIsIntegerWithMin(t: unknown, minimum:number): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateIsIntegerWithMin(t: unknown, minimum:number, fail: ResultFailure): t is number {
+    if (t === undefined) {
+      fail.reason= "Is undefined";
+      return false;
     }
     if (typeof t !== 'number') {
-      return {
-        result: false,
-        reason: "Is not number"
-      };
-    } else if (!Number.isInteger(t)) {
-      return {
-        result: false,
-        reason: "Is not integer"
-      };
-    } else if (t < minimum) {
-      return {
-        result: false,
-        reason: "Is below minimum"
-      }
+      fail.reason = "Is not number";
+      return false;
     }
-    return {
-      result: true
-    };
+    if (!Number.isInteger(t)) {
+      fail.reason = "Is not integer";
+      return false;
+    }
+    if (t < minimum) {
+      fail.reason = "Is below minimum";
+      return false;
+    }
+    return true;
   }
 
   //includes minimum
   static createValidateIsIntegerWithMin(minimum: number): ValidatorI {
-    return (t) => {
-      return ChainUtil.validateIsIntegerWithMin(t, minimum);
+    return (t,fail) => {
+      return ChainUtil.validateIsIntegerWithMin(t, minimum, fail);
     };
   }
 
   //includes minimum and maximum
-  static validateIsNumberWithMinMax(t: unknown, minimum: number, maximum: number): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateIsNumberWithMinMax(t: unknown, minimum: number, maximum: number, fail: ResultFailure): t is number {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
     }
     if (typeof t !== 'number') {
-      return {
-        result: false,
-        reason: "Is not number"
-      };
+      fail.reason = "Is not number";
+      return false;
     }
     if (t < minimum) {
-      return {
-        result: false,
-        reason: "Is below minimum"
-      };
+      fail.reason = "Is below minimum";
+      return false;
     }
     if (t > maximum) {
-      return {
-        result: false,
-        reason: "Is above maximum"
-      };
+      fail.reason = "Is above maximum";
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
   //includes minimum and maximum
   static createValidateIsNumberWithMinMax(minimum: number, maximum: number): ValidatorI {
-    return (t) => {
-      return ChainUtil.validateIsNumberWithMinMax(t, minimum, maximum);
+    return (t, fail) => {
+      return ChainUtil.validateIsNumberWithMinMax(t, minimum, maximum, fail);
     };
   }
 
-  static validateIsPublicKey(t: unknown): Result {
-    const stringRes = ChainUtil.validateIsString(t);
-
-    if (isFailure(stringRes)) {
-      return stringRes;
+  static validateIsSerializedPublicKey(t: unknown, fail: ResultFailure): t is string {
+    if (!ChainUtil.validateIsString(t, fail)) {
+      fail.reason = "Is not a serialized public key\n" + fail.reason;
+      return false;
     }
 
     try {
-      ChainUtil.deserializePublicKey(t as string);
+      ChainUtil.deserializePublicKey(t);
     } catch (_) {
-      return {
-        result: false,
-        reason: `Couldn't deserialize: '${t}'`
-      };
+      fail.reason = "Is not a serialized public key\nCould not deserialize";
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsKeyPair(t: unknown): Result {
-    const stringRes = ChainUtil.validateIsString(t);
-
-    if (isFailure(stringRes)) {
-      return stringRes;
+  static validateIsSerializedKeyPair(t: unknown, fail: ResultFailure): t is string {
+    if (!ChainUtil.validateIsString(t, fail)) {
+      fail.reason = "Is not a serialized keypair\n" + fail.reason;
+      return false;
     }
 
     try {
       ChainUtil.deserializeKeyPair(t as string);
     } catch (_) {
-      return {
-        result: false,
-        reason: "Couldn't deserialize"
-      };
+      fail.reason = "Is not a serialized keypair\nCould not deserialize";
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsPrivateKey(t: unknown): Result {
-    const stringRes = ChainUtil.validateIsString(t);
-
-    if (isFailure(stringRes)) {
-      return stringRes;
+  static validateIsSerializedPrivateKey(t: unknown, fail: ResultFailure): t is string {
+    if (!ChainUtil.validateIsString(t, fail)) {
+      fail.reason = "Is not serialized private key\n" + fail.reason;
+      return false;
     }
 
     try {
       ChainUtil.deserializePrivateKey(t as string);
     } catch (_) {
-      return {
-        result: false,
-        reason: "Couldn't deserialize"
-      };
+      fail.reason = "Is not a serialized private key\n Could not deserialize";
+      return false;
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
-  static validateIsSignature(t: unknown): Result {
+  static validateIsSignature(t: unknown, fail: ResultFailure): t is string {
     //TODO
-    return ChainUtil.validateIsString(t);
+    return ChainUtil.validateIsString(t, fail);
   }
 
-  static validateArray(t: unknown, memberValidator:ValidatorI): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateArray<T>(t: unknown, memberValidator: ValidatorI, fail: ResultFailure): t is T[] {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
     }
     if (!(t instanceof Array)) {
-      return {
-        result: false,
-        reason: "Is not an Array"
-      };
+      fail.reason = "Is not an Array";
+      return false;
     }
+
     for (const member of t) {
-      const res = memberValidator(member);
-      if (isFailure(res)) {
-        return {
-          result: false,
-          reason: "Array member validation failed: " + res.reason
-        };
+      if (!memberValidator(member, fail)) {
+        fail.reason = "Is not an array of appropriate type\n" + fail.reason;
+        return false;
       }
     }
-    return {
-      result: true
-    };
+    return true;
   }
 
   //this 'creates' a validator, using the given validator to validate each element of the array
   static createValidateArray(memberValidator:ValidatorI): ValidatorI {
-    return function (t) {
-      return ChainUtil.validateArray(t, memberValidator);
+    return function (t, fail) {
+      return ChainUtil.validateArray(t, memberValidator, fail);
     };
   }
 
-  static validateObject(t: unknown, memberValidator: { [index: string]: ValidatorI }): Result {
-    if (typeof t === "undefined") {
-      return {
-        result: false,
-        reason: "Is undefined"
-      };
+  static validateObject<T>(t: unknown, memberValidator: { [index: string]: ValidatorI }, fail: ResultFailure): t is T {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
     }
     if (!(t instanceof Object)) {
-      return {
-        result: false,
-        reason: "Is not an object"
-      };
+      fail.reason = "Is not an object";
+      return false;
     }
 
     const t_obj = t as { [index: string]: unknown };
@@ -555,86 +473,62 @@ class ChainUtil {
     for (const key in memberValidator) {
       const validator = memberValidator[key];
 
-      const res = validator(t_obj[key]);
-
-      if (isFailure(res)) {
-        return {
-          result: false,
-          reason: `Validator for key '${key}' failed: ${res.reason}`
-        };
+      if (!validator(t_obj[key], fail)) {
+        fail.reason = `Member '${key}' failed validation\n`;
+        return false;
       }
     }
 
     for (const key in t) {
       if (!(key in memberValidator)) {
-        return {
-          result: false,
-          reason: "Verifying has key not in validators"
-        }
+        fail.reason = "Verifying has key not in validators";
+        return false;
       }
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
   //this 'creates' a validator, using the given object. For every member of the member validator, a key in t must exist and pass the validator.
   static createValidateObject(memberValidator: { [index: string]: ValidatorI }): ValidatorI {
-    return function (t) {
-      return ChainUtil.validateObject(t, memberValidator);
+    return function (t, fail) {
+      return ChainUtil.validateObject(t, memberValidator, fail);
     };
   }
 
   //this 'creates' a validator, using the given validator. The thing tested may be undefined, or pass the given validator
   static createValidateOptional(validator: ValidatorI): ValidatorI {
-    return function (t) {
+    return function (t, fail) {
       if (t === undefined) {
-        return {
-          result: true
-        };
+        return true;
       }
 
-      return validator(t);
+      return validator(t, fail);
     };
   }
 
   //validates RDF terms
-  static validateTerm(t: unknown): Result {
-    const stringRes = ChainUtil.validateIsString(t);
+  static validateTerm(t: unknown, fail: ResultFailure): t is string {
 
-    if (!stringRes.result) {
-      return stringRes;
+    if (!ChainUtil.validateIsString(t, fail)) {
+      fail.reason = "Is not a term\n" + fail.reason;
+      return false;
     }
 
-    if ((t as string).startsWith(SENSHAMART_URI_PREFIX)) {
-      return {
-        result: false,
-        reason: "Starts with reserved prefix"
-      };
+    if (t.startsWith(SENSHAMART_URI_PREFIX)) {
+      fail.reason = "Starts with reserved prefix";
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
   //validates RDF literals
-  static validateLiteral(t: unknown) : Result {
-    const termRes = ChainUtil.validateTerm(t);
-    if (termRes.result) {
-      return termRes;
+  static validateLiteral(t: unknown, fail: ResultFailure): t is string | number {
+    if (!ChainUtil.validateIsEither(t, fail, [ChainUtil.validateTerm, ChainUtil.validateIsNumber])) {
+      fail.reason = "Is not a literal\n" + fail.reason;
+      return false;
     }
-
-    const numberRes = ChainUtil.validateIsNumber(t);
-
-    if (numberRes.result) {
-      return numberRes;
-    }
-
-    return {
-      result: false,
-      reason: "Wasn't a string or a number"
-    };
+    return true;
   }
 }

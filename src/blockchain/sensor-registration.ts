@@ -18,7 +18,7 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { ChainUtil, type KeyPair, type Result, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
@@ -50,7 +50,7 @@ const metadataValidation = {
 };
 
 const baseValidation = {
-  input: ChainUtil.validateIsPublicKey,
+  input: ChainUtil.validateIsSerializedPublicKey,
   counter: ChainUtil.createValidateIsIntegerWithMin(1),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   metadata: ChainUtil.createValidateObject(metadataValidation),
@@ -75,7 +75,7 @@ class SensorRegistration implements RepeatableTransaction {
   metadata: SensorRegistrationMetadata;
   signature: string;
 
-  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, interval: number | null, rewardAmount?: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, interval: number | null, rewardAmount: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
@@ -94,9 +94,10 @@ class SensorRegistration implements RepeatableTransaction {
     }
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, SensorRegistration.toHash(this));
 
-    const verification = SensorRegistration.verify(this);
-    if (isFailure(verification)) {
-      throw new Error((verification as ResultFailure).reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    if (!SensorRegistration.verify(this, fail)) {
+      throw new Error(fail.reason);
     }
   }
 
@@ -125,7 +126,7 @@ class SensorRegistration implements RepeatableTransaction {
   }
 
   static getExtraNodeMetadata(registration: SensorRegistration): NodeMetadata[] {
-    if ("extraNodes" in registration.metadata) {
+    if (registration.metadata.extraNodes !== undefined) {
       return registration.metadata.extraNodes;
     } else {
       return [];
@@ -133,7 +134,7 @@ class SensorRegistration implements RepeatableTransaction {
   }
 
   static getExtraLiteralMetadata(registration: SensorRegistration): LiteralMetadata[] {
-    if ("extraLiterals" in registration.metadata) {
+    if (registration.metadata.extraLiterals !== undefined) {
       return registration.metadata.extraLiterals;
     } else {
       return [];
@@ -147,23 +148,22 @@ class SensorRegistration implements RepeatableTransaction {
       registration.metadata]);
   }
 
-  static verify(registration: SensorRegistration):Result {
-    const validationResult = ChainUtil.validateObject(registration, baseValidation);
-    if (!validationResult.result) {
-      return validationResult;
+  static verify(t: unknown, fail: ResultFailure): t is SensorRegistration {
+    if(!ChainUtil.validateObject<SensorRegistration>(t, baseValidation, fail)) {
+      fail.reason = "Is not a SensorRegistration\n" + fail.reason;
+      return false;
     }
 
     const verifyRes = ChainUtil.verifySignature(
-      ChainUtil.deserializePublicKey(registration.input),
-      registration.signature,
-      SensorRegistration.toHash(registration));
-    if (!verifyRes.result) {
-      return verifyRes;
+      ChainUtil.deserializePublicKey(t.input),
+      t.signature,
+      SensorRegistration.toHash(t));
+    if (isFailure(verifyRes)) {
+      fail.reason = "Is not a valid SensorRegistration\n" + verifyRes.reason;
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 
   static wrap(tx: SensorRegistration): TransactionWrapper<SensorRegistration> {

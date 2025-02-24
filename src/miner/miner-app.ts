@@ -50,8 +50,8 @@
 
 import express from 'express';
 import bodyParser from 'body-parser';
-import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
-import Blockchain from '../blockchain/blockchain.js';
+//import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
+import { Blockchain, type Sensor } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 import Miner from './miner.js';
 'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
@@ -59,18 +59,13 @@ import Miner from './miner.js';
 
 import Config from '../util/config.js';
 import { ChainUtil, isFailure } from '../util/chain-util.js';
-import Payment from '../blockchain/payment.js';
-import Integration from '../blockchain/integration.js';
-import SensorRegistration from '../blockchain/sensor-registration.js';
-import BrokerRegistration from '../blockchain/broker-registration.js';
-import Commit from '../blockchain/commit.js';
-import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
+//import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
 //import fs from 'fs';
-import { WebSocket, WebSocketServer } from 'ws';
+//import { WebSocket, WebSocketServer } from 'ws';
 
 import {
   DEFAULT_PORT_MINER_API,
-  DEFAULT_PORT_MINER_CHAIN,
+/*  DEFAULT_PORT_MINER_CHAIN,*/
 } from '../util/constants.js';
 
 const CONFIGS_STORAGE_LOCATION = "./settings.json";
@@ -89,53 +84,50 @@ const fusekiLocation = config.get({
   key: "miner-fuseki",
   default: null
 });
-const chainServerPort = config.get({
-  key: "miner-chain-server-port",
-  default: DEFAULT_PORT_MINER_CHAIN
-});
-const chainServerPeers = config.get({
-  key: "miner-chain-server-peers",
-  default: []
-});
-const minerPublicAddress = config.get({
-  key: "miner-public-address",
-  default: "-"
-});
+//const chainServerPort = config.get({
+//  key: "miner-chain-server-port",
+//  default: DEFAULT_PORT_MINER_CHAIN
+//});
+//const chainServerPeers = config.get({
+//  key: "miner-chain-server-peers",
+//  default: []
+//});
+//const minerPublicAddress = config.get({
+//  key: "miner-public-address",
+//  default: "-"
+//});
 const apiPort = config.get({
   key: "miner-api-port",
   default: DEFAULT_PORT_MINER_API
 });
 
-let blockchain: Blockchain = null;
-let miner: Miner = null;
-let chainServer: PropServer = null;
+const blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
+const miner: Miner = new Miner(blockchain, minerPublicKey);
+//let chainServer: PropServer = null;
 
-const newTxCb = function (tx: AnyTransaction): void {
-  console.log("new tx through cb");
+//const newTxCb = function (tx: AnyTransaction): void {
+//  console.log("new tx through cb");
 
-  if (isTransactionType(tx, Payment)) {
-    miner.addPayment(tx.tx);
-  } else if (isTransactionType(tx, SensorRegistration)) {
-    miner.addSensorRegistration(tx.tx);
-  } else if (isTransactionType(tx, BrokerRegistration)) {
-    miner.addBrokerRegistration(tx.tx);
-  } else if (isTransactionType(tx, Integration)) {
-    miner.addIntegration(tx.tx);
-  } else if (isTransactionType(tx, Commit)) {
-    miner.addCommit(tx.tx);
-  } else {
-    console.log("Unknown tx through prop server. Name: '" + tx.type.txName() + "'");
-  }
-};
+//  if (isTransactionType(tx, Payment)) {
+//    miner.addPayment(tx.tx);
+//  } else if (isTransactionType(tx, SensorRegistration)) {
+//    miner.addSensorRegistration(tx.tx);
+//  } else if (isTransactionType(tx, BrokerRegistration)) {
+//    miner.addBrokerRegistration(tx.tx);
+//  } else if (isTransactionType(tx, Integration)) {
+//    miner.addIntegration(tx.tx);
+//  } else if (isTransactionType(tx, Commit)) {
+//    miner.addCommit(tx.tx);
+//  } else {
+//    console.log("Unknown tx through prop server. Name: '" + tx.type.txName() + "'");
+//  }
+//};
 
 const app = express();
 
 app.use(bodyParser.json());
 
 // GET APIs
-app.get('/blocks', (_req, res) => {
-  res.json(blockchain.links);
-});
 ///////////////
 app.get('/Transactions', (_req, res) => {
   res.json(miner.txs);
@@ -144,40 +136,13 @@ app.get('/public-key', (_req, res) => {
   res.json(minerPublicKey);
 });
 ///////////////
-app.get('/MinerBalance', (_req, res) => {
-  const balance = blockchain.getBalanceCopy(minerPublicKey);
+app.get('/MinerBalance', async (_req, res) => {
+  const balance = await blockchain.getWallet(minerPublicKey);
   res.json(balance);
 });
-app.get('/Balance', (req, res) => {
-  const balance = blockchain.getBalanceCopy(req.body.publicKey);
+app.get('/Balance', async (req, res) => {
+  const balance = await blockchain.getWallet(req.body.publicKey);
   res.json(balance);
-});
-app.get('/Balances', (_req, res) => {
-  const returning: { [index: string]: number } = {};
-  for (const [key, amount] of blockchain.data.WALLET) {
-    returning[key] = amount.base.balance;
-  }
-  res.json(returning);
-});
-
-///////////////
-//this API prints all the quads stored in the RDF store and returns the entire store
-app.get('/quads', (_req, res) => {
-  //for (const quad of store)
-  //console.log(quad);
-  //res.json(blockchain.stores);
-  res.json("NYI");
-});
-
-app.get('/brokers', (_req, res) => {
-  const returning: {
-    [index: string]: { [index: string]: unknown }
-  } = {};
-  for (const [key, value] of Object.entries(blockchain.data.BROKER)) {
-    returning[key] = Object.assign({}, value);
-    returning[key].hash = ChainUtil.hash(BrokerRegistration.toHash(value));
-  }
-  res.json(returning);
 });
 
 app.get('/sensors', (_req, res) => {
@@ -194,13 +159,13 @@ app.get('/sensors', (_req, res) => {
 });
 
 
-app.get('/ChainServer/sockets', (_req, res) => {
-  res.json("NYI");
-});
-app.post('/ChainServer/connect', (req, res) => {
-  chainServer.connect(req.body.url);
-  res.json("Connecting");
-});
+//app.get('/ChainServer/sockets', (_req, res) => {
+//  res.json("NYI");
+//});
+//app.post('/ChainServer/connect', (req, res) => {
+//  chainServer.connect(req.body.url);
+//  res.json("Connecting");
+//});
 
 app.post('/Payment', (req, res) => {
   const addRes = miner.addPayment(req.body);
@@ -248,77 +213,76 @@ app.post('/Commit', (req, res) => {
 });
 
 //TODO: probably want to move query logic into blockchain
-type FusekiQueryRes = {
-  head: {
-    vars: string[];
-  };
-  results: {
-    bindings: {
-      [index: string]: {
-        type: string;
-        value: string | number;
-      };
-    }[];
-  }
-};
+//type FusekiQueryRes = {
+//  head: {
+//    vars: string[];
+//  };
+//  results: {
+//    bindings: {
+//      [index: string]: {
+//        type: string;
+//        value: string | number;
+//      };
+//    }[];
+//  }
+//};
 
-type QueryResult = {
-  headers: string[];
-  values: (string | number)[][];
-}
+//type QueryResult = {
+//  headers: string[];
+//  values: (string | number)[][];
+//}
 
-app.post('/sparql', (req, res) => {
-  if (blockchain.fuseki_location === null) {
-    res.json({
-      result: false,
-      reason: "We aren't connected to an RDF DB instance"
-    });
-    return;
-  }
+//app.post('/sparql', (req, res) => {
+//  if (blockchain.fuseki_location === null) {
+//    res.json({
+//      result: false,
+//      reason: "We aren't connected to an RDF DB instance"
+//    });
+//    return;
+//  }
 
-  if (isFailure(ChainUtil.validateIsString(req.body.query))) {
-    res.json({
-      result: false,
-      reason: "Body missing a query field that is a string"
-    });
-    return;
-  }
+//  if (isFailure(ChainUtil.validateIsString(req.body.query))) {
+//    res.json({
+//      result: false,
+//      reason: "Body missing a query field that is a string"
+//    });
+//    return;
+//  }
 
-  fetch(blockchain.fuseki_location + "/query", {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-    },
-    body: 'query=' + encodeURIComponent(req.body.query)
-  }).then(res => {
-    return res.json();
-  }).then((fusekiRes: FusekiQueryRes) => {
-    const returning: QueryResult = {
-      headers: fusekiRes.head.vars,
-      values: []
-    };
+//  fetch(blockchain.fuseki_location + "/query", {
+//    method: 'POST',
+//    headers: {
+//      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+//    },
+//    body: 'query=' + encodeURIComponent(req.body.query)
+//  }).then(res => {
+//    return res.json();
+//  }).then((fusekiRes: FusekiQueryRes) => {
+//    const returning: QueryResult = {
+//      headers: fusekiRes.head.vars,
+//      values: []
+//    };
 
-    for (const row of Object.values(fusekiRes.results.bindings)) {
-      const adding = [];
-      for (const k of returning.headers) {
-        adding.push(row[k].value);
-      }
-      returning.values.push(adding);
-    }
+//    for (const row of Object.values(fusekiRes.results.bindings)) {
+//      const adding = [];
+//      for (const k of returning.headers) {
+//        adding.push(row[k].value);
+//      }
+//      returning.values.push(adding);
+//    }
 
-    res.json(returning);
-  }).catch((err) => {
-    res.json({
-      result: false,
-      reason: err
-    });
-  });
-});
+//    res.json(returning);
+//  }).catch((err) => {
+//    res.json({
+//      result: false,
+//      reason: err
+//    });
+//  });
+//});
 
-blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 
-miner = new Miner(blockchain, minerPublicKey);
-chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
-chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
+
+//chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
+//chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
 app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));
