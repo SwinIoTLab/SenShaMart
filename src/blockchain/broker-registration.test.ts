@@ -19,7 +19,7 @@
  */
 import BrokerRegistration from './broker-registration.js';
 import { ChainUtil, type ResultFailure } from '../util/chain-util.js';
-import { SENSHAMART_URI_PREFIX } from '../util/constants.js';
+import { SENSHAMART_IRI_PREFIX } from '../util/constants.js';
 
 describe('Broker Registration', () => {
   const keyPair = ChainUtil.genKeyPair();
@@ -42,7 +42,7 @@ describe('Broker Registration', () => {
 
   it("Construct a broker reserved subject in extra metadata", () => {
     expect(() => new BrokerRegistration(keyPair, 1, "test", "", 0, [{
-      s: SENSHAMART_URI_PREFIX + "something",
+      s: SENSHAMART_IRI_PREFIX + "something",
       p: "and",
       o: "something else"
     }])).toThrow();
@@ -51,7 +51,7 @@ describe('Broker Registration', () => {
   it("Construct a broker with reserved predicate in extra metadata", () => {
     expect(() => new BrokerRegistration(keyPair, 1, "test", "", 0, [{
       s: "something",
-      p: SENSHAMART_URI_PREFIX + "and",
+      p: SENSHAMART_IRI_PREFIX + "and",
       o: "something else"
     }])).toThrow();
   });
@@ -60,7 +60,7 @@ describe('Broker Registration', () => {
     expect(() => new BrokerRegistration(keyPair, 1, "test", "", 0, [{
       s: "something",
       p: "and",
-      o: SENSHAMART_URI_PREFIX + "something else"
+      o: SENSHAMART_IRI_PREFIX + "something else"
     }])).toThrow();
   });
 

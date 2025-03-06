@@ -18,19 +18,19 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { ChainUtil, type KeyPair, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure, type RdfTriple, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
-  s: ChainUtil.validateTerm,
-  p: ChainUtil.validateTerm,
-  o: ChainUtil.validateTerm
+  s: ChainUtil.validateIRI,
+  p: ChainUtil.validateIRI,
+  o: ChainUtil.validateIRI
 };
 
 const literalValidator = {
-  s: ChainUtil.validateTerm,
-  p: ChainUtil.validateTerm,
-  o: ChainUtil.validateLiteral
+  s: ChainUtil.validateIRI,
+  p: ChainUtil.validateIRI,
+  o: ChainUtil.validateIsString
 };
 
 const metadataValidation = {
@@ -63,8 +63,8 @@ type SensorRegistrationMetadata = {
   costPerKB: number;
   integrationBroker: string;
   interval: number | null;
-  extraNodes?: NodeMetadata[],
-  extraLiterals?: LiteralMetadata[]
+  extraNodes?: RdfTriple[],
+  extraLiterals?: RdfTriple[]
 }
 
 
@@ -75,7 +75,7 @@ class SensorRegistration implements RepeatableTransaction {
   metadata: SensorRegistrationMetadata;
   signature: string;
 
-  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, interval: number | null, rewardAmount: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+  constructor(senderKeyPair: KeyPair, counter: number, sensorName: string, costPerMinute: number, costPerKB: number, integrationBroker: string, interval: number | null, rewardAmount: number, nodeMetadata?: RdfTriple[], literalMetadata?: RdfTriple[]) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
@@ -125,7 +125,7 @@ class SensorRegistration implements RepeatableTransaction {
     return registration.metadata.interval;
   }
 
-  static getExtraNodeMetadata(registration: SensorRegistration): NodeMetadata[] {
+  static getExtraNodeMetadata(registration: SensorRegistration): RdfTriple[] {
     if (registration.metadata.extraNodes !== undefined) {
       return registration.metadata.extraNodes;
     } else {
@@ -133,7 +133,7 @@ class SensorRegistration implements RepeatableTransaction {
     }
   }
 
-  static getExtraLiteralMetadata(registration: SensorRegistration): LiteralMetadata[] {
+  static getExtraLiteralMetadata(registration: SensorRegistration): RdfTriple[] {
     if (registration.metadata.extraLiterals !== undefined) {
       return registration.metadata.extraLiterals;
     } else {

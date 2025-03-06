@@ -28,14 +28,13 @@ import {
   type Result,
   isFailure,
   ChainUtil,
-  type LiteralMetadata,
-  type NodeMetadata,
+  type RdfTriple,
   type ResultFailure
   //type ValuedResult
 } from '../util/chain-util.js';
 import {
   //MINING_REWARD,
-  //SENSHAMART_URI_REPLACE,
+  SENSHAMART_IRI_REPLACE,
   //MINE_RATE,
   INITIAL_MINE_DIFFICULTY,
   INITIAL_COUNTER,
@@ -43,16 +42,19 @@ import {
   MINING_REWARD,
   BROKER_DEAD_BUFFER_TIME_MS,
   MINUTE_MS,
-  BROKER_COMMISION
+  BROKER_COMMISION,
 } from '../util/constants.js';
 
 import { default as Persistence} from './persistence.js';
 
-import URIS from './uris.js';
+import IRIS from './iris.js';
 //import { verify } from 'crypto';
+
+const MAX_FUSEKI_MESSAGE_SIZE = 1 * 1024 * 1024
 
 //expected version of the db, if it is less than this, we need to upgrade
 const DB_EXPECTED_VERSION = '3' as const;
+const FUSEKI_EXPECTED_VERSION = '1' as const;
 
 //query to create the persistent db
 const DB_CREATE_QUERY = [
@@ -64,11 +66,9 @@ const DB_CREATE_QUERY = [
 `INSERT INTO Configs(name,value) VALUES
   ('version','${DB_EXPECTED_VERSION}');`,
 
-//`CREATE INDEX idx_literaltriples_spo ON LiteralTriplies(subject,predicate,object);`,
-
 `CREATE TABLE String(
   id INTEGER NOT NULL PRIMARY KEY,
-  min INTEGER NOT NULL,
+  minInc INTEGER NOT NULL,
   prev INTEGER NULL REFERENCES String(id));`,
 
 `CREATE TABLE Blocks(
@@ -84,21 +84,22 @@ const DB_CREATE_QUERY = [
   raw TEXT NOT NULL,
   UNIQUE(string,depth));`,
 
-`CREATE TABLE NodeTriples(
-  depth INTEGER NOT NULL,
-  subject TEXT NOT NULL,
-  predicate TEXT NOT NULL,
-  object TEXT NOT NULL,
-  value INTEGER NOT NULL);`,
-
-`CREATE TABLE LiteralTriples(
-  depth INTEGER NOT NULL,
-  subject TEXT NOT NULL,
-  predicate TEXT NOT NULL,
-  object TEXT NOT NULL);`,
-
 `CREATE UNIQUE INDEX idx_blocks_hash ON Blocks(hash);`, 
 `CREATE UNIQUE INDEX idx_blocks_string_depth ON Blocks(string,depth);`,
+
+`CREATE TABLE NodeTriples(
+  string INTEGER NOT NULL,
+  depth INTEGER NOT NULL,
+  escaped TEXT NOT NULL,
+  PRIMARY KEY (string,depth,escaped),
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+
+`CREATE TABLE LiteralTriples(
+  string INTEGER NOT NULL,
+  depth INTEGER NOT NULL,
+  escaped TEXT NOT NULL,
+  PRIMARY KEY (string,depth,escaped),
+  FOREIGN KEY (string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
 
 `CREATE TABLE Head(
   id INTEGER NOT NULL PRIMARY KEY,
@@ -147,26 +148,6 @@ const DB_CREATE_QUERY = [
   state INTEGER NOT NULL,
   PRIMARY KEY(string,depth,name),
   FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
-
-//`CREATE UNIQUE INDEX idx_Wallet_key_depth ON Wallet(key, depth);`
-
-//`CREATE TABLE Broker(
-//  name TEXT NOT NULL,
-//  depth INTEGER NOT NULL REFERENCES Blocks(depth),
-//  hash TEXT NOT NULL UNIQUE,
-//  parseable TEXT NOT NULL);`,
-
-//`CREATE INDEX idx_broker_name ON Broker(name);`
-
-//`CREATE TABLE Sensor(
-//  name TEXT NOT NULL PRIMARY KEY,
-//  parseable TEXT NOT NULL);`,
-
-//`CREATE UNIQUE INDEX idx_sensor_name ON Sensor(name);`,
-
-//`CREATE TABLE Integration(
-//  id INTEGER NOT NULL PRIMARY KEY,
-  //  parseable TEXT NOT NULL);`
 ];
 
 //Make the key into integration datas for an integration
@@ -305,303 +286,87 @@ class Integration {
     return false;
   }
 }
-//function escapeNodeMetadata(escaping: NodeMetadata): string {
-//  let returning = escaping.s.replaceAll('\\', '\\\\');
-//  returning += '\\n';
-//  returning += escaping.p.replaceAll('\\', '\\\\');
-//  returning += '\\n';
-//  returning += escaping.o;
-//  return returning;
-//}
 
-function findDelim(searchee: string, on: number) {
-  let on_slash = false;
-  for (; on < searchee.length; ++on) {
-    if (!on_slash) {
-      if (searchee[on] === '\\') {
-        on_slash = true;
-      }
-    } else {
-      if (searchee[on] === 'n') {
-        return on - 1;
-      } else {
-        on_slash = false;
-      }
-    }
-  }
-  return on;
+type ParsedLengthPrefixedString = {
+  parsed: string;
+  rest: string;
 }
 
-export function unEscapeNodeMetadata(escaping: string): NodeMetadata {
-  let prevI = 0;
-  let newI = findDelim(escaping, prevI);
-  if (newI === escaping.length) {
-    throw new Error(`Couldn't unescape triple: '${escaping}'`);
+function parseLengthPrefixedString(parsing: string): ParsedLengthPrefixedString {
+  const found = parsing.indexOf('|');
+  if (found === -1) {
+    throw new Error("Couldn't find prefixed length delimiter", { cause: parsing });
   }
-  const returning_s = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
-  prevI = newI + 2;
-  newI = findDelim(escaping, prevI);
-  if (newI === escaping.length) {
-    throw new Error(`Couldn't unescape triple: '${escaping}'`);
+  const lengthStr = parsing.substring(0, found);
+  const length = Number.parseInt(lengthStr, 10);
+  if (Number.isNaN(length)) {
+    throw new Error("Couldn't parse prefixed length", { cause: parsing });
   }
-  const returning_p = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
-  prevI = newI + 2;
-  const returning_o = escaping.substring(prevI); 
+  if (length < 0 || length >= parsing.length - found) {
+    throw new Error("Invalid prefixed length", { cause: parsing });
+  }
 
   return {
-    s: returning_s,
-    p: returning_p,
-    o: returning_o
+    parsed: parsing.substring(found + 1, found + 1 + length),
+    rest: parsing.substring(found + 1 + length)
   };
 }
 
-//function escapeLiteralMetadata(escaping: LiteralMetadata): string {
-//  let returning = escaping.s.replaceAll('\\', '\\\\');
-//  returning += '\\n';
-//  returning += escaping.p.replaceAll('\\', '\\\\');
-//  returning += '\\n';
-//  returning += escaping.o;
-//  return returning;
-//}
-
-export function unEscapeLiteralMetadata(escaping: string): LiteralMetadata {
-
-  let prevI = 0;
-  let newI = findDelim(escaping, prevI);
-  if (newI === escaping.length) {
-    throw new Error(`Couldn't unescape triple: '${escaping}'`);
-  }
-  const returning_s = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
-  prevI = newI + 2;
-  newI = findDelim(escaping, prevI);
-  if (newI === escaping.length) {
-    throw new Error(`Couldn't unescape triple: '${escaping}'`);
-  }
-  const returning_p = escaping.substring(prevI, newI).replaceAll('\\\\', '\\');
-  prevI = newI + 2;
-  const returning_o = escaping.substring(prevI);
-
-  return {
-    s: returning_s,
-    p: returning_p,
-    o: returning_o
-  };
+function createLengthPrefixedString(s1: string, s2: string) {
+  return s1.length.toString() + '|' + s2;
 }
 
-//function plusNodeRdf(updater: Updater, s: string, p: string, o: string) {
-//  updater.plus(DATA_TYPE.NODE_RDF, escapeNodeMetadata({ s: s, p: p, o: o }), 0, 1);
-//}
-//function plusLiteralRdf(updater: Updater, s: string, p: string, o: string) {
-//  updater.plus(DATA_TYPE.LITERAL_RDF, escapeLiteralMetadata({ s: s, p: p, o: o }), 0, 1);
-//}
+function escapeRdfTriple(s: string, p: string, o: string): string {
+  return createLengthPrefixedString(s, createLengthPrefixedString(p, o));
+}
 
-//generate empty datas without db id
-//function genDatas(): Datas {
-//  return {
-//    WALLET: new Map<string, Wallet>(),
-//    SENSOR: new Map<string, SensorRegistration>(),
-//    BROKER: new Map<string, BrokerRegistration>(),
-//    INTEGRATION: new Map<string, IntegrationExpanded>(),
-//    NODE_RDF: new Map<string, number>(),
-//    LITERAL_RDF: new Map<string, number>()
-//  };
-//}
+export function unEscapeNodeMetadata(escaped: string): RdfTriple {
+  const parsedSubject = parseLengthPrefixedString(escaped);
+  const parsedPredicate = parseLengthPrefixedString(parsedSubject.rest);
 
-//merge a datas into another
-//function mergeData<K, V>(from: Map<K, V>, to: Map<K, V>) {
-//  for (const [key, value] of from.entries()) {
-//    if (value === null) {
-//      to.delete(key);
-//    } else {
-//      to.set(key, value);
-//    }
-//  }
-//}
-
-//function mergeDatas(from: Datas, to: Datas) {
-//  mergeData(from.WALLET, to.WALLET);
-//  mergeData(from.SENSOR, to.SENSOR);
-//  mergeData(from.BROKER, to.BROKER);
-//  mergeData(from.INTEGRATION, to.INTEGRATION);
-//  mergeData(from.NODE_RDF, to.NODE_RDF);
-//  mergeData(from.LITERAL_RDF, to.LITERAL_RDF);
-//}
-
-//get a value from a particular type of datas
-//function getDatas<T>(type: Data_type, key: string, _default: T, datas: Datas[], parent: DatasWithDbId): T {
-//  for (const data of datas) {
-//    if (data[type].has(key)) {
-//      return makeCopy(data[type].get(key) as T);
-//    }
-//  }
-//  if (parent[type].has(key)) {
-//    return makeCopy(parent[type].get(key).base as T);
-//  }
-//  return _default;
-//}
-
-//do something for a every instance of a particular type of datas
-//function forEveryData<T>(type: Data_type, datas: Datas[], parent: DatasWithDbId, transform: (k:string, v:T)=>void) {
-//  for (const data of datas) {
-//    for (const [key, value] of data[type]) {
-//      transform(key, value as T);
-//    }
-//  }
-//  for (const [key, value] of parent[type]) {
-//    transform(key, value.base as T);
-//  }
-//}
+  return {
+    s: parsedSubject.parsed,
+    p: parsedPredicate.parsed,
+    o: parsedPredicate.rest
+  };
+}
 
 function makeBlockName(hash: string): string {
-  return URIS.OBJECT.BLOCK + '/' + hash;
+  return IRIS.OBJECT.BLOCK + '/' + hash;
 }
 
-//function makePaymentTransactionName(payment: Payment): string {
-//  return URIS.OBJECT.PAYMENT_TX + '/' + ChainUtil.hash(Payment.toHash(payment));
-//}
+function makePaymentTransactionName(payment: PaymentTx): string {
+  return IRIS.OBJECT.PAYMENT_TX + '/' + ChainUtil.hash(PaymentTx.toHash(payment));
+}
 
-//function makeIntegrationTransactionName(integration: Integration): string {
-//  return URIS.OBJECT.INTEGRATION_TX + '/' + ChainUtil.hash(Integration.toHash(integration));
-//}
+function makeIntegrationTransactionName(integrationHash: string): string {
+  return IRIS.OBJECT.INTEGRATION_TX + '/' + integrationHash;
+}
 
-//function makeCommitTransactionName(commit: Commit): string {
-//  return URIS.OBJECT.COMPENSATION_TX + '/' + ChainUtil.hash(Commit.toHash(commit));
-//}
+function makeCommitTransactionName(commitHash: string): string {
+  return IRIS.OBJECT.COMPENSATION_TX + '/' + commitHash;
+}
 
-//function makeSensorTransactionName(sensorRegistration: SensorRegistration): string {
-//  return URIS.OBJECT.SENSOR_REGISTRATION_TX + '/' + ChainUtil.hash(SensorRegistration.toHash(sensorRegistration));
-//}
+function makeSensorTransactionName(sensorHash: string): string {
+  return IRIS.OBJECT.SENSOR_REGISTRATION_TX + '/' + sensorHash;
+}
 
-//function makeBrokerTransactionName(brokerName: BrokerRegistration): string {
-//  return URIS.OBJECT.BROKER_REGISTRATION_TX + '/' + ChainUtil.hash(BrokerRegistration.toHash(brokerName));
-//}
+function makeBrokerTransactionName(brokerHash: string): string {
+  return IRIS.OBJECT.BROKER_REGISTRATION_TX + '/' + brokerHash;
+}
 
-//function makeWalletName(input: string): string {
-//  return URIS.OBJECT.WALLET + '/' + input;
-//}
+function makeWalletName(input: string): string {
+  return IRIS.OBJECT.WALLET + '/' + input;
+}
 
-//creates RDF triples to describe a block header
-//function genBlockHeaderRDF(updater: Updater, block: Block): void {
-//  const blockName = makeBlockName(block.hash);
-//  const prevBlockName = makeBlockName(block.lastHash);
+function iriReplacePrefix(testing:string, sensorName:string):string {
+  if (testing.startsWith(SENSHAMART_IRI_REPLACE)) {
+    return sensorName.concat(testing.slice(SENSHAMART_IRI_REPLACE.length));
+  } else {
+    return testing;
+  }
+}
 
-
-//  plusLiteralRdf(updater, blockName, URIS.PREDICATE.TYPE, URIS.OBJECT.BLOCK);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.LAST_BLOCK, prevBlockName);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.MINED_BY, makeWalletName(block.reward));
-//}
-
-//this object carries all state needed to update a chain
-//class Updater {
-//  parent: Blockchain; //the blockchain it's updating
-//  links: ChainLink[]; //new links it's adding
-//  prevData: Datas; //previous steps datas
-//  curData: Datas; //current steps datas
-//  startIndex: number; //where the new links are inserting
-//  on: number; //index in the chain we're currently on
-//  constructor(parent: Blockchain) {
-//    this.parent = parent;
-//    this.links = [];
-//    this.prevData = genDatas();
-//    this.curData = genDatas();
-//    this.startIndex = parent.length();
-//    this.on = this.startIndex;
-//  }
-
-//  //add a new block
-//  newBlock(block: Block): void {
-//    if (this.links.length >= MAX_BLOCKS_IN_MEMORY) {
-//      this.links.shift();
-//    }
-//    this.links.push(new ChainLink(block));
-//    this.on++;
-
-//    mergeDatas(this.curData, this.prevData);
-//    this.curData = genDatas();
-
-//    genBlockHeaderRDF(this, block);
-//  }
-
-//  //remove a block
-//  undoBlock(): void {
-//    if (this.on === 0) {
-//      console.error("Tried to undo beyond genesis");
-//      process.exit(-1);
-//    }
-
-//    const undoing = this.prevLink();
-//    this.on--;
-//    if (this.on < this.startIndex) {
-//      this.startIndex = this.on;
-//    }
-
-//    mergeDatas(this.curData, this.prevData);
-//    this.curData = genDatas();
-//    mergeDatas(undoing.undos, this.prevData);
-
-//    if (this.links.length > 0) {
-//      this.links.pop();
-//    }
-//  }
-
-//  //get a datum
-//  get<T>(type: Data_type, key: string, _default: T): T {
-//    return getDatas(type, key, _default, [this.curData, this.prevData], this.parent.data);
-//  }
-
-//  //set a datum
-//  set<T>(type: Data_type, key: string, value: T): void {
-//    const existing = getDatas(type, key, null, [this.prevData], this.parent.data);
-
-//    (this.curData[type] as Map<string,T>).set(key, value);
-
-//    if (this.links.length !== 0) {
-//      //if this value is same as before this block, remove any undo if it exists and return early
-//      if (typeof existing === "number" && typeof value === "number") {
-//        if (existing == value) {
-//          this.links[this.links.length - 1].undos[type].delete(key);
-//          return;
-//        }
-//      }
-//      //otherwise set the undo
-//      this.links[this.links.length - 1].undos[type].set(key, existing);
-//    }
-//  }
-
-//  //add a numeric value to an existing numeric value
-//  plus(type: Data_type, key: string, _default: number, value:number): void {
-//    if (value === 0) {
-//      return;
-//    }
-//    this.set(type, key, this.get(type, key, _default) + value);
-//  }
-
-//  //get the public keys of all current brokers
-//  getBrokerPublicKeys(): string[] {
-//    const keys = new Set<string>();
-
-//    forEveryData<BrokerRegistration>(DATA_TYPE.BROKER, [this.curData, this.prevData], this.parent.data, (_key, value) => {
-//      keys.add(value.input);
-//    });
-
-//    return Array.from(keys);
-//  }
-
-//  //finish updating and persist the changes if persist is true
-//  async persist(): Promise<UpdateFinish> {
-//    //persist blockchain first
-//    await this.parent.persistence.run("BEGIN;");
-//    try {
-//      await writeBlocks(this.parent, this.startIndex, this.links);
-//      return await onUpdateFinish(this);
-//    } catch (err) {
-//      await rollbackErr(this.parent, err);
-//      throw err;
-//    }
-//  }
-//}
-
-//replace the SESHAMART_URI_REPLACE prefix with the sensor name, if it is prefixed
 type StepperValue<T> = {
   cur: T;
   orig: T;
@@ -622,11 +387,11 @@ type NewBlockInfo = {
 
 type StringInfo = {
   id: number;
-  min: number;
+  minInc: number;
 };
 type PathInfo = {
   id: number;
-  max: number;
+  maxExc: number;
 };
 
 type BlockInfo = {
@@ -640,11 +405,47 @@ type BlockInfo = {
   difficulty: number;
 };
 
+async function checkNodeTripleExists(persistence: Persistence, escaped: string, path: string): Promise<boolean> {
+  type Raw = { count: number };
+  const raw = await persistence.get<Raw>(`
+    WITH path(id,max) AS (
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
+    )
+    SELECT 1
+      FROM NodeTriples
+    INNER JOIN path ON NodeTriples.string = path.id AND NodeTriples.depth < path.max
+    WHERE escaped = ?
+    LIMIT 1;`, path, escaped);
+  if (raw === undefined) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+async function checkLiteralTripleExists(persistence: Persistence, escaped: string, path: string): Promise<boolean> {
+  type Raw = { count: number };
+  const raw = await persistence.get<Raw>(`
+    WITH path(id,max) AS (
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
+    )
+    SELECT 1
+      FROM LiteralTriples
+    INNER JOIN path ON LiteralTriples.string = path.id AND LiteralTriples.depth < path.max
+    WHERE escaped = ?
+    LIMIT 1;`, path, escaped);
+  if (raw === undefined) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
 async function getWallet(persistence: Persistence, key: string, path: string): Promise<Wallet> {
   type Raw = { balance: number, counter: number };
   const raw = await persistence.get<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT balance,counter
       FROM Wallet
@@ -662,7 +463,7 @@ async function getWallets(persistence: Persistence, path: string, cb: (key: stri
   type Raw = { key: string, balance: number, counter: number };
   await persistence.each<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT DISTINCT key, MAX(depth), balance, counter
       FROM Wallet
@@ -676,7 +477,7 @@ async function getBroker(persistence: Persistence, key: string, path: string): P
   type Raw = { owner: string, endpoint: string, hash: string };
   const raw = await persistence.get<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT owner,endpoint,hash
       FROM Broker
@@ -695,7 +496,7 @@ async function getBrokers(persistence: Persistence, path: string, cb: (key: stri
   type Raw = { name: string, owner: string, endpoint: string, hash: string };
   await persistence.each<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT DISTINCT name,MAX(depth),owner,endpoint,hash
       FROM Broker
@@ -709,7 +510,7 @@ async function getSensor(persistence: Persistence, key: string, path: string): P
   type Raw = { owner: string, hash: string, broker: string, costPerKB: number, costPerMin: number };
   const raw = await persistence.get<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT owner,hash,broker,costPerKB,costPerMin
       FROM Sensor
@@ -727,7 +528,7 @@ async function getSensors(persistence: Persistence, path: string, cb: (key: stri
   type Raw = { name: string, owner: string, hash: string, broker: string, costPerKB: number, costPerMin: number };
   await persistence.each<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT DISTINCT name,MAX(depth),owner,hash,broker,costPerKB,costPerMin
       FROM Sensor
@@ -741,7 +542,7 @@ async function getIntegration(persistence: Persistence, key: string, path: strin
   type Raw = { owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
   const raw = await persistence.get<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )
     SELECT owner,timeoutTime,uncommittedCount,outputsRaw,state
       FROM Integration
@@ -759,7 +560,7 @@ async function getIntegrations(persistence: Persistence, path: string, cb: (key:
   type Raw = { name: string, owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
   await persistence.each<Raw>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )  
     SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
       FROM Integration
@@ -776,6 +577,18 @@ type RetrievedValue<T> = {
   val: T;
 };
 
+async function getPath(persistence: Persistence, topString: number): Promise<StringInfo[]> {
+  return await persistence.all<StringInfo>(`
+            WITH string_walk(id,min,prev) AS (
+              SELECT e.id,e.minInc,e.prev FROM String AS e WHERE e.id = ?
+              UNION ALL
+              SELECT c.id,c.minInc,c.prev FROM String AS c
+              INNER JOIN string_walk AS p ON c.id = p.prev
+            )
+            SELECT id,min FROM string_walk
+            ORDER BY min ASC;`, topString);
+}
+
 class Stepper {
   cache: {
     wallet: Map<string, StepperValue<Wallet> | Promise<StepperValue<Wallet>>>;
@@ -784,6 +597,13 @@ class Stepper {
     integration: Map<string, HeldStepperValue<Integration> | Promise<HeldStepperValue<Integration>>>;
     brokerPublicKeys: string[] | null;
     curBlockDifficulty: number;
+    /*We want to cache the checkXExists result, and it returns false on non-existence, and true on existence
+    Therefore
+      if the value is undefined(doesn't exist in map) we don't know, and we query
+      if the value is false, we are adding this triple
+      if the value is true, it already exists */
+    nodeTriples: Map<string, boolean | Promise<boolean>>
+    literalTriples: Map<string, boolean | Promise<boolean>>
   };
   persistence: Persistence;
   prevBlockInfo: BlockInfo;
@@ -796,7 +616,9 @@ class Stepper {
       sensor: new Map<string, HeldStepperValue<Sensor> | Promise<HeldStepperValue<Sensor>>>(),
       integration: new Map<string, HeldStepperValue<Integration> | Promise<HeldStepperValue<Integration>>>(),
       brokerPublicKeys: null,
-      curBlockDifficulty: INITIAL_MINE_DIFFICULTY
+      curBlockDifficulty: INITIAL_MINE_DIFFICULTY,
+      nodeTriples: new Map<string, boolean | Promise<boolean>>(),
+      literalTriples: new Map<string, boolean | Promise<boolean>>()
     };
     this.prevBlockInfo = {
       id: 0,
@@ -823,7 +645,7 @@ class Stepper {
   async setPrevBlock(prevBlockHash: string): Promise<Result> {
     type ReadPrevBlockInfo = {
       id: number;
-      string: number | null;
+      string: number;
       depth: number;
       timestamp: number;
       difficulty: number;
@@ -855,15 +677,7 @@ class Stepper {
             reason: "Can't find prev block"
           };
         } else {
-          const stringPath = await this.persistence.all<StringInfo>(`
-            WITH string_walk(id,min,prev) AS (
-              SELECT e.id,e.min,e.prev FROM String AS e WHERE e.id = ?
-              UNION ALL
-              SELECT c.id,c.min,c.prev FROM String AS c
-              INNER JOIN string_walk AS p ON c.id = p.prev
-            )
-            SELECT id,min FROM string_walk
-            ORDER BY min ASC;`, readPrevBlockInfo.string);
+          const stringPath = await getPath(this.persistence, readPrevBlockInfo.string);
 
           if (stringPath.length === 0) {
             //??????
@@ -877,12 +691,12 @@ class Stepper {
           for (let i = 0; i < stringPath.length - 1; ++i) {
             this.prevBlockInfo.stringPath.push({
               id: stringPath[i].id,
-              max: stringPath[i + 1].min
+              maxExc: stringPath[i + 1].minInc
             });
           }
           this.prevBlockInfo.stringPath.push({
             id: stringPath[stringPath.length - 1].id,
-            max: readPrevBlockInfo.depth + 1 //+1 so that the prevBlock is included when searching for data
+            maxExc: readPrevBlockInfo.depth + 1 //+1 so that the prevBlock is included when searching for data
             });
           this.prevBlockInfo.stringifiedStringPath = JSON.stringify(this.prevBlockInfo.stringPath);
           this.prevBlockInfo.depth = readPrevBlockInfo.depth;
@@ -935,11 +749,12 @@ class Stepper {
     }
 
     //step txs here
-    if (isFailure(res = await this.stepTxs(block.reward, block.timestamp, makeBlockName(block.hash), block.txs))) {
+    if (isFailure(res = await this.stepTxs(block.reward, block.timestamp, block.txs))) {
       await this.persistence.run("ROLLBACK;");
       res.reason = "Failed step txs: " + res.reason;
       return res;
     }
+    await this.addRdf(block.reward, makeBlockName(block.hash), block.txs);
 
     let newBlockInfo: NewBlockInfo = {
       blockId: 0,
@@ -991,6 +806,19 @@ class Stepper {
       }
     }
 
+    for (const [key, val] of this.cache.nodeTriples.entries()) {
+      if (!(val instanceof Promise) && !val) {
+        await this.persistence.run("INSERT INTO NodeTriples(string,depth,escaped) VALUES (?,?,?);",
+          newBlockInfo.stringId, this.prevBlockInfo.depth + 1, key);
+      }
+    }
+    for (const [key, val] of this.cache.literalTriples.entries()) {
+      if (!(val instanceof Promise) && !val) {
+        await this.persistence.run("INSERT INTO LiteralTriples(string,depth,escaped) VALUES (?,?,?);",
+          newBlockInfo.stringId, this.prevBlockInfo.depth + 1, key);
+      }
+    }
+
     //until this point, we haven't changed any orig values, so a failure can be reset
 
     await this.persistence.run("COMMIT;");
@@ -1006,10 +834,10 @@ class Stepper {
       this.prevBlockInfo.stringId = newBlockInfo.stringId;
       this.prevBlockInfo.stringPath.push({
         id: newBlockInfo.stringId,
-        max: this.prevBlockInfo.depth + 1 //+1 so that we are included when searching for data
+        maxExc: this.prevBlockInfo.depth + 1 //+1 so that we are included when searching for data
       });
     } else {
-      this.prevBlockInfo.stringPath[this.prevBlockInfo.stringPath.length - 1].max++; //increase max by one, to include us
+      this.prevBlockInfo.stringPath[this.prevBlockInfo.stringPath.length - 1].maxExc++; //increase max by one, to include us
     }
     this.prevBlockInfo.stringifiedStringPath = JSON.stringify(this.prevBlockInfo.stringPath);
     //set orig to the cur values in all cached values
@@ -1058,8 +886,7 @@ class Stepper {
 
     //skip check of block header (since it doesn't exist)
 
-    //use a block name of "" since it doesn't matter, we won't persist any rdf created
-    const res = await this.stepTxs(reward, timestamp, "", txs);
+    const res = await this.stepTxs(reward, timestamp, txs);
 
     if (isFailure(res)) {
       await this.persistence.run("ROLLBACK;");
@@ -1097,6 +924,36 @@ class Stepper {
       if (!(integration instanceof Promise)) {
         integration.cur.v = structuredClone(integration.orig);
       }
+    }
+  }
+
+  private async addNodeTriple(s: string, p: string, o: string): Promise<void> {
+    const escaped = escapeRdfTriple(s, p, o);
+
+    const found = this.cache.nodeTriples.get(escaped);
+
+    if (found === undefined) {
+      const got_promise = checkNodeTripleExists(this.persistence, escaped, this.prevBlockInfo.stringifiedStringPath);
+      this.cache.nodeTriples.set(escaped, got_promise);
+      await got_promise;
+      return;
+    } else {
+      return;
+    }
+  }
+
+  private async addLiteralTriple(s: string, p: string, o: string): Promise<void> {
+    const escaped = escapeRdfTriple(s, p, o);
+
+    const found = this.cache.literalTriples.get(escaped);
+
+    if (found === undefined) {
+      const got_promise = checkLiteralTripleExists(this.persistence, escaped, this.prevBlockInfo.stringifiedStringPath);
+      this.cache.literalTriples.set(escaped, got_promise);
+      await got_promise;
+      return;
+    } else {
+      return;
     }
   }
 
@@ -1217,7 +1074,7 @@ class Stepper {
     return this.cache.brokerPublicKeys;
   }
 
-  private async stepPayment(tx: PaymentTx, reward: string, blockName: string): Promise<Result> {
+  private async stepPayment(tx: PaymentTx, reward: string): Promise<Result> {
     const fail: ResultFailure = { result: false, reason: "" };
     if (!PaymentTx.verify(tx, fail)) {
       return {
@@ -1262,7 +1119,6 @@ class Stepper {
     const rewardWallet = await this.getWallet(reward);
     rewardWallet.balance += tx.rewardAmount;
 
-    blockName;
     //genPaymentRDF(stepper, blockName, tx);
 
     return {
@@ -1520,14 +1376,11 @@ class Stepper {
     };
   }
 
-  private async payoutIntegration(integrationKey: string, integration: Integration): Promise<void> {
-    console.log(`Paying out integration: ${integrationKey}`);
-
+  private async payoutIntegration(integration: Integration): Promise<void> {
     const integrateeWallet = await this.getWallet(integration.owner);
 
     for (let i = 0; i < integration.outputs.length; i++) {
       const output = integration.outputs[i];
-      console.log(`Output ${i}, amount: ${output.amount}`);
 
       const compensationRatio = output.compensationTotal / Object.values(output.witnesses).length;
 
@@ -1540,18 +1393,14 @@ class Stepper {
         const paying = BROKER_COMMISION * amount_left
         brokerWallet.balance += paying;
         amount_left -= paying;
-        console.log(`Broker '${output.brokerOwner} paid: ${paying}`);
       }
 
       const sensorWallet = await this.getWallet(output.sensorOwner);
       const paying = compensationRatio * amount_left;
       sensorWallet.balance += paying;
       amount_left -= paying;
-      console.log(`Sensor '${output.sensorOwner}' paid: ${paying}`);
 
-      
       integrateeWallet.balance += amount_left;
-      console.log(`Integratee '${integration.owner}' compensated: ${amount_left}`);
     }
   }
 
@@ -1603,7 +1452,7 @@ class Stepper {
     }
 
     if (foundIntegration.v.uncommittedCount === 0) {
-      await this.payoutIntegration(integrationKey, foundIntegration.v);
+      await this.payoutIntegration(foundIntegration.v);
       foundIntegration.v.state = INTEGRATION_STATE.COMMITTED;
     }
 
@@ -1628,7 +1477,7 @@ class Stepper {
     //get all running integrations with timeoutTime >= timestamp
     await this.persistence.each<IntegrationDbRes>(`
     WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.max') FROM json_each(?)
+      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )  
     SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
       FROM Integration
@@ -1656,13 +1505,13 @@ class Stepper {
       //check state again in case some weird stuff with cache
       if (found.cur.v !== null && found.cur.v.state === INTEGRATION_STATE.RUNNING) {
         console.log(`integration ${row.name} timed out`);
-        this.payoutIntegration(row.name, found.cur.v);
+        this.payoutIntegration(found.cur.v);
         found.cur.v.state = INTEGRATION_STATE.TIMED_OUT;
       }
     }, this.prevBlockInfo.stringifiedStringPath, INTEGRATION_STATE.RUNNING, timestamp);
   }
 
-  private async stepTxs(reward: string, timestamp: number, blockName: string, txs: BlockTxs): Promise<Result> {
+  private async stepTxs(reward: string, timestamp: number, txs: BlockTxs): Promise<Result> {
     //do reward first
     (await this.getWallet(reward)).balance += MINING_REWARD;
 
@@ -1689,7 +1538,7 @@ class Stepper {
     }
 
     for (const tx of BlockTxs.getSensorRegistrations(txs)) {
-      const res = await this.stepSensorTx(tx, reward/*, blockName*/);
+      const res = await this.stepSensorTx(tx, reward);
       if (isFailure(res)) {
         return {
           result: false,
@@ -1699,7 +1548,7 @@ class Stepper {
     }
 
     for (const tx of BlockTxs.getBrokerRegistrations(txs)) {
-      const res = await this.stepBrokerRegistration(tx, reward/*, blockName*/);
+      const res = await this.stepBrokerRegistration(tx, reward);
       if (isFailure(res)) {
         return {
           result: false,
@@ -1709,7 +1558,7 @@ class Stepper {
     }
 
     for (const tx of BlockTxs.getPayments(txs)) {
-      const res = await this.stepPayment(tx, reward, blockName);
+      const res = await this.stepPayment(tx, reward);
       if (isFailure(res)) {
         return {
           result: false,
@@ -1722,10 +1571,140 @@ class Stepper {
       result: true
     };
   }
-  
+
+  private async addCommitRdf(blockName: string, tx: CommitTx): Promise<void> {
+    const transactionName = makeCommitTransactionName(ChainUtil.hash(CommitTx.toHash(tx)));
+
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_COMMIT, transactionName);
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.COMMIT_TX);
+  }
+
+  private async addIntegrationRdf(blockName: string, tx: IntegrationTx): Promise<void> {
+    const transactionName = makeIntegrationTransactionName(ChainUtil.hash(IntegrationTx.toHash(tx)));
+
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_INTEGRATION, transactionName);
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_HASH, ChainUtil.hash(IntegrationTx.toHash(tx)));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.INTEGRATION_TX);
+  }
+
+  private async addSensorRdf(blockName: string, tx: SensorTx): Promise<void> {
+    const transactionName = makeSensorTransactionName(ChainUtil.hash(SensorTx.toHash(tx)));
+
+    for (const triple of SensorTx.getExtraNodeMetadata(tx)) {
+      await this.addNodeTriple(iriReplacePrefix(triple.s, transactionName), iriReplacePrefix(triple.p, transactionName), iriReplacePrefix(triple.o, transactionName));
+    }
+    for (const triple of SensorTx.getExtraLiteralMetadata(tx)) {
+      await this.addLiteralTriple(iriReplacePrefix(triple.s, transactionName), iriReplacePrefix(triple.p, transactionName), String(triple.o));
+    }
+
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION, transactionName);
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_HASH, ChainUtil.hash(SensorTx.toHash(tx)));
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.SENSOR_REGISTRATION_TX);
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_COUNTER, String(tx.counter));
+    await this.addNodeTriple(transactionName, IRIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.DEFINES, SensorTx.getSensorName(tx));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.COSTS_PER_MINUTE, String(SensorTx.getCostPerMinute(tx)));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.COSTS_PER_KB, String(SensorTx.getCostPerKB(tx)));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.USES_BROKER, SensorTx.getIntegrationBroker(tx));
+
+    //since we are adding the rdf, a sensor registration tx was stepped, and so the sensor should be in cache
+    const found = this.cache.sensor.get(SensorTx.getSensorName(tx));
+
+    if (found === undefined || found instanceof Promise) {
+      throw new Error("Internal state is inconsistent, see comment above in source");
+    }
+
+    if (found.orig !== null) {
+      const prevTxName = makeSensorTransactionName(found.orig.hash);
+      await this.addNodeTriple(transactionName, IRIS.PREDICATE.SUPERCEDES, prevTxName);
+    }
+  }
+
+  private async addBrokerRdf(blockName: string, tx: BrokerTx): Promise<void> {
+    const transactionName = makeBrokerTransactionName(ChainUtil.hash(BrokerTx.toHash(tx)));
+
+    for (const triple of BrokerTx.getExtraNodeMetadata(tx)) {
+      await this.addNodeTriple(iriReplacePrefix(triple.s, transactionName), iriReplacePrefix(triple.p, transactionName), iriReplacePrefix(triple.o, transactionName));
+    }
+    for (const triple of BrokerTx.getExtraLiteralMetadata(tx)) {
+      await this.addLiteralTriple(iriReplacePrefix(triple.s, transactionName), iriReplacePrefix(triple.p, transactionName), String(triple.o));
+    }
+
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_BROKER_REGISTRATION, transactionName);
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_HASH, ChainUtil.hash(BrokerTx.toHash(tx)));
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.BROKER_REGISTRATION_TX);
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_COUNTER, String(tx.counter));
+    await this.addNodeTriple(transactionName, IRIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.DEFINES, BrokerTx.getBrokerName(tx));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.HAS_ENDPOINT, BrokerTx.getEndpoint(tx));
+
+    //since we are adding the rdf, a broker registration tx was stepped, and so the broker should be in cache
+    const found = this.cache.broker.get(BrokerTx.getBrokerName(tx));
+
+    if (found === undefined || found instanceof Promise) {
+      throw new Error("Internal state is inconsistent, see comment above in source");
+    }
+
+    if (found.orig !== null) {
+      const prevTxName = makeBrokerTransactionName(found.orig.hash);
+      await this.addNodeTriple(transactionName, IRIS.PREDICATE.SUPERCEDES, prevTxName);
+    }
+  }
+
+  private async addPaymentRdf(blockName: string, tx: PaymentTx): Promise<void> {
+    const transactionName = makePaymentTransactionName(tx);
+
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.CONTAINS_PAYMENT, transactionName);
+
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.REWARDED, String(tx.rewardAmount));
+    await this.addLiteralTriple(transactionName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.PAYMENT_TX);
+  }
+
+  private async addRdf(reward: string, blockName: string, txs: BlockTxs): Promise<void> {
+    const prevBlockName = makeBlockName(this.prevBlockInfo.hash);
+
+    await this.addLiteralTriple(blockName, IRIS.PREDICATE.TYPE, IRIS.OBJECT.BLOCK);
+    await this.addNodeTriple(blockName, IRIS.PREDICATE.LAST_BLOCK, prevBlockName);
+    await this.addLiteralTriple(blockName, IRIS.PREDICATE.MINED_BY, makeWalletName(reward));
+
+    for (const tx of BlockTxs.getCommits(txs)) {
+      await this.addCommitRdf(blockName, tx);
+    }
+
+    for (const tx of BlockTxs.getIntegrations(txs)) {
+      await this.addIntegrationRdf(blockName, tx);
+    }
+
+    for (const tx of BlockTxs.getSensorRegistrations(txs)) {
+      await this.addSensorRdf(blockName, tx);
+    }
+
+    for (const tx of BlockTxs.getBrokerRegistrations(txs)) {
+      await this.addBrokerRdf(blockName, tx);
+    }
+
+    for (const tx of BlockTxs.getPayments(txs)) {
+      await this.addPaymentRdf(blockName, tx);
+    }
+  }
+
   private async createHeadAndString(block: Block): Promise<NewBlockInfo> {
     //create string and head for our new block
-    const ourNewStringId = (await this.persistence.get<IdDbRes>("INSERT INTO String(prev, min) VALUES (?,?) RETURNING id;", this.prevBlockInfo.stringId, this.prevBlockInfo.depth + 1) as IdDbRes).id;
+    const ourNewStringId = (await this.persistence.get<IdDbRes>("INSERT INTO String(prev, minInc) VALUES (?,?) RETURNING id;", this.prevBlockInfo.stringId, this.prevBlockInfo.depth + 1) as IdDbRes).id;
     const newBlockId = await this.insertBlock(block, this.prevBlockInfo.depth + 1, ourNewStringId);
     const headId = (await this.persistence.get<IdDbRes>("INSERT INTO Head(block,lastSeen) VALUES (?,unixepoch()) RETURNING id;", newBlockId) as IdDbRes).id;
 
@@ -1744,331 +1723,11 @@ class Stepper {
   }
 }
 
-//function uriReplacePrefix(testing:string, sensorName:string):string {
-//  if (testing.startsWith(SENSHAMART_URI_REPLACE)) {
-//    return sensorName.concat(testing.slice(SENSHAMART_URI_REPLACE.length));
-//  } else {
-//    return testing;
-//  }
-//}
-
-////the following functions either generate the RDF for a particular tx type, or validate and apply the tx to the updater
-
-////function genPaymentRDF(stepper: Stepper, blockName: string, tx: Payment): void{
-
-////  const transactionName = makePaymentTransactionName(tx);
-
-////  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
-////  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_PAYMENT, transactionName);
-
-////  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-////  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.PAYMENT_TX);
-////}
-
-//function genIntegrationRDF(updater: Updater, blockName: string, tx: Integration): void {
-
-//  const transactionName = makeIntegrationTransactionName(tx);
-
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_INTEGRATION, transactionName);
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(Integration.toHash(tx)));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.INTEGRATION_TX);
-//}
-
-//function genCommitRDF(updater: Updater, blockName: string, tx: Commit): void {
-//  const transactionName = makeCommitTransactionName(tx);
-
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_COMMIT, transactionName);
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.COMMIT_TX);
-//}
-
-//function genSensorRegistrationRDF(updater: Updater, blockName: string, tx: SensorRegistration, prevSensor: SensorRegistration | null): void {
-//  const transactionName = makeSensorTransactionName(tx);
-
-//  for (const triple of SensorRegistration.getExtraNodeMetadata(tx)) {
-//    plusNodeRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), uriReplacePrefix(triple.o, transactionName));
-//  }
-//  for (const triple of SensorRegistration.getExtraLiteralMetadata(tx)) {
-//    plusLiteralRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), String(triple.o));
-//  }
-
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_SENSOR_REGISTRATION, transactionName);
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(SensorRegistration.toHash(tx)));
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.SENSOR_REGISTRATION_TX);
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
-//  plusNodeRdf(updater, transactionName, URIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.DEFINES, SensorRegistration.getSensorName(tx));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.COSTS_PER_MINUTE, String(SensorRegistration.getCostPerMinute(tx)));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.COSTS_PER_KB, String(SensorRegistration.getCostPerKB(tx)));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.USES_BROKER, SensorRegistration.getIntegrationBroker(tx));
-
-//  if (prevSensor !== null) {
-//    const prevTxName = makeSensorTransactionName(prevSensor);
-//    plusNodeRdf(updater, transactionName, URIS.PREDICATE.SUPERCEDES, prevTxName);
-//  }
-//}
-
-//function genBrokerRegistrationRDF(updater: Updater, blockName: string, tx: BrokerRegistration, prevBroker: BrokerRegistration | null): void {
-//  const transactionName = makeBrokerTransactionName(tx);
-
-//  for (const triple of BrokerRegistration.getExtraNodeMetadata(tx)) {
-//    plusNodeRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), uriReplacePrefix(triple.o, transactionName));
-//  }
-//  for (const triple of BrokerRegistration.getExtraLiteralMetadata(tx)) {
-//    plusLiteralRdf(updater, uriReplacePrefix(triple.s, transactionName), uriReplacePrefix(triple.p, transactionName), String(triple.o));
-//  }
-
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_TRANSACTION, transactionName);
-//  plusNodeRdf(updater, blockName, URIS.PREDICATE.CONTAINS_BROKER_REGISTRATION, transactionName);
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.REWARDED, String(tx.rewardAmount));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_HASH, ChainUtil.hash(BrokerRegistration.toHash(tx)));
-
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.TYPE, URIS.OBJECT.BROKER_REGISTRATION_TX);
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_COUNTER, String(tx.counter));
-//  plusNodeRdf(updater, transactionName, URIS.PREDICATE.IS_OWNED_BY, makeWalletName(tx.input));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.DEFINES, BrokerRegistration.getBrokerName(tx));
-//  plusLiteralRdf(updater, transactionName, URIS.PREDICATE.HAS_ENDPOINT, BrokerRegistration.getEndpoint(tx));
-
-//  if (prevBroker !== null) {
-//    const prevTxName = makeBrokerTransactionName(prevBroker);
-//    plusNodeRdf(updater, transactionName, URIS.PREDICATE.SUPERCEDES, prevTxName);
-//  }
-//}
-
-//function checkIntegrationsForTimeout(updater: Updater, timestamp: number) {
-//  const checked = new Set<string>();
-
-//  //check curdata
-//  for (const [key, integration] of updater.curData.INTEGRATION) {
-//    if (integration.state !== INTEGRATION_STATE.RUNNING) {
-//      continue;
-//    }
-//    let all_timedout: boolean = true;
-//    for (let i = 0; i < integration.outputs.length; ++i) {
-//      const output = integration.outputs[i];
-//      const extra = integration.outputsExtra[i];
-
-//      //we find the time this would expire, add broker_dead_buffer_time to it, if it has passed, we've timedout
-//      //time this would expire:
-//      //costNow = (now - startTime) * (costPerMin / minute_ms)
-//      //now = costNow / (costPerMin / minute_ms) + startTime
-//      const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-//      //console.log(`curData checking for timeout: ${key} ${i}: ${delta}`);
-//      if (0 < delta) {
-//        all_timedout = false;
-//        break;
-//      }
-//    }
-
-//    if (all_timedout) {
-//      console.log(`integration ${key} timed out`);
-//      payoutIntegration(updater, integration);
-//      integration.state = INTEGRATION_STATE.TIMED_OUT;
-//      updater.set<IntegrationExpanded>(DATA_TYPE.INTEGRATION, key, integration);
-//    }
-//    checked.add(key);
-//  }
-
-//  //check prevdata
-//  for (const [key, integration] of updater.prevData.INTEGRATION) {
-//    if (checked.has(key) || integration.state !== INTEGRATION_STATE.RUNNING) {
-//      continue;
-//    }
-//    let all_timedout: boolean = true;
-//    for (let i = 0; i < integration.outputs.length; ++i) {
-//      const output = integration.outputs[i];
-//      const extra = integration.outputsExtra[i];
-
-//      //we find the time this would expire, add broker_dead_buffer_time to it, if it has passed, we've timedout
-//      //time this would expire:
-//      //costNow = (now - startTime) * (costPerMin / minute_ms)
-//      //now = costNow / (costPerMin / minute_ms) + startTime
-//      const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-//      //console.log(`prevData checking for timeout: ${key} ${i}: ${delta}`);
-//      if (0 < delta) {
-//        all_timedout = false;
-//        break;
-//      }
-//    }
-
-//    if (all_timedout) {
-//      console.log(`integration ${key} timed out`);
-//      payoutIntegration(updater, integration);
-//      integration.state = INTEGRATION_STATE.TIMED_OUT;
-//      updater.set<IntegrationExpanded>(DATA_TYPE.INTEGRATION, key, integration);
-//    }
-//    checked.add(key);
-//  }
-
-//  //check blockchain data
-//  for (const [key, integration] of updater.parent.data.INTEGRATION) {
-//    if (checked.has(key) || integration.base.state !== INTEGRATION_STATE.RUNNING) {
-//      continue;
-//    }
-//    let all_timedout: boolean = true;
-//    for (let i = 0; i < integration.base.outputs.length; ++i) {
-//      const output = integration.base.outputs[i];
-//      const extra = integration.base.outputsExtra[i];
-
-//      //we find the time this would expire, add broker_dead_buffer_time to it, if it has passed, we've timedout
-//      //time this would expire:
-//      //costNow = (now - startTime) * (costPerMin / minute_ms)
-//      //now = costNow / (costPerMin / minute_ms) + startTime
-//      const delta = (output.amount / (extra.sensorCostPerMin / MINUTE_MS) + integration.base.startTime) + BROKER_DEAD_BUFFER_TIME_MS - timestamp;
-//      //console.log(`parent checking for timeout: ${key} ${i}: ${delta}`);
-//      if (0 < delta) {
-//        all_timedout = false;
-//        break;
-//      }
-//    }
-
-//    if (all_timedout) {
-//      console.log(`integration ${key} timed out`);
-//      payoutIntegration(updater, integration.base);
-//      integration.base.state = INTEGRATION_STATE.TIMED_OUT;
-//      updater.set<IntegrationExpanded>(DATA_TYPE.INTEGRATION, key, integration.base);
-//    }
-//  }
-//}
-
-//verify all txs
-//async function step(stepper: Stepper, reward: string, timestamp: number, payments: Payment[], sensorRegistrations: SensorRegistration[], brokerRegistrations: BrokerRegistration[], integrations: Integration[], commits: Commit[], blockName: string): Result {
-//  const rewardWallet = await stepper.getWallet(reward);
-//  rewardWallet.balance += MINING_REWARD;
-
-//  for (const payment of payments) {
-//    const res = await stepPayment(stepper, reward, payment, blockName);
-//    if (!res.result) {
-//      return res;
-//    }
-//  }
-
-  //for (const integration of integrations) {
-  //  const res = stepIntegration(updater, reward, timestamp, integration, blockName);
-  //  if (!res.result) {
-  //    return res;
-  //  }
-  //}
-
-  //for (const commit of commits) {
-  //  const res = stepCommit(updater, commit, blockName);
-  //  if (!res.result) {
-  //    return res;
-  //  }
-  //}
-
-  //for (const brokerRegistration of brokerRegistrations) {
-  //  const res = stepBrokerRegistration(updater, reward, brokerRegistration, blockName);
-  //  if (!res.result) {
-  //    return res;
-  //  }
-  //}
-
-  //for (const sensorRegistration of sensorRegistrations) {
-  //  const res = stepSensorRegistration(updater, reward, sensorRegistration, blockName);
-  //  if (!res.result) {
-  //    return res;
-  //  }
-  //}
-
-  //checkIntegrationsForTimeout(updater, timestamp);
-
-//  return {
-//    result: true,
-//  };
-//}
-
-//verify the hash of a block, including the previous hash
-//function verifyBlockHash(prevBlock: Block, block: Block): Result {
-//  if (block.lastHash !== prevBlock.hash) {
-//    return {
-//      result: false,
-//      reason: `last hash '${block.lastHash}' didn't match our last hash '${prevBlock.hash}'`
-//    };
-//  }
-//  //TODO how to check if new block's timestamp is believable
-//  if (block.difficulty !== Block.adjustDifficulty(prevBlock, block.timestamp)) {
-//    return {
-//      result: false,
-//      reason: "difficulty is incorrect"
-//    };
-//  }
-//  if (!Block.checkHash(block)) {
-//    return {
-//      result: false,
-//      reason: "hash is invalid failed"
-//    };
-//  }
-
-//  return {
-//    result: true
-//  };
-//}
-
-////verify all blocks, in blocks
-////function verifyBlocks(updater: Updater, blocks: Block[]) : Result {
-////  if (blocks.length === 0) {
-////    return {
-////      result: false,
-////      reason: "zero length"
-////    };
-////  }
-
-////  for (let i = 0; i < blocks.length; i++) {
-////    const verifyResult = verifyBlock(updater, blocks[i]);
-
-////    if (verifyResult.result === false) {
-////      return {
-////        result: false,
-////        reason: `Chain is invalid at block ${i}: ${verifyResult.reason}`
-////      };
-////    }
-////  }
-
-////  return {
-////    result: true
-////  };
-////}
-
 ////called when the blockchain changes, calls all listeners
 //function onChange(blockchain: Blockchain, newBlocks: Block[], changes: UpdaterChanges, difference: number): void {
 //  for (const listener of blockchain.listeners) {
 //    listener(newBlocks, changes, difference);
 //  }
-//}
-
-////read a block from persistence
-//async function readBlockByDepth(chain: Blockchain, i: number): Promise<Block> {
-//  const row = await chain.persistence.get<ReadBlock_result>("SELECT hash,timestamp,lastHash,reward,nonce,difficulty FROM Blocks WHERE id = ?;", i);
-
-//  if (row === undefined) {
-//    throw new Error(`Couldn't read block at depth: ${i}, no row found`);
-//  }
-
-//  //NYI read txs for block
-
-//  return new Block(row.timestamp, row.lastHash, row.hash, row.reward, {}, row.nonce, row.difficulty);
-//}
-
-//async function readBlockByHash(chain: Blockchain, hash: string): Promise<Block> {
-//  const row = await chain.persistence.get<ReadBlock_result>("SELECT hash,timestamp,lastHash,reward,nonce,difficulty FROM Blocks WHERE hash = ?;", hash);
-
-//  if (row === undefined) {
-//    throw new Error(`Couldn't read block with hash: ${hash}, no row found`);
-//  }
-
-//  //NYI read txs for block
-
-//  return new Block(row.timestamp, row.lastHash, row.hash, row.reward, {}, row.nonce, row.difficulty);
 //}
 
 //async function getRepresentativeHashesImpl(blockchain: Blockchain): Promise<string[]> {
@@ -2092,16 +1751,215 @@ class Stepper {
 //  return await blockchain.persistence.all<string>("SELECT hash FROM Chains WHERE chain = 0 AND depth IN ?", searchingFor);
 //}
 
-//type ReadBlock_result = {
-//  hash: string;
-//  timestamp: number;
-//  lastHash: string;
-//  reward: string;
-//  nonce: number;
-//  difficulty: number;
-//};
-
 //type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number) => void;
+
+type FusekiQueryRes = {
+  head: string[];
+  results: {
+    [index: string]: {
+      type: string;
+      value: string;
+    };
+  }[];
+};
+
+const FUSEKI_QUERY_TYPE = {
+  QUERY: "query",
+  UPDATE: "update"
+} as const;
+
+export type FusekiQueryType = typeof FUSEKI_QUERY_TYPE[keyof typeof FUSEKI_QUERY_TYPE];
+
+async function fuseki_query(location: string, type: FusekiQueryType, query: string): Promise<FusekiQueryRes> {
+  type FusekiResRaw = {
+    head: {
+      vars: string[];
+    };
+    results: {
+      bindings: {
+        [index: string]: {
+          type: string;
+          value: string;
+        };
+      }[];
+    }
+  };
+
+  const fetch_res = await fetch(location + '/' + type, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+    },
+    body: type + '=' + encodeURIComponent(query)
+  });
+
+  if (400 <= fetch_res.status && fetch_res.status <= 500) {
+    const err_string = await fetch_res.text();
+    throw new Error(`Query failed with status ${fetch_res.status}: ${err_string}`, { cause: fetch_res });
+  }
+
+  const res = (await fetch_res.json()) as FusekiResRaw;
+  return {
+    head: res.head.vars,
+    results: res.results.bindings
+  };
+}
+
+async function updateFuseki(location: string, persistence: Persistence, toHash: string) {
+  const curHash = (await fuseki_query(location, FUSEKI_QUERY_TYPE.QUERY, `SELECT ?at WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.CUR_HEAD_HASH}> ?at }.`)).results[0]["at"].value;
+  //write WAL tx triple
+  await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE,
+    `INSERT DATA { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.NEXT_HEAD_HASH}> "${toHash}" }`);
+
+  //find paths of cur and to so we can walk them to find all the blocks we need
+
+  type Pos = { string: number, depth: number };
+
+  const curPos = await persistence.get<Pos>(`SELECT string,depth FROM Blocks WHERE hash = ?;`, curHash);
+  if (curPos === undefined) {
+    throw new Error(`Cannot find block with hash '${curHash}'`);
+  }
+  const curPath = await getPath(persistence, curPos.string);
+  const toPos = await persistence.get<Pos>(`SELECT string,depth FROM Blocks WHERE hash = ?;`, toHash);
+  if (toPos === undefined) {
+    throw new Error(`Cannot find block with hash '${toPos}'`);
+  }
+  const toPath = await getPath(persistence, toPos.string);
+
+  const toPathInfo: PathInfo[] = [];
+
+  //string id->index in toPathInfo
+  const toStrings = new Map<number,number>();
+
+  /*
+    similar to setPrevBlock, the path is much more useful as a list of [string id, max depth] than [string id, min depth] so we convert it here
+    by using the min of the string after to become the max of the cur. The last max is the depth at which we start
+  */
+  for (let i = 0; i < toPath.length - 1; ++i) {
+    toStrings.set(toPath[i].id, i);
+    toPathInfo.push({
+      id: toPath[i].id,
+      maxExc: toPath[i + 1].minInc
+    });
+
+  }
+
+  toStrings.set(toPath[toPath.length - 1].id, toPath.length - 1);
+  toPathInfo.push({
+    id: toPath[toPath.length - 1].id,
+    maxExc: toPos.depth + 1 //as max is excluded, we +1 so that the block at cur is included
+  });
+
+  //the current depth we're working at
+  let depthAt = curPos.depth;
+  //used to store where the intersection happens for after the deleting phase
+  let stringIntersection: number | undefined = undefined; 
+
+  type GetTriple = { escaped: string };
+
+  let triples: GetTriple[] = [];
+
+  //setting up helping lambdas and data for the actual updating of fuseki
+  let queryHeader = "DELETE DATA {";
+  let query = queryHeader;
+
+  const addNodeTriple = async (v: string) => {
+    const unescaped = unEscapeNodeMetadata(v);
+
+    query += `<${unescaped.s}> <${unescaped.p}> <${unescaped.s}>.`;
+
+    if (query.length >= MAX_FUSEKI_MESSAGE_SIZE) {
+      query += '};';
+      await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE, query);
+      query = queryHeader;
+    }
+  };
+  const addLiteralTriple = async (v: string) => {
+    const unescaped = unEscapeNodeMetadata(v);
+
+    query += `<${unescaped.s}> <${unescaped.p}> "${unescaped.s}>"`;
+
+    if (query.length >= MAX_FUSEKI_MESSAGE_SIZE) {
+      query += '};';
+      await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE, query);
+      query = queryHeader;
+    }
+  };
+
+  //we walk down the cur path, waiting until we hit a string that is in the to path
+  for (const curString of curPath) {
+    //is this string in the to path?
+    stringIntersection = toStrings.get(curString.id);
+    if (stringIntersection !== undefined) {
+      //because the to path might come off the intersecting string before the cur path intersects it, we need to check to see if we still need to delete anything
+      if (toPathInfo[stringIntersection].maxExc <= depthAt) {
+        //we still have a bit to go
+        triples = await persistence.all<GetTriple>(`SELECT escaped FROM NodeTriples WHERE string = ? AND depth <= ? AND depth >= ?`, curString.id, depthAt, toPathInfo[stringIntersection].maxExc);
+        for (const triple of triples) {
+          await addNodeTriple(triple.escaped);
+        }
+        triples = await persistence.all<GetTriple>(`SELECT escaped FROM LiteralTriples WHERE string = ? AND depth <= ? AND depth >= ?`, curString.id, depthAt, toPathInfo[stringIntersection].maxExc);
+        for (const triple of triples) {
+          await addLiteralTriple(triple.escaped);
+        }
+      }
+      break;
+    } else {
+      //remove all nodes and triples on this string
+      triples = await persistence.all<GetTriple>(`SELECT escaped FROM NodeTriples WHERE string = ? AND depth <= ?;`, curString.id, depthAt);
+      for (const triple of triples) {
+        await addNodeTriple(triple.escaped);
+      }
+      triples = await persistence.all<GetTriple>(`SELECT escaped FROM LiteralTriples WHERE string = ? AND depth <= ?;`, curString.id, depthAt);
+      for (const triple of triples) {
+        await addLiteralTriple(triple.escaped);
+      }
+      //set our new depth
+      depthAt = curString.minInc;
+    }
+  }
+
+  if (stringIntersection === undefined) {
+    //if we never intersected before, we must intersect on the genesis block
+    stringIntersection = 0;
+  }
+
+  //if we have left over data to delete, do that
+  if (query !== queryHeader) {
+    query += '};';
+    await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE, query);
+  }
+  //we're now inserting, set up our helpers for that
+  queryHeader = "INSERT DATA {";
+  query = queryHeader;
+
+  //now we walk up the to path, inserting all nodes and triples on that path
+  for (; stringIntersection < toPathInfo.length; ++stringIntersection) {
+    triples = await persistence.all<GetTriple>(`SELECT escaped FROM NodeTriples WHERE string = ? AND depth >= ? AND depth < ?;`, toPathInfo[stringIntersection].id, depthAt, toPathInfo[stringIntersection].maxExc);
+    for (const triple of triples) {
+      await addNodeTriple(triple.escaped);
+    }
+    triples = await persistence.all<GetTriple>(`SELECT escaped FROM LiteralTriples WHERE string = ? AND depth >= ? AND depth < ?;`, toPathInfo[stringIntersection].id, depthAt, toPathInfo[stringIntersection].maxExc);
+    for (const triple of triples) {
+      await addLiteralTriple(triple.escaped);
+    }
+    //update our depth
+    depthAt = toPathInfo[stringIntersection].maxExc;
+  }
+
+  //if we have left over data to insert, do that
+  if (query !== queryHeader) {
+    query += '};';
+    await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE, query);
+  }
+
+  //remove the WAL tx triple
+  await fuseki_query(location, FUSEKI_QUERY_TYPE.UPDATE, `DELETE DATA { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.NEXT_HEAD_HASH}> "${toHash}" }`);
+
+  //and we're done
+}
+
+//`SELECT ?version WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> ?version }.`
 
 type DbState = {
   persistence: Persistence; //our wrapper to the sqlite3 based persitence
@@ -2154,12 +2012,61 @@ class Blockchain {
     }
 
     type ChainHeadRes = { depth: number; hash: string };
-    const blockCountRes = await persistence.get<ChainHeadRes>(`SELECT depth,hash AS max FROM Blocks ORDER BY depth DESC, timestamp ASC;`);
+    let blockCountRes = await persistence.get<ChainHeadRes>(`SELECT depth,hash AS max FROM Blocks ORDER BY depth DESC, timestamp ASC;`);
 
     if (blockCountRes !== undefined) {
       await me.state.currentChain.setPrevBlock(blockCountRes.hash);
+    } else {
+      blockCountRes = {
+        depth: 1,
+        hash: Block.genesis().hash
+      };
+    }
+
+    if (fuseki_location !== null) {
+      const version_res = await fuseki_query(fuseki_location, FUSEKI_QUERY_TYPE.QUERY,
+        `SELECT ?version ?at WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> ?version. <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.CUR_HEAD_HASH}> ?at }.`);
+      
+      if (version_res.head.length !== 2) {
+        throw new Error("Expected only 2 'columns' from fuseki version query");
+      }
+
+      if (version_res.results.length === 0) {
+        //empty DB
+        await fuseki_query(fuseki_location, FUSEKI_QUERY_TYPE.UPDATE,
+          `INSERT DATA { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> "${FUSEKI_EXPECTED_VERSION}". <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.CUR_HEAD_HASH}> "${Block.blockHash(Block.genesis())}" }.`);
+      } else if (version_res.results.length > 1) {
+        //?????
+        throw new Error("Fuseki db is inconsistent, more than 1 version result");
+      } else {
+        const res_version = version_res.results[0]["version"].value;
+        if (res_version !== FUSEKI_EXPECTED_VERSION) {
+          throw new Error(`Unexpected fuseki db version. Expected ${FUSEKI_EXPECTED_VERSION}, found ${res_version}`);
+        }
+      }
+
+      //we first need to finish any old transaction for fuseki consistency before we check if fuseki is representing what we have in the db
+
+      const get_next_block_at_hash_res = await fuseki_query(fuseki_location, FUSEKI_QUERY_TYPE.QUERY,
+        `SELECT ?to WHERE {<${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.NEXT_HEAD_HASH}> ?to }.`);
+
+      if (get_next_block_at_hash_res.results.length > 0) {
+        //we're in the middle of a WAL, we need to complete this
+        await updateFuseki(fuseki_location, persistence, get_next_block_at_hash_res.results[0]["to"].value);
+        version_res.results[0]["at"] = get_next_block_at_hash_res.results[0]["to"];
+      }
+
+      //now fuseki is internally consistent, we can check to see if fuseki matches sqlite
+
+      if (version_res.results[0]["at"].value !== blockCountRes.hash) {
+        await updateFuseki(fuseki_location, persistence, blockCountRes.hash);
+      }
     }
     return me;
+  }
+
+  getHeadHash(): string {
+    return this.state.currentChain.getPrevBlockHash();
   }
 
   async getWallet(input: string): Promise<RetrievedValue<Wallet>> {
@@ -2268,6 +2175,13 @@ class Blockchain {
       //if the stepper now has a longer chain than what we currently have, or it has the same length, but earlier timestamp, update
       if (stepper.prevBlockInfo.depth > this.state.currentChain.prevBlockInfo.depth
         || (stepper.prevBlockInfo.depth === this.state.currentChain.prevBlockInfo.depth && stepper.prevBlockInfo.timestamp < this.state.currentChain.prevBlockInfo.timestamp)) {
+
+
+        //if we have fuseki, we need to update fuseki
+        if (this.state.fusekiLocation !== null) {
+          await updateFuseki(this.state.fusekiLocation, this.state.persistence, stepper.getPrevBlockHash());
+        }
+
         this.state.currentChain = stepper;
       }
       return res;

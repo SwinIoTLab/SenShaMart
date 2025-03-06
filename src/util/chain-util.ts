@@ -1,7 +1,7 @@
 import { generateKeyPairSync, createPublicKey, type KeyObject, createPrivateKey, createSign, createVerify, createHash, type Encoding } from 'node:crypto';
-import { SENSHAMART_URI_PREFIX } from './constants.js';
+import { SENSHAMART_IRI_PREFIX } from './constants.js';
 
-export { ChainUtil, type ResultSuccess, type ResultValue, type ResultFailure, type Result, type ValuedResult, type ValidatorI, type KeyObject, type KeyPair, type NodeMetadata, type LiteralMetadata, type Metadata, isFailure, resultFromError };
+export { ChainUtil, type ResultSuccess, type ResultValue, type ResultFailure, type Result, type ValuedResult, type ValidatorI, type KeyObject, type KeyPair, type RdfTriple, isFailure, resultFromError };
 
 const EC_CURVE_ALG = 'secp256k1';
 const HASH_ALG = 'sha256';
@@ -13,19 +13,11 @@ const PUBLIC_PEM_FOOTER = '\n-----END PUBLIC KEY-----\n';
 const PRIVATE_PEM_HEADER = '-----BEGIN EC PRIVATE KEY-----\n';
 const PRIVATE_PEM_FOOTER = '\n-----END EC PRIVATE KEY-----\n';
 
-type NodeMetadata = {
+type RdfTriple = {
   s: string,
   p: string,
   o: string
 }
-
-type LiteralMetadata = {
-  s: string,
-  p: string,
-  o: string | number
-}
-
-type Metadata = NodeMetadata | LiteralMetadata;
 
 export type ResolveCb = (res: unknown) => void;
 export type RejectCb = (err: Error) => void;
@@ -508,27 +500,19 @@ class ChainUtil {
   }
 
   //validates RDF terms
-  static validateTerm(t: unknown, fail: ResultFailure): t is string {
+  //TODO: be strict with IRI validation
+  static validateIRI(t: unknown, fail: ResultFailure): t is string {
 
     if (!ChainUtil.validateIsString(t, fail)) {
       fail.reason = "Is not a term\n" + fail.reason;
       return false;
     }
 
-    if (t.startsWith(SENSHAMART_URI_PREFIX)) {
+    if (t.startsWith(SENSHAMART_IRI_PREFIX)) {
       fail.reason = "Starts with reserved prefix";
       return false;
     }
 
-    return true;
-  }
-
-  //validates RDF literals
-  static validateLiteral(t: unknown, fail: ResultFailure): t is string | number {
-    if (!ChainUtil.validateIsEither(t, fail, [ChainUtil.validateTerm, ChainUtil.validateIsNumber])) {
-      fail.reason = "Is not a literal\n" + fail.reason;
-      return false;
-    }
     return true;
   }
 }

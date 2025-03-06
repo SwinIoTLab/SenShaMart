@@ -18,7 +18,7 @@
 /**
  * @author Josip Milovac
  */
-import { SENSHAMART_URI_PREFIX as PREFIX } from '../util/constants.js';
+import { SENSHAMART_IRI_PREFIX as PREFIX } from '../util/constants.js';
 
 export const PREDICATE = {
   IS_OWNED_BY: PREFIX + "IsOwnedBy",
@@ -40,7 +40,10 @@ export const PREDICATE = {
   REWARDED: PREFIX + "Rewarded",
   MINED_BY: PREFIX + "MinedBy",
   HAS_HASH: PREFIX + "HasHash",
-  SUPERCEDES: PREFIX + "Supercedes"
+  SUPERCEDES: PREFIX + "Supercedes",
+  HAS_VERSION: PREFIX + "HasVersion",
+  CUR_HEAD_HASH: PREFIX + "CurHeadHash",
+  NEXT_HEAD_HASH: PREFIX + "NextHeadHash"
 };
   
 export const OBJECT = {
@@ -52,11 +55,12 @@ export const OBJECT = {
   BROKER_REGISTRATION_TX: PREFIX + "BrokerRegistration",
   WALLET: PREFIX + "Wallet",
   BLOCK: PREFIX + "Block",
+  SYSTEM: PREFIX + "System"
 };
 
-const URIS = {
+const IRIS = {
   PREDICATE: PREDICATE,
   OBJECT: OBJECT
 };
 
-export default URIS;
+export default IRIS;

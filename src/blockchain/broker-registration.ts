@@ -18,19 +18,19 @@
  * @author Josip Milovac
  */
 
-import { ChainUtil, type KeyPair, type ResultFailure, type NodeMetadata, type LiteralMetadata, isFailure } from '../util/chain-util.js';
+import { ChainUtil, type KeyPair, type ResultFailure, type RdfTriple, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
 const nodeValidator = {
-  s: ChainUtil.validateTerm,
-  p: ChainUtil.validateTerm,
-  o: ChainUtil.validateTerm
+  s: ChainUtil.validateIRI,
+  p: ChainUtil.validateIRI,
+  o: ChainUtil.validateIRI
 };
 
 const literalValidator = {
-  s: ChainUtil.validateTerm,
-  p: ChainUtil.validateTerm,
-  o: ChainUtil.validateLiteral
+  s: ChainUtil.validateIRI,
+  p: ChainUtil.validateIRI,
+  o: ChainUtil.validateIsString
 };
 
 const metadataValidation = {
@@ -57,8 +57,8 @@ const baseValidation = {
 type BrokerRegistrationMetadata = {
   name: string;
   endpoint: string;
-  extraNodes?: NodeMetadata[],
-  extraLiterals?: LiteralMetadata[]
+  extraNodes?: RdfTriple[],
+  extraLiterals?: RdfTriple[]
 }
 
 class BrokerRegistration implements RepeatableTransaction {
@@ -67,7 +67,7 @@ class BrokerRegistration implements RepeatableTransaction {
   rewardAmount: number;
   metadata: BrokerRegistrationMetadata;
   signature: string;
-  constructor(senderKeyPair: KeyPair, counter: number, brokerName: string, endpoint: string, rewardAmount: number, nodeMetadata?: NodeMetadata[], literalMetadata?: LiteralMetadata[]) {
+  constructor(senderKeyPair: KeyPair, counter: number, brokerName: string, endpoint: string, rewardAmount: number, nodeMetadata?: RdfTriple[], literalMetadata?: RdfTriple[]) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
@@ -98,7 +98,7 @@ class BrokerRegistration implements RepeatableTransaction {
     return registration.metadata.endpoint;
   }
 
-  static getExtraNodeMetadata(registration: BrokerRegistration): NodeMetadata[] {
+  static getExtraNodeMetadata(registration: BrokerRegistration): RdfTriple[] {
     if (registration.metadata.extraNodes !== undefined) {
       return registration.metadata.extraNodes;
     } else {
@@ -106,7 +106,7 @@ class BrokerRegistration implements RepeatableTransaction {
     }
   }
 
-  static getExtraLiteralMetadata(registration: BrokerRegistration): LiteralMetadata[] {
+  static getExtraLiteralMetadata(registration: BrokerRegistration): RdfTriple[] {
     if (registration.metadata.extraLiterals !== undefined) {
       return registration.metadata.extraLiterals;
     } else {

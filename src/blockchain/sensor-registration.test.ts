@@ -20,7 +20,7 @@
  */
 import SensorRegistration  from './sensor-registration.js';
 import { ChainUtil, type ResultFailure } from '../util/chain-util.js';
-import { SENSHAMART_URI_PREFIX } from '../util/constants.js';
+import { SENSHAMART_IRI_PREFIX } from '../util/constants.js';
 
 describe('Sensor Registration', () => {
   const keyPair = ChainUtil.genKeyPair();
@@ -63,7 +63,7 @@ describe('Sensor Registration', () => {
 
   it("Construct a sensor reserved subject in extra metadata", () => {
     expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", null, 0, [{
-      s: SENSHAMART_URI_PREFIX + "something",
+      s: SENSHAMART_IRI_PREFIX + "something",
       p: "and",
       o: "something else"
     }])).toThrow();
@@ -72,7 +72,7 @@ describe('Sensor Registration', () => {
   it("Construct a sensor with reserved predicate in extra metadata", () => {
     expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", null, 0, [{
       s: "something",
-      p: SENSHAMART_URI_PREFIX + "and",
+      p: SENSHAMART_IRI_PREFIX + "and",
       o: "something else"
     }])).toThrow();
   });
@@ -81,7 +81,7 @@ describe('Sensor Registration', () => {
     expect(() => new SensorRegistration(keyPair, 1, "test", 0, 0, "test", null, 0, [{
       s: "something",
       p: "and",
-      o: SENSHAMART_URI_PREFIX + "something else"
+      o: SENSHAMART_IRI_PREFIX + "something else"
     }])).toThrow();
   });
 

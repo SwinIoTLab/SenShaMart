@@ -18,6 +18,17 @@ describe('Blockchain', () => {
     expect(kp.pubSerialized).not.toBe(kp2.pubSerialized);
   });
 
+  it('Internal head changes', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+    const b1 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {});
+
+    expect(bc.getHeadHash()).toBe(Block.genesis().hash);
+
+    expect((await bc.addBlock(b1.block)).result).toBe(true);
+
+    expect(bc.getHeadHash()).toBe(b1.block.hash);
+  });
+
   it('Reward', async () => {
     const bc = await Blockchain.create(":memory:", null);
 
@@ -30,7 +41,7 @@ describe('Blockchain', () => {
     expect(foundAfter.val.balance).toBe(INITIAL_BALANCE + MINING_REWARD);
   });
 
-  it('Add random blocks', async () => {
+  it('Add 100 random blocks', async () => {
     const b = await Blockchain.create(":memory:", null);
     const blocks: DebugMined[] = [Block.debugGenesis()];
     for (let i = 0; i < 100; ++i) {
