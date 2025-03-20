@@ -15,6 +15,8 @@ async function syncRun(db: Database, query: string): Promise<void> {
   }));
 }
 
+type ValidInput = number | string | number[] | null;
+
 class Persistence {
   db: Database;
   stmts: Map<string, Statement[]>;
@@ -45,7 +47,7 @@ class Persistence {
     return new Promise<Statement>((resolve, reject) => {
       const stmt = this.db.prepare(query, (err) => {
         if (err) {
-          reject(new Error(`Couldn't prepare '${query}': ${err.message}`));
+          reject(new Error(`Persistence.prepare failed: '${query}'`, { cause: err }));
         } else {
           resolve(stmt);
         }
@@ -75,7 +77,7 @@ class Persistence {
     }
   }
 
-  async each<Row>(query: string, cb: (row: Row) => void, ...input: unknown[]): Promise<void> {
+  async each<Row>(query: string, cb: (row: Row) => void, ...input: ValidInput[]): Promise<void> {
     const stmt = await this.getStmt(query);
 
     return new Promise<void>((resolve, reject) => {
@@ -87,7 +89,7 @@ class Persistence {
         if (err) {
           stmt.stmt.reset(() => {
             stmt.cache.push(stmt.stmt);
-            reject(err)
+            reject(new Error(`Persistence.each failed: '${query}'`, { cause: err }))
           });
         } else {
           stmt.stmt.reset(() => {
@@ -99,7 +101,7 @@ class Persistence {
     });
   }
 
-  async all<Row>(query: string, ...input: unknown[]): Promise<Row[]> {
+  async all<Row>(query: string, ...input: ValidInput[]): Promise<Row[]> {
     const stmt = await this.getStmt(query);
 
     return new Promise<Row[]>((resolve, reject) => {
@@ -107,7 +109,7 @@ class Persistence {
         if (err) {
           stmt.stmt.reset(() => {
             stmt.cache.push(stmt.stmt);
-            reject(err)
+            reject(new Error(`Persistence.all failed: '${query}'`, { cause: err }));
           });
         } else {
           stmt.stmt.reset(() => {
@@ -119,7 +121,7 @@ class Persistence {
     });
   }
 
-  async get<Row>(query: string, ...input: unknown[]): Promise<Row | undefined> {
+  async get<Row>(query: string, ...input: ValidInput[]): Promise<Row | undefined> {
     const stmt = await this.getStmt(query);
 
     return new Promise<Row | undefined>((resolve, reject) => {
@@ -127,7 +129,8 @@ class Persistence {
         if (err) {
           stmt.stmt.reset(() => {
             stmt.cache.push(stmt.stmt);
-            reject(err)
+            err.cause = query;
+            reject(new Error(`Persistence.get failed: '${query}'`, { cause: err }))
           });
         } else {
           stmt.stmt.reset(() => {
@@ -139,7 +142,7 @@ class Persistence {
     });
   }
 
-  async run(query: string, ...input: unknown[]): Promise<void> {
+  async run(query: string, ...input: ValidInput[]): Promise<void> {
     const stmt = await this.getStmt(query);
 
     return new Promise<void>((resolve, reject) => {
@@ -147,7 +150,7 @@ class Persistence {
         if (err) {
           stmt.stmt.reset(() => {
             stmt.cache.push(stmt.stmt);
-            reject(err);
+            reject(new Error(`Persistence.run failed: '${query}' with ${JSON.stringify([...input])}`, { cause: err }));
           });
         } else {
           stmt.stmt.reset(() => {

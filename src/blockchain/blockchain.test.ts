@@ -7,7 +7,7 @@ import BrokerRegistration from './broker-registration.js';
 import SensorRegistration from './sensor-registration.js';
 import Integration from './integration.js';
 import Commit from './commit.js';
-import { BROKER_COMMISION, INITIAL_BALANCE, INITIAL_COUNTER, MINING_REWARD } from '../util/constants.js';
+import { BROKER_COMMISION, INITIAL_BALANCE, INITIAL_COUNTER, MINING_REWARD, MINE_RATE } from '../util/constants.js';
 
 describe('Blockchain', () => {
 
@@ -579,5 +579,82 @@ describe('Blockchain', () => {
       expect(foundAfter.val.outputs[0].compensationTotal).toBe(0);
       expect(foundAfter.val.outputs[0].witnesses[kp.pubSerialized]).toBe(false);
     }
+  });
+
+  it('Cull heads1', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    //we're going to form a fork, and then cull one side
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2*MINE_RATE);
+    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4*MINE_RATE);
+    const bl21 = Block.debugMine(bl0, kp.pubSerialized, {}, 5*MINE_RATE);
+
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+    expect((await bc.addBlock(bl11.block)).result).toBe(true);
+    expect((await bc.addBlock(bl21.block)).result).toBe(true);
+
+
+    await bc.manualCull(0);
+    //now we check which blocks exist, branch 1 should still be there
+    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl11.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl21.block.hash)).toBeNull();
+
+    await bc.close();
+  });
+  it('Cull heads2', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    //we're going to form a fork, and then cull one side
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2 * MINE_RATE);
+    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4 * MINE_RATE);
+    const bl21 = Block.debugMine(bl0, kp.pubSerialized, {}, 3 * MINE_RATE);
+
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+    expect((await bc.addBlock(bl11.block)).result).toBe(true);
+    expect((await bc.addBlock(bl21.block)).result).toBe(true);
+
+
+    await bc.manualCull(0);
+    //now we check which blocks exist, branch 1 should still be there
+    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl11.block.hash)).toBeNull();
+    expect(await bc.getBlock(bl21.block.hash)).not.toBeNull();
+
+    await bc.close();
+  });
+  it('Cull double fork', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    //we're going to form a fork, and then cull one side
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2 * MINE_RATE);
+    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4 * MINE_RATE);
+    const bl12 = Block.debugMine(bl11, kp.pubSerialized, {}, 6 * MINE_RATE);
+    const bl22 = Block.debugMine(bl11, kp.pubSerialized, {}, 7 * MINE_RATE);
+    const bl31 = Block.debugMine(bl0, kp.pubSerialized, {}, 5 * MINE_RATE);
+    const bl32 = Block.debugMine(bl31, kp.pubSerialized, {}, 7 * MINE_RATE);
+    const bl42 = Block.debugMine(bl31, kp.pubSerialized, {}, 8 * MINE_RATE);
+
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+    expect((await bc.addBlock(bl11.block)).result).toBe(true);
+    expect((await bc.addBlock(bl12.block)).result).toBe(true);
+    expect((await bc.addBlock(bl22.block)).result).toBe(true);
+    expect((await bc.addBlock(bl31.block)).result).toBe(true);
+    expect((await bc.addBlock(bl32.block)).result).toBe(true);
+    expect((await bc.addBlock(bl42.block)).result).toBe(true);
+
+    await bc.manualCull(0);
+
+    //now we check which blocks exist, branch 1 should still be there
+    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl11.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl12.block.hash)).not.toBeNull();
+    expect(await bc.getBlock(bl22.block.hash)).toBeNull();
+    expect(await bc.getBlock(bl31.block.hash)).toBeNull();
+    expect(await bc.getBlock(bl32.block.hash)).toBeNull();
+    expect(await bc.getBlock(bl42.block.hash)).toBeNull();
   });
 });

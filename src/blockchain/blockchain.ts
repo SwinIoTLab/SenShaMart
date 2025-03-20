@@ -50,7 +50,8 @@ import { default as Persistence} from './persistence.js';
 import IRIS from './iris.js';
 //import { verify } from 'crypto';
 
-const MAX_FUSEKI_MESSAGE_SIZE = 1 * 1024 * 1024
+const MAX_FUSEKI_MESSAGE_SIZE = (1 * 1024 * 1024); //1 MB
+const CULL_TIME_S = 60 * 60; //1 hour
 
 //expected version of the db, if it is less than this, we need to upgrade
 const DB_EXPECTED_VERSION = '3' as const;
@@ -92,14 +93,14 @@ const DB_CREATE_QUERY = [
   depth INTEGER NOT NULL,
   escaped TEXT NOT NULL,
   PRIMARY KEY (string,depth,escaped),
-  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 
 `CREATE TABLE LiteralTriples(
   string INTEGER NOT NULL,
   depth INTEGER NOT NULL,
   escaped TEXT NOT NULL,
   PRIMARY KEY (string,depth,escaped),
-  FOREIGN KEY (string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY (string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 
 `CREATE TABLE Head(
   id INTEGER NOT NULL PRIMARY KEY,
@@ -113,7 +114,7 @@ const DB_CREATE_QUERY = [
   balance INTEGER NOT NULL,
   counter INTEGER NOT NULL,
   PRIMARY KEY(string,depth,key),
-  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 
 `CREATE TABLE Broker(
   string INTEGER NOT NULL,
@@ -123,7 +124,7 @@ const DB_CREATE_QUERY = [
   endpoint TEXT NOT NULL,
   hash TEXT NOT NULL,
   PRIMARY KEY(string,depth,name),
-  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 
 `CREATE TABLE Sensor(
   string INTEGER NOT NULL,
@@ -135,7 +136,7 @@ const DB_CREATE_QUERY = [
   costPerKB INTEGER NOT NULL,
   costPerMin INTEGER NOT NULL,
   PRIMARY KEY(string,depth,name),
-  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 
 `CREATE TABLE Integration(
   string INTEGER NOT NULL,
@@ -147,7 +148,7 @@ const DB_CREATE_QUERY = [
   outputsRaw TEXT NOT NULL,
   state INTEGER NOT NULL,
   PRIMARY KEY(string,depth,name),
-  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE);`,
+  FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
 ];
 
 //Make the key into integration datas for an integration
@@ -1448,7 +1449,6 @@ class Stepper {
       integrationOutput.witnesses[tx.input] = true;
       integrationOutput.compensationTotal += output.commitRatio;
       foundIntegration.v.uncommittedCount--;
-      console.log(`${tx.input} committed ${integrationKey} ${output.i}: ${output.commitRatio}. Uncommitted count = ${foundIntegration.v.uncommittedCount}`);
     }
 
     if (foundIntegration.v.uncommittedCount === 0) {
@@ -1504,7 +1504,6 @@ class Stepper {
 
       //check state again in case some weird stuff with cache
       if (found.cur.v !== null && found.cur.v.state === INTEGRATION_STATE.RUNNING) {
-        console.log(`integration ${row.name} timed out`);
         this.payoutIntegration(found.cur.v);
         found.cur.v.state = INTEGRATION_STATE.TIMED_OUT;
       }
@@ -1959,12 +1958,93 @@ async function updateFuseki(location: string, persistence: Persistence, toHash: 
   //and we're done
 }
 
+//this culls all heads/blocks/strings that haven't been seen after (CURRENT_TIME - cullLength).
+//So with a cullLength of 1000, it will cull all heads and blocks/strings associated with them that were lastSeen 1000 seconds or more in the past
+async function checkHeadsForCullImpl(persistence: Persistence, cullLength: number): Promise<void> {
+  //first get the blockchain head block, and it's assocated head, so we don't cull our longest chain just because of network loss or something silly
+  const headBlock = await persistence.get<{ id: number }>("SELECT id FROM Blocks ORDER BY depth DESC, timestamp ASC LIMIT 1;");
+  if (headBlock === undefined) {
+    //if no 'best' block, there are no blocks, there are no strings, there are no heads. Just short-circuit and return
+    return;
+  }
+  const headHead = await persistence.get<{ id: number }>("SELECT id FROM Head WHERE block = ?;", headBlock.id);
+  if (headHead === undefined) {
+    //inconsistent db
+    throw new Error(`Inconsistent db: Head block (id:${headBlock.id}) does not have a head.`);
+  }
+
+  //remove all heads with lastSeen before or equal to our cutoff time (but not our head head), returning the ids of their blocks
+  const culledBlocks = await persistence.all<{ block: number }>("DELETE FROM Head WHERE lastSeen <= (unixEpoch() - ?) AND id != ? RETURNING block;", cullLength, headHead.id);
+
+  type StringInfo = {
+    id: number;
+    minInc: number;
+    prev: number;
+  }
+
+  //this stores our queue/stack of strings to cull
+  const cullingStrings: StringInfo[] = [];
+
+  //for every block from a head we culled, find it's string, and at it to the stack
+  for (const culled of culledBlocks) {
+    const stringRes = await persistence.get<StringInfo>(`
+        SELECT Blocks.string AS id,String.minInc AS minInc,String.prev AS prev FROM Blocks
+        INNER JOIN String
+          ON String.id = Blocks.string
+        WHERE Blocks.id = ?`, culled.block);
+    if (stringRes === undefined) {
+      throw new Error(`Tried to cull head with block id ${culled.block} but couldn't select it's string`);
+    }
+    cullingStrings.push(stringRes);
+  }
+
+  //while we have strings to cull
+  for(const culling of cullingStrings) {
+    const maxChildMinRes = await persistence.all<{ id: number, minInc: number }>("SELECT id, minInc FROM String WHERE prev = ? ORDER BY minInc DESC;", culling.id);
+    if (maxChildMinRes.length === 0) {
+      //if nothing uses us as a child, we can just delete all our stuff
+      //  delete all our blocks
+      await persistence.run("DELETE FROM Blocks WHERE string = ?;", culling.id);
+      //  delete ourselves
+      await persistence.run("DELETE FROM String WHERE id = ?;", culling.id);
+    } else if (maxChildMinRes.length === 1) {
+      //if one thing branches off us, we will delete everything above the split, and then merge us into the child
+      //We do that so that cached paths are still valid
+      //since paths are (stringId, max)[], the child string id and the old child string max still works since we are adding blocks from below it
+      //  cull all blocks >= their min
+      await persistence.run("DELETE FROM Blocks WHERE string = ? AND depth >= ?;", culling.id, maxChildMinRes[0].minInc);
+      //  set all blocks below to be their string
+      await persistence.run("UPDATE Blocks SET string = ? WHERE string = ?;", maxChildMinRes[0].id, culling.id);
+      //  update the child string to have our minInc, and our prev
+      await persistence.run("UPDATE String SET minInc=?, prev=? WHERE id=?;", culling.minInc, culling.prev, maxChildMinRes[0].id);
+      //  delete this string
+      await persistence.run("DELETE FROM String WHERE id = ?;", culling.id);
+    } else {
+      //if we have multiple that branch off us, we will find the highest split, and then merge into that child
+      //we merge into the child for the same reasons as in the children == 1 case
+      //we are already sorted from highest(largest) minInc from the query
+
+      //  cull all blocks >= highest min
+      await persistence.run("DELETE FROM Blocks WHERE string = ? AND depth >= ?;", culling.id, maxChildMinRes[0].minInc);
+      //  set all blocks below to be their string
+      await persistence.run("UPDATE Blocks SET string = ? WHERE string = ?;", maxChildMinRes[0].id, culling.id);
+      // update child string to have our minInv and our prev
+      await persistence.run("UPDATE String SET minInc=?, prev=? WHERE id=?;", culling.minInc, culling.prev, maxChildMinRes[0].id);
+      // update all other child strings to have their string. Since we've already changed their prev, we can just set all with prev=us
+      await persistence.run("UPDATE String SET prev=? WHERE prev=?;", maxChildMinRes[0].id, culling.id);
+      //  delete this string
+      await persistence.run("DELETE FROM String WHERE id = ?;", culling.id);
+    }
+  }
+}
+
 //`SELECT ?version WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> ?version }.`
 
 type DbState = {
   persistence: Persistence; //our wrapper to the sqlite3 based persitence
   fusekiLocation: string | null; //the URL of a fuseki instance
   currentChain: Stepper;
+  cullingTimer: NodeJS.Timeout | null; //set to null to stop timeout callback from executing in a race
 };
 
 //the object/class to handle a blockchain
@@ -1980,7 +2060,8 @@ class Blockchain {
     this.state = {
       persistence: persistence,
       fusekiLocation: fuseki_location,
-      currentChain: new Stepper(persistence)
+      currentChain: new Stepper(persistence),
+      cullingTimer: null
     };
     this.writeQueue = null;
   }
@@ -2011,13 +2092,20 @@ class Blockchain {
       throw new Error("Db is a different version to what is expected");
     }
 
-    type ChainHeadRes = { depth: number; hash: string };
-    let blockCountRes = await persistence.get<ChainHeadRes>(`SELECT depth,hash AS max FROM Blocks ORDER BY depth DESC, timestamp ASC;`);
+    type ChainHeadBlock = { id: number; depth: number; hash: string };
+    let blockChainHeadBlock = await persistence.get<ChainHeadBlock>(`SELECT id,depth,hash AS max FROM Blocks ORDER BY depth DESC, timestamp ASC;`);
+    let deepestHead: number | null = null;
 
-    if (blockCountRes !== undefined) {
-      await me.state.currentChain.setPrevBlock(blockCountRes.hash);
+    if (blockChainHeadBlock !== undefined) {
+      await me.state.currentChain.setPrevBlock(blockChainHeadBlock.hash);
+      const deepestHeadRes = await persistence.get<{ id: number }>("SELECT id FROM Head WHERE block = ?;", blockChainHeadBlock.id);
+      if (deepestHeadRes === undefined) {
+        throw new Error(`Inconsistent Db, the deepest block (id:${blockChainHeadBlock.id}) doesn't have a head associated with it`);
+      }
+      deepestHead = deepestHeadRes.id;
     } else {
-      blockCountRes = {
+      blockChainHeadBlock = {
+        id: 0, //this is dirty
         depth: 1,
         hash: Block.genesis().hash
       };
@@ -2026,7 +2114,7 @@ class Blockchain {
     if (fuseki_location !== null) {
       const version_res = await fuseki_query(fuseki_location, FUSEKI_QUERY_TYPE.QUERY,
         `SELECT ?version ?at WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> ?version. <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.CUR_HEAD_HASH}> ?at }.`);
-      
+
       if (version_res.head.length !== 2) {
         throw new Error("Expected only 2 'columns' from fuseki version query");
       }
@@ -2057,11 +2145,24 @@ class Blockchain {
       }
 
       //now fuseki is internally consistent, we can check to see if fuseki matches sqlite
-
-      if (version_res.results[0]["at"].value !== blockCountRes.hash) {
-        await updateFuseki(fuseki_location, persistence, blockCountRes.hash);
+      if (version_res.results[0]["at"].value !== blockChainHeadBlock.hash) {
+        await updateFuseki(fuseki_location, persistence, blockChainHeadBlock.hash);
       }
     }
+
+    //if we've been stopped for a while, all lastSeens will be far in the past since we couldn't have seen them since we were stopped
+    //so when starting up, we add the (currentTime - deepest head lastSeen) to all heads.
+    //This is better than setting all lastSeen to currentTime since we won't have 1 cull that tries to remove all of the stale heads at once
+    //we can only do this if the blockchain isn't empty, and we check this by whether the head block has a head attached to it. If no, it must be genesis, and we're empty
+    if (deepestHead !== null) {
+      const res = (await persistence.get("SELECT lastSeen - unixEpoch() AS delta FROM Head WHERE id = ?;", deepestHead)) as { delta: number };
+      await persistence.run("UPDATE Head SET lastSeen = lastSeen + ?;", res.delta);
+    }
+
+    //do an initial cull, and this starts the culling timer loop
+    await me.onCullingTimer();
+
+
     return me;
   }
 
@@ -2156,6 +2257,16 @@ class Blockchain {
     };
   }
 
+  async getBlock(hash: string): Promise<Block | null> {
+    return await this.addOp(async () => {
+      const got = await this.state.persistence.get<{ raw: string }>("SELECT raw FROM Blocks WHERE hash = ?;", hash);
+      if (got === undefined) {
+        return null;
+      }
+      return JSON.parse(got.raw) as Block;
+    });
+  }
+
   length() {
     return this.state.currentChain.prevBlockInfo.depth;
   }
@@ -2188,6 +2299,20 @@ class Blockchain {
     });
   }
 
+  async manualCull(cullTimeS: number): Promise<void> {
+    return await this.addOp<void>(async () => {
+      return await checkHeadsForCullImpl(this.state.persistence, cullTimeS);
+    });
+  }
+
+  async close(): Promise<void> {
+    if (this.state.cullingTimer !== null) {
+      this.state.cullingTimer.unref();
+      clearTimeout(this.state.cullingTimer);
+      this.state.cullingTimer = null;
+    }
+  }
+
   //all database operations need to be serialized, this function does that
   private async addOp<T>(op: () => Promise<T>): Promise<T> {
     let creating: Promise<T> | null = null;
@@ -2212,6 +2337,20 @@ class Blockchain {
       this.state.currentChain.reset();
       return res;
     });
+  }
+
+  private async onCullingTimer(): Promise<void> {
+    //cull everything older than 1 hour
+    await checkHeadsForCullImpl(this.state.persistence, CULL_TIME_S);
+    this.state.cullingTimer = setTimeout(() => {
+      this.addOp<void>(async () => {
+        if (this.state.cullingTimer === null) {
+          //this was set to null to stop races
+          return;
+        }
+        await this.onCullingTimer(); 
+      }); //don't need to await
+    }, 60*1000); //do it every minute
   }
 
   //addListener(listener:Listener): void {
