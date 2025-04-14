@@ -288,6 +288,12 @@ class Integration {
   }
 }
 
+type GetBlockInfo = {
+  block: Block;
+  depth: number;
+  difficulty: number;
+};
+
 type ParsedLengthPrefixedString = {
   parsed: string;
   rest: string;
@@ -395,23 +401,20 @@ type PathInfo = {
   maxExc: number;
 };
 
-type BlockInfo = {
+type BlockInfo = GetBlockInfo & {
   id: number;
   hash: string;
   stringId: number | null;
   stringPath: PathInfo[];
   stringifiedStringPath: string;
-  depth: number;
   timestamp: number;
-  difficulty: number;
 };
 
 async function checkNodeTripleExists(persistence: Persistence, escaped: string, path: string): Promise<boolean> {
   type Raw = { count: number };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT 1
       FROM NodeTriples
     INNER JOIN path ON NodeTriples.string = path.id AND NodeTriples.depth < path.max
@@ -427,9 +430,8 @@ async function checkNodeTripleExists(persistence: Persistence, escaped: string, 
 async function checkLiteralTripleExists(persistence: Persistence, escaped: string, path: string): Promise<boolean> {
   type Raw = { count: number };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT 1
       FROM LiteralTriples
     INNER JOIN path ON LiteralTriples.string = path.id AND LiteralTriples.depth < path.max
@@ -445,9 +447,8 @@ async function checkLiteralTripleExists(persistence: Persistence, escaped: strin
 async function getWallet(persistence: Persistence, key: string, path: string): Promise<Wallet> {
   type Raw = { balance: number, counter: number };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT balance,counter
       FROM Wallet
     INNER JOIN path ON Wallet.string = path.id AND Wallet.depth < path.max
@@ -463,9 +464,8 @@ async function getWallet(persistence: Persistence, key: string, path: string): P
 async function getWallets(persistence: Persistence, path: string, cb: (key: string, wallet: Wallet) => void): Promise<void> {
   type Raw = { key: string, balance: number, counter: number };
   await persistence.each<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT DISTINCT key, MAX(depth), balance, counter
       FROM Wallet
     INNER JOIN path ON Wallet.string = path.id AND Wallet.depth < path.max
@@ -477,9 +477,8 @@ async function getWallets(persistence: Persistence, path: string, cb: (key: stri
 async function getBroker(persistence: Persistence, key: string, path: string): Promise<Broker | null> {
   type Raw = { owner: string, endpoint: string, hash: string };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT owner,endpoint,hash
       FROM Broker
     INNER JOIN path ON Broker.string = path.id AND Broker.depth < path.max
@@ -496,9 +495,8 @@ async function getBroker(persistence: Persistence, key: string, path: string): P
 async function getBrokers(persistence: Persistence, path: string, cb: (key: string, broker: Broker) => void): Promise<void> {
   type Raw = { name: string, owner: string, endpoint: string, hash: string };
   await persistence.each<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT DISTINCT name,MAX(depth),owner,endpoint,hash
       FROM Broker
     INNER JOIN path ON Broker.string = path.id AND Broker.depth < path.max
@@ -507,12 +505,38 @@ async function getBrokers(persistence: Persistence, path: string, cb: (key: stri
   }, path);
 }
 
+async function getBrokerTxOwnedBys(persistence: Persistence, path: string, owner: string, cb: (key: string, broker: BrokerTx) => void): Promise<void> {
+  type Raw = { name: string, raw: string };
+  await persistence.each<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+    SELECT DISTINCT name,MAX(depth),raw
+      FROM Broker
+    INNER JOIN path ON Broker.string = path.id AND Broker.depth < path.max
+    GROUP BY name
+    WHERE owner=?;`, (row: Raw) => {
+    cb(row.name, JSON.parse(row.raw));
+  }, path, owner);
+}
+
+async function getBrokerTxs(persistence: Persistence, path: string, cb: (key: string, broker: BrokerTx) => void): Promise<void> {
+  type Raw = { name: string, raw: string };
+  await persistence.each<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+    SELECT DISTINCT name,MAX(depth),raw
+      FROM Broker
+    INNER JOIN path ON Broker.string = path.id AND Broker.depth < path.max
+    GROUP BY name;`, (row: Raw) => {
+    cb(row.name, JSON.parse(row.raw));
+  }, path);
+}
+
 async function getSensor(persistence: Persistence, key: string, path: string): Promise<Sensor | null> {
   type Raw = { owner: string, hash: string, broker: string, costPerKB: number, costPerMin: number };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT owner,hash,broker,costPerKB,costPerMin
       FROM Sensor
     INNER JOIN path ON Sensor.string = path.id AND Sensor.depth < path.max
@@ -528,9 +552,8 @@ async function getSensor(persistence: Persistence, key: string, path: string): P
 async function getSensors(persistence: Persistence, path: string, cb: (key: string, sensor: Sensor) => void): Promise<void> {
   type Raw = { name: string, owner: string, hash: string, broker: string, costPerKB: number, costPerMin: number };
   await persistence.each<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT DISTINCT name,MAX(depth),owner,hash,broker,costPerKB,costPerMin
       FROM Sensor
     INNER JOIN path ON Sensor.string = path.id AND Sensor.depth < path.max
@@ -539,12 +562,24 @@ async function getSensors(persistence: Persistence, path: string, cb: (key: stri
   }, path);
 }
 
+async function getSensorTxs(persistence: Persistence, path: string, cb: (key: string, sensor: SensorTx) => void): Promise<void> {
+  type Raw = { name: string, raw: string };
+  await persistence.each<Raw>(`
+  WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+    SELECT DISTINCT name,MAX(depth),raw
+      FROM Sensor
+    INNER JOIN path ON Sensor.string = path.id AND Sensor.depth < path.max
+    GROUP BY name;`, (row: Raw) => {
+    cb(row.name, JSON.parse(row.raw));
+  }, path);
+}
+
 async function getIntegration(persistence: Persistence, key: string, path: string): Promise<Integration | null> {
   type Raw = { owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
   const raw = await persistence.get<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
     SELECT owner,timeoutTime,uncommittedCount,outputsRaw,state
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
@@ -560,15 +595,28 @@ async function getIntegration(persistence: Persistence, key: string, path: strin
 async function getIntegrations(persistence: Persistence, path: string, cb: (key: string, integration: Integration) => void): Promise<void> {
   type Raw = { name: string, owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
   await persistence.each<Raw>(`
-    WITH path(id,max) AS (
-      SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
-    )  
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
     SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
     GROUP BY name;`, (row: Raw) => {
     cb(row.name, new Integration(row.owner, row.timeoutTime, row.uncommittedCount, JSON.parse(row.outputsRaw) as IntegrationOutput[], row.state));
   }, path);
+}
+
+async function getRunningIntegrationsOwnedBy(persistence: Persistence, path: string, owner: string, cb: (key: string, integration: Integration) => void): Promise<void> {
+  type Raw = { name: string, owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
+  await persistence.each<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
+    SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
+      FROM Integration
+    INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
+    GROUP BY name
+    WHERE Integration.owner = ? AND Integration.state=${INTEGRATION_STATE.RUNNING};`, (row: Raw) => {
+    cb(row.name, new Integration(row.owner, row.timeoutTime, row.uncommittedCount, JSON.parse(row.outputsRaw) as IntegrationOutput[], row.state));
+  }, path, owner);
 }
 
 type Getter<T> = (persistence: Persistence, key: string, path: string) => Promise<T | null>;
@@ -580,14 +628,14 @@ type RetrievedValue<T> = {
 
 async function getPath(persistence: Persistence, topString: number): Promise<StringInfo[]> {
   return await persistence.all<StringInfo>(`
-            WITH string_walk(id,min,prev) AS (
-              SELECT e.id,e.minInc,e.prev FROM String AS e WHERE e.id = ?
-              UNION ALL
-              SELECT c.id,c.minInc,c.prev FROM String AS c
-              INNER JOIN string_walk AS p ON c.id = p.prev
-            )
-            SELECT id,min FROM string_walk
-            ORDER BY min ASC;`, topString);
+    WITH string_walk(id,min,prev) AS (
+      SELECT e.id,e.minInc,e.prev FROM String AS e WHERE e.id = ?
+      UNION ALL
+      SELECT c.id,c.minInc,c.prev FROM String AS c
+      INNER JOIN string_walk AS p ON c.id = p.prev
+    )
+    SELECT id,min AS minInc FROM string_walk
+    ORDER BY min ASC;`, topString);
 }
 
 class Stepper {
@@ -629,7 +677,8 @@ class Stepper {
       timestamp: Block.genesis().timestamp,
       difficulty: INITIAL_MINE_DIFFICULTY,
       stringPath: [],
-      stringifiedStringPath: "[]"
+      stringifiedStringPath: "[]",
+      block: Block.genesis()
     };
   }
 
@@ -650,6 +699,7 @@ class Stepper {
       depth: number;
       timestamp: number;
       difficulty: number;
+      raw: string;
     };
 
     if (prevBlockHash !== this.prevBlockInfo.hash) {
@@ -668,8 +718,9 @@ class Stepper {
         this.prevBlockInfo.depth = 0;
         this.prevBlockInfo.timestamp = Block.genesis().timestamp;
         this.prevBlockInfo.difficulty = INITIAL_MINE_DIFFICULTY;
+        this.prevBlockInfo.block = Block.genesis();
       } else {
-        const readPrevBlockInfo = await this.persistence.get<ReadPrevBlockInfo>("SELECT id,string,depth,timestamp,difficulty FROM Blocks WHERE hash = ?;", prevBlockHash);
+        const readPrevBlockInfo = await this.persistence.get<ReadPrevBlockInfo>("SELECT id,string,depth,timestamp,difficulty,raw FROM Blocks WHERE hash = ?;", prevBlockHash);
 
         if (readPrevBlockInfo === undefined) {
           //we can't find this block's prev block, we can't add this block
@@ -698,11 +749,12 @@ class Stepper {
           this.prevBlockInfo.stringPath.push({
             id: stringPath[stringPath.length - 1].id,
             maxExc: readPrevBlockInfo.depth + 1 //+1 so that the prevBlock is included when searching for data
-            });
+          });
           this.prevBlockInfo.stringifiedStringPath = JSON.stringify(this.prevBlockInfo.stringPath);
           this.prevBlockInfo.depth = readPrevBlockInfo.depth;
           this.prevBlockInfo.timestamp = readPrevBlockInfo.timestamp;
           this.prevBlockInfo.difficulty = readPrevBlockInfo.difficulty;
+          this.prevBlockInfo.block = JSON.parse(readPrevBlockInfo.raw);
         }
       }
     }
@@ -714,11 +766,12 @@ class Stepper {
 
   async addBlock(block: Block): Promise<Result> {
     //verify block, if it fails we don't need to go into a transaction
-    let res = Block.verify(block);
 
-    if (isFailure(res)) {
-      res.reason = "Block failed verify\n" + res.reason;
-      return res;
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    if (!Block.validate(block, fail)) {
+      fail.reason = "Block failed verify\n" + fail.reason;
+      return fail;
     }
 
     //from here, we require information from the prev block, so we need a transaction
@@ -727,13 +780,12 @@ class Stepper {
     if (await this.persistence.get("SELECT 1 FROM Blocks WHERE hash = ?;", block.hash) !== undefined) {
       await this.persistence.run("ROLLBACK;");
       return {
-        result: false,
-        reason: "Block already exists",
+        result: true, //we are going to say this is a success, since it 'has been added' just not now
       };
     } 
 
     //get our prev block info
-    res = await this.setPrevBlock(block.lastHash);
+    let res = await this.setPrevBlock(block.lastHash);
     if (isFailure(res)) {
       await this.persistence.run("ROLLBACK");
       res.reason = "Couldn't add block, failed setPrevBlock\n" + res.reason;
@@ -841,6 +893,7 @@ class Stepper {
       this.prevBlockInfo.stringPath[this.prevBlockInfo.stringPath.length - 1].maxExc++; //increase max by one, to include us
     }
     this.prevBlockInfo.stringifiedStringPath = JSON.stringify(this.prevBlockInfo.stringPath);
+    this.prevBlockInfo.block = block;
     //set orig to the cur values in all cached values
     for (const wallet of this.cache.wallet.values()) {
       if (!(wallet instanceof Promise)) {
@@ -1729,28 +1782,33 @@ class Stepper {
 //  }
 //}
 
-//async function getRepresentativeHashesImpl(blockchain: Blockchain): Promise<string[]> {
-//  const curChainLength = blockchain.length();
+type ListenerFunction = (newDepth: number, commonDepth: number) => void;
+interface ListenerNode {
+  next: ListenerNode;
+  prev: ListenerNode;
+}
+interface Listener {
+  remove(): void;
+}
 
-//  const searchingFor: number[] = [];
+class ListenerImpl implements Listener, ListenerNode {
+  next: ListenerNode;
+  prev: ListenerNode;
+  func: ListenerFunction;
 
-//  let i = 0;
+  constructor(func: ListenerFunction, prev: ListenerNode) {
+    this.prev = prev;
+    this.next = this.prev.next;
+    this.prev.next = this;
+    this.next.prev = this;
+    this.func = func;
+  }
 
-//  for (let i = 0; curChainLength - i - 1 > 0 && i < 10; --i) {
-//    searchingFor.push(curChainLength - i - 1);
-//  }
-//  for (let j = 2; ;j *= 2) {
-//    i += j;
-//    if (i >= curChainLength) {
-//      break;
-//    }
-//    searchingFor.push(curChainLength - i - 1);
-//  }
-
-//  return await blockchain.persistence.all<string>("SELECT hash FROM Chains WHERE chain = 0 AND depth IN ?", searchingFor);
-//}
-
-//type Listener = (newBlocks: Block[], changes: UpdaterChanges, difference: number) => void;
+  remove() {
+    this.prev.next = this.next;
+    this.next.prev = this.prev;
+  }
+}
 
 type FusekiQueryRes = {
   head: string[];
@@ -1961,15 +2019,18 @@ async function updateFuseki(location: string, persistence: Persistence, toHash: 
 //this culls all heads/blocks/strings that haven't been seen after (CURRENT_TIME - cullLength).
 //So with a cullLength of 1000, it will cull all heads and blocks/strings associated with them that were lastSeen 1000 seconds or more in the past
 async function checkHeadsForCullImpl(persistence: Persistence, cullLength: number): Promise<void> {
+  await persistence.run("BEGIN;");
   //first get the blockchain head block, and it's assocated head, so we don't cull our longest chain just because of network loss or something silly
   const headBlock = await persistence.get<{ id: number }>("SELECT id FROM Blocks ORDER BY depth DESC, timestamp ASC LIMIT 1;");
   if (headBlock === undefined) {
     //if no 'best' block, there are no blocks, there are no strings, there are no heads. Just short-circuit and return
+    await persistence.run("ROLLBACK;");
     return;
   }
   const headHead = await persistence.get<{ id: number }>("SELECT id FROM Head WHERE block = ?;", headBlock.id);
   if (headHead === undefined) {
     //inconsistent db
+    await persistence.run("ROLLBACK;");
     throw new Error(`Inconsistent db: Head block (id:${headBlock.id}) does not have a head.`);
   }
 
@@ -1982,24 +2043,17 @@ async function checkHeadsForCullImpl(persistence: Persistence, cullLength: numbe
     prev: number;
   }
 
-  //this stores our queue/stack of strings to cull
-  const cullingStrings: StringInfo[] = [];
-
-  //for every block from a head we culled, find it's string, and at it to the stack
+  //while we have strings to cull
   for (const culled of culledBlocks) {
-    const stringRes = await persistence.get<StringInfo>(`
+    const culling = await persistence.get<StringInfo>(`
         SELECT Blocks.string AS id,String.minInc AS minInc,String.prev AS prev FROM Blocks
         INNER JOIN String
           ON String.id = Blocks.string
         WHERE Blocks.id = ?`, culled.block);
-    if (stringRes === undefined) {
+    if (culling === undefined) {
+      await persistence.run("ROLLBACK;");
       throw new Error(`Tried to cull head with block id ${culled.block} but couldn't select it's string`);
     }
-    cullingStrings.push(stringRes);
-  }
-
-  //while we have strings to cull
-  for(const culling of cullingStrings) {
     const maxChildMinRes = await persistence.all<{ id: number, minInc: number }>("SELECT id, minInc FROM String WHERE prev = ? ORDER BY minInc DESC;", culling.id);
     if (maxChildMinRes.length === 0) {
       //if nothing uses us as a child, we can just delete all our stuff
@@ -2036,6 +2090,7 @@ async function checkHeadsForCullImpl(persistence: Persistence, cullLength: numbe
       await persistence.run("DELETE FROM String WHERE id = ?;", culling.id);
     }
   }
+  await persistence.run("COMMIT;");
 }
 
 //`SELECT ?version WHERE { <${IRIS.OBJECT.SYSTEM}> <${IRIS.PREDICATE.HAS_VERSION}> ?version }.`
@@ -2054,6 +2109,7 @@ class Blockchain {
   
   private writeQueue: Promise<void> | null; //promise that can be chained on to queue an operation. If null, no operation is currently running
   private state: DbState;
+  private listeners: ListenerNode;
 
   private constructor(persistence: Persistence, fuseki_location: string | null) {
     //this.listeners = [];
@@ -2064,6 +2120,14 @@ class Blockchain {
       cullingTimer: null
     };
     this.writeQueue = null;
+    this.listeners = new class implements ListenerNode {
+      next: ListenerNode;
+      prev: ListenerNode;
+      constructor() {
+        this.next = this;
+        this.prev = this;
+      }
+    };
   }
 
   static async create(db_location: string, fuseki_location: string | null) {
@@ -2093,7 +2157,7 @@ class Blockchain {
     }
 
     type ChainHeadBlock = { id: number; depth: number; hash: string };
-    let blockChainHeadBlock = await persistence.get<ChainHeadBlock>(`SELECT id,depth,hash AS max FROM Blocks ORDER BY depth DESC, timestamp ASC;`);
+    let blockChainHeadBlock = await persistence.get<ChainHeadBlock>(`SELECT id,depth,hash FROM Blocks ORDER BY depth DESC, timestamp ASC LIMIT 1;`);
     let deepestHead: number | null = null;
 
     if (blockChainHeadBlock !== undefined) {
@@ -2166,8 +2230,8 @@ class Blockchain {
     return me;
   }
 
-  getHeadHash(): string {
-    return this.state.currentChain.getPrevBlockHash();
+  getHeadInfo(): GetBlockInfo {
+    return structuredClone(this.state.currentChain.prevBlockInfo);
   }
 
   async getWallet(input: string): Promise<RetrievedValue<Wallet>> {
@@ -2178,17 +2242,11 @@ class Blockchain {
       val: await getWallet(this.state.persistence, input, path)
     };
   }
-  async getWallets(): Promise<RetrievedValue<Map<string, Wallet>>> {
+  async getWallets(cb: (key:string,wallet: Wallet)=>void): Promise<string> {
     const hash = this.state.currentChain.getPrevBlockHash();
     const path = this.state.currentChain.getPrevBlockPath();
-    const returning = new Map<string, Wallet>();
-    await getWallets(this.state.persistence, path, (key, wallet) => {
-      returning.set(key, wallet);
-    });
-    return {
-      headHash: hash,
-      val: returning
-    };
+    await getWallets(this.state.persistence, path, cb);
+    return hash;
   }
 
   async getSensor(sensorName: string): Promise<RetrievedValue<Sensor | null>> {
@@ -2200,17 +2258,18 @@ class Blockchain {
     };
   }
 
-  async getSensors(): Promise<RetrievedValue<Map<string, Sensor>>> {
+  async getSensors(cb: (key: string, tx: Sensor) => void): Promise<string> {
     const hash = this.state.currentChain.getPrevBlockHash();
     const path = this.state.currentChain.getPrevBlockPath();
-    const returning = new Map<string, Sensor>();
-    await getSensors(this.state.persistence, path, (key, sensor) => {
-      returning.set(key, sensor);
-    });
-    return {
-      headHash: hash,
-      val: returning
-    };
+    await getSensors(this.state.persistence, path, cb);
+    return hash;
+  }
+
+  async getSensorTxs(cb: (key: string, tx: SensorTx) => void): Promise<string> {
+    const hash = this.state.currentChain.getPrevBlockHash();
+    const path = this.state.currentChain.getPrevBlockPath();
+    await getSensorTxs(this.state.persistence, path, cb);
+    return hash;
   }
 
   async getBroker(brokerName: string): Promise<RetrievedValue<Broker | null>> {
@@ -2222,17 +2281,26 @@ class Blockchain {
     };
   }
 
-  async getBrokers(): Promise<RetrievedValue<Map<string, Broker>>> {
+  async getBrokers(cb: (key: string, tx: Broker) => void): Promise<string> {
     const hash = this.state.currentChain.getPrevBlockHash();
     const path = this.state.currentChain.getPrevBlockPath();
-    const returning = new Map<string, Broker>();
-    await getBrokers(this.state.persistence, path, (key, broker) => {
-      returning.set(key, broker);
-    });
-    return {
-      headHash: hash,
-      val: returning
-    };
+    await getBrokers(this.state.persistence, path, cb);
+    return hash;
+  }
+
+  async getBrokerTxsOwnedBy(owner: string, cb: (key: string, tx: BrokerTx) => void): Promise<string> {
+    const hash = this.state.currentChain.getPrevBlockHash();
+    const path = this.state.currentChain.getPrevBlockPath();
+    await getBrokerTxOwnedBys(this.state.persistence, path, owner, cb);
+    return hash;
+  }
+
+  //returns the head block hash
+  async getBrokerTxs(cb: (key: string, tx: BrokerTx) => void): Promise<string> {
+    const hash = this.state.currentChain.getPrevBlockHash();
+    const path = this.state.currentChain.getPrevBlockPath();
+    await getBrokerTxs(this.state.persistence, path, cb);
+    return hash;
   }
 
   async getIntegration(integrationKey: string): Promise<RetrievedValue<Integration | null>> {
@@ -2244,36 +2312,180 @@ class Blockchain {
     };
   }
 
-  async getIntegrations(): Promise<RetrievedValue<Map<string, Integration>>> {
+  async getIntegrations(cb: (key:string,tx:Integration)=>void): Promise<string> {
     const hash = this.state.currentChain.getPrevBlockHash();
     const path = this.state.currentChain.getPrevBlockPath();
-    const returning = new Map<string, Integration>();
-    await getIntegrations(this.state.persistence, path, (key, integration) => {
-      returning.set(key, integration);
-    });
-    return {
-      headHash: hash,
-      val: returning
-    };
+    await getIntegrations(this.state.persistence, path, cb);
+    return hash;
   }
 
-  async getBlock(hash: string): Promise<Block | null> {
-    return await this.addOp(async () => {
-      const got = await this.state.persistence.get<{ raw: string }>("SELECT raw FROM Blocks WHERE hash = ?;", hash);
-      if (got === undefined) {
-        return null;
-      }
-      return JSON.parse(got.raw) as Block;
-    });
+  async getRunningIntegrationsOwnedBy(owner: string, cb: (key:string,tx:Integration)=>void): Promise<string> {
+    const hash = this.state.currentChain.getPrevBlockHash();
+    const path = this.state.currentChain.getPrevBlockPath();
+    await getRunningIntegrationsOwnedBy(this.state.persistence, path, owner, cb);
+    return hash;
   }
 
   length() {
     return this.state.currentChain.prevBlockInfo.depth;
   }
 
-  //async getRepresentativeHashes(): Promise<string[]> {
-  //  return await new Promise<string[]>((resolve, reject) => addOp(this, new Op(() => getRepresentativeHashesImpl(this), resolve, reject)));
-  //}
+  async getBlocksOnMainString(prevHash: string, limit: number): Promise<Block[]> {
+    const path = this.state.currentChain.getPrevBlockPath();
+    return await this.addOp(async () => {
+      let depth: { depth: number } | undefined = { depth: 0 };
+      if (prevHash !== Block.genesis().hash) {
+        depth = await this.state.persistence.get<{ depth: number }>(`
+        WITH 
+          path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+        SELECT depth
+          FROM Blocks
+        INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+        WHERE hash = ?;`, path, prevHash);
+      }
+      if (depth === undefined) {
+        return [];
+      }
+
+      const got = await this.state.persistence.all<{ raw: string }>(`
+      WITH 
+        path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+      SELECT Blocks.raw
+        FROM Blocks
+      INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+      WHERE depth > ?
+      ORDER BY Blocks.depth ASC
+      LIMIT ?;`, path, depth.depth, limit);
+
+      return got.flatMap((raw) => JSON.parse(raw.raw) as Block);
+    });
+  }
+
+  async getBlocksOnMainStringByDepth(depth: number, limit: number): Promise<Block[]> {
+    const path = this.state.currentChain.getPrevBlockPath();
+    return await this.addOp(async () => {
+      const got = await this.state.persistence.all<{ raw: string }>(`
+      WITH 
+        path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+      SELECT Blocks.raw
+        FROM Blocks
+      INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+      WHERE depth > ?
+      ORDER BY Blocks.depth ASC
+      LIMIT ?;`, path, depth, limit);
+
+      return got.flatMap((raw) => JSON.parse(raw.raw) as Block);
+    });
+  }
+
+  async getBlockByHash(hash: string): Promise<GetBlockInfo | null> {
+    if (hash === Block.genesis().hash) {
+      return Promise.resolve<GetBlockInfo>({
+        block: Block.genesis(),
+        depth: 0,
+        difficulty: INITIAL_MINE_DIFFICULTY
+      });
+    }
+
+    return await this.addOp(async () => {
+      const read = (await this.state.persistence.get<{ raw: string,depth:number,difficulty:number }>(`
+        SELECT raw,depth,difficulty
+          FROM Blocks
+        WHERE Blocks.hash = ?;`, hash));
+      if (read === undefined) {
+        return null;
+      } else {
+        return {
+          block: JSON.parse(read.raw) as Block,
+          depth: read.depth,
+          difficulty: read.difficulty
+        };
+      }
+    });
+  }
+
+  async getBlockOnMainPathByHash(hash: string): Promise<GetBlockInfo | null> {
+    if (hash === Block.genesis().hash) {
+      return Promise.resolve<GetBlockInfo>({
+        block: Block.genesis(),
+        depth: 0,
+        difficulty: INITIAL_MINE_DIFFICULTY
+      });
+    }
+
+    return await this.addOp(async () => {
+      const read = (await this.state.persistence.get<{ raw: string, depth: number, difficulty: number }>(`
+        WITH 
+          path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+        SELECT raw,depth,difficulty
+          FROM Blocks
+        INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+        WHERE Blocks.hash = ?;`, this.state.currentChain.getPrevBlockPath(), hash));
+      if (read === undefined) {
+        return null;
+      } else {
+        return {
+          block: JSON.parse(read.raw) as Block,
+          depth: read.depth,
+          difficulty: read.difficulty
+        };
+      }
+    });
+  }
+
+  async getBlockOnMainStringByDepth(depth: number): Promise<GetBlockInfo | null> {
+    return await this.addOp(async () => {
+      const read = (await this.state.persistence.get<{ raw: string, depth: number, difficulty:number }>(`
+        WITH 
+          path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+          depths(d) AS (SELECT value FROM json_each(?))
+        SELECT Blocks.raw,Blocks.depth,Blocks.difficulty
+          FROM Blocks
+        INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+        WHERE depth = ?;`, this.state.currentChain.getPrevBlockPath(), depth));
+
+      if (read === undefined) {
+        return null;
+      } else {
+        return {
+          block: JSON.parse(read.raw) as Block,
+          depth: read.depth,
+          difficulty: read.difficulty
+        };
+      }
+    });
+  }
+
+  async getRepresentativeHashes(): Promise<string[]> {
+    return await this.addOp(async () => {
+      //current best node is at this.state.currentChain
+
+      const path = this.state.currentChain.prevBlockInfo.stringifiedStringPath;
+      const maxDepth = this.state.currentChain.prevBlockInfo.depth;
+
+      const depthArray: number[] = [];
+
+      for (let i = 0; i < 10 && i < maxDepth; ++i) {
+        depthArray.push(maxDepth - i);
+      }
+
+      for (let i = 2; 7 + (1 << i) < maxDepth; ++i) {
+        depthArray.push(maxDepth - (7 + (1 << i)));
+      }
+
+
+      return (await this.state.persistence.all<{ hash: string }>(`
+        WITH 
+          path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)),
+          depths(d) AS (SELECT value FROM json_each(?))
+        SELECT
+          Blocks.hash AS hash
+        FROM Blocks
+        INNER JOIN path ON Blocks.string = path.id AND Blocks.depth < path.max
+        WHERE Blocks.depth IN depths
+        ORDER BY Blocks.depth DESC;`, path, JSON.stringify(depthArray))).flatMap((v) => v.hash);
+    });
+  }
 
   //adds an existing block to the blockchain, returns false if the block can't be added, true if it was added
   async addBlock(newBlock: Block): Promise<Result> {
@@ -2284,13 +2496,41 @@ class Blockchain {
         return res;
       }
       //if the stepper now has a longer chain than what we currently have, or it has the same length, but earlier timestamp, update
-      if (stepper.prevBlockInfo.depth > this.state.currentChain.prevBlockInfo.depth
+      if (stepper.prevBlockInfo.depth > this.state.currentChain.prevBlockInfo.depth //is deeper or same depth but earlier
         || (stepper.prevBlockInfo.depth === this.state.currentChain.prevBlockInfo.depth && stepper.prevBlockInfo.timestamp < this.state.currentChain.prevBlockInfo.timestamp)) {
 
 
         //if we have fuseki, we need to update fuseki
         if (this.state.fusekiLocation !== null) {
           await updateFuseki(this.state.fusekiLocation, this.state.persistence, stepper.getPrevBlockHash());
+        }
+
+        const oldChain = this.state.currentChain;
+        this.state.currentChain = stepper;
+
+        //if we are just continuing the current chain 
+        if (oldChain.prevBlockInfo.hash === newBlock.hash) {
+          for (let on = this.listeners.next; on !== this.listeners; on = on.next) {
+            (on as ListenerImpl).func(this.length(), oldChain.prevBlockInfo.depth);
+          }
+        } else {
+          let depth = 0;
+          for (let i = 0; i < oldChain.prevBlockInfo.stringPath.length; ++i) {
+            const oldPath = oldChain.prevBlockInfo.stringPath[i];
+            const newPath = stepper.prevBlockInfo.stringPath[i];
+            if (oldPath.id !== newPath.id) {
+              break;
+            } else if (oldPath.maxExc !== newPath.maxExc) {
+              depth = Math.min(oldPath.maxExc, newPath.maxExc) - 1;
+              break;
+            } else {
+              depth = oldPath.maxExc - 1;
+            }
+          }
+
+          for (let on = this.listeners.next; on !== this.listeners; on = on.next) {
+            (on as ListenerImpl).func(this.length(), depth);
+          }
         }
 
         this.state.currentChain = stepper;
@@ -2341,7 +2581,9 @@ class Blockchain {
 
   private async onCullingTimer(): Promise<void> {
     //cull everything older than 1 hour
+    //console.log("Start cull");
     await checkHeadsForCullImpl(this.state.persistence, CULL_TIME_S);
+    //console.log("End cull");
     this.state.cullingTimer = setTimeout(() => {
       this.addOp<void>(async () => {
         if (this.state.cullingTimer === null) {
@@ -2353,10 +2595,10 @@ class Blockchain {
     }, 60*1000); //do it every minute
   }
 
-  //addListener(listener:Listener): void {
-  //  this.listeners.push(listener);
-  //}
+  addListener(listener: ListenerFunction): Listener {
+    return new ListenerImpl(listener, this.listeners);
+  }
 }
 
 export default Blockchain;
-export { Blockchain, Persistence, type Integration, type Sensor, type Broker, type Wallet };
+export { Blockchain, Persistence, type Integration, type Sensor, type Broker, type Wallet, type Listener, type ListenerFunction };

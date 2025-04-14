@@ -48,80 +48,91 @@
  * 
  */
 
+'use strict';
+
 import express from 'express';
 import bodyParser from 'body-parser';
-//import { PropServer, type SocketConstructor } from '../network/blockchain-prop.js';
-import { Blockchain, type Sensor } from '../blockchain/blockchain.js';
-//import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
+import { PropServer } from '../network/blockchain-prop.js';
+import { Blockchain } from '../blockchain/blockchain.js';
 import Miner from './miner.js';
-'use strict';/* "use strict" is to indicate that the code should be executed in "strict mode".
-              With strict mode, you can not, for example, use undeclared variables.*/
 
 import Config from '../util/config.js';
 import { ChainUtil, isFailure } from '../util/chain-util.js';
-//import { type AnyTransaction, isTransactionType } from '../blockchain/transaction_base.js';
-//import fs from 'fs';
-//import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocketServer } from 'ws';
 
 import {
   DEFAULT_PORT_MINER_API,
-/*  DEFAULT_PORT_MINER_CHAIN,*/
+  DEFAULT_PORT_MINER_CHAIN
 } from '../util/constants.js';
+import { Payment as PaymentTx } from '../blockchain/payment.js';
+import { SensorRegistration as SensorRegistrationTx } from '../blockchain/sensor-registration.js';
+import { BrokerRegistration as BrokerRegistrationTx } from '../blockchain/broker-registration.js';
+import { Integration as IntegrationTx } from '../blockchain/integration.js';
+import { Commit as CommitTx } from '../blockchain/commit.js';
 
-const CONFIGS_STORAGE_LOCATION = "./settings.json";
+const args = process.argv;
+
+if (args.length > 2 && args[2] === "-h") {
+  console.log(args[0] + ' ' + args[1] + " <optional: location of settings file> <optional: prefix in settings file>");
+  process.exit(0);
+}
+
+const CONFIGS_STORAGE_LOCATION = args.length > 2 ? args[2] : "./settings.json";
+const CONFIG_PREFIX = args.length > 3 ? args[3] : "miner-";
 
 const config = new Config(CONFIGS_STORAGE_LOCATION);
 
 const minerPublicKey = config.get({
-  key: "miner-public-key",
+  key: CONFIG_PREFIX + "public-key",
   default: ""
 });
 const persistenceLocation = config.get({
-  key: "miner-blockchain",
+  key: CONFIG_PREFIX + "blockchain",
   default: "./miner_blockchain.db"
 });
 const fusekiLocation = config.get({
-  key: "miner-fuseki",
+  key: CONFIG_PREFIX + "fuseki",
   default: null
 });
-//const chainServerPort = config.get({
-//  key: "miner-chain-server-port",
-//  default: DEFAULT_PORT_MINER_CHAIN
-//});
-//const chainServerPeers = config.get({
-//  key: "miner-chain-server-peers",
-//  default: []
-//});
-//const minerPublicAddress = config.get({
-//  key: "miner-public-address",
-//  default: "-"
-//});
+const chainServerPort = config.get({
+  key: CONFIG_PREFIX + "chain-server-port",
+  default: DEFAULT_PORT_MINER_CHAIN
+});
+const chainServerPeers = config.get({
+  key: CONFIG_PREFIX + "chain-server-peers",
+  default: []
+});
+const minerPublicAddress = config.get({
+  key: CONFIG_PREFIX + "public-address",
+  default: "-"
+});
 const apiPort = config.get({
-  key: "miner-api-port",
+  key: CONFIG_PREFIX + "api-port",
   default: DEFAULT_PORT_MINER_API
 });
 
 const blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 const miner: Miner = new Miner(blockchain, minerPublicKey);
-//let chainServer: PropServer = null;
-
-//const newTxCb = function (tx: AnyTransaction): void {
-//  console.log("new tx through cb");
-
-//  if (isTransactionType(tx, Payment)) {
-//    miner.addPayment(tx.tx);
-//  } else if (isTransactionType(tx, SensorRegistration)) {
-//    miner.addSensorRegistration(tx.tx);
-//  } else if (isTransactionType(tx, BrokerRegistration)) {
-//    miner.addBrokerRegistration(tx.tx);
-//  } else if (isTransactionType(tx, Integration)) {
-//    miner.addIntegration(tx.tx);
-//  } else if (isTransactionType(tx, Commit)) {
-//    miner.addCommit(tx.tx);
-//  } else {
-//    console.log("Unknown tx through prop server. Name: '" + tx.type.txName() + "'");
-//  }
-//};
+const chainServer = new PropServer("Chain-server", blockchain, {
+  connect(address: string) {
+    return new WebSocket(address);
+  },
+  listen(port: number) {
+    return new WebSocketServer({
+      port: port
+    });
+  }
+}, (tx) => {
+  console.log('Recved a tx of type: ' + tx.type.txName());
+  switch (tx.type) {
+    case PaymentTx: miner.addPayment(tx.tx as PaymentTx); break;
+    case BrokerRegistrationTx: miner.addBrokerRegistration(tx.tx as BrokerRegistrationTx); break;
+    case SensorRegistrationTx: miner.addSensorRegistration(tx.tx as SensorRegistrationTx); break;
+    case IntegrationTx: miner.addIntegration(tx.tx as IntegrationTx); break;
+    case CommitTx: miner.addCommit(tx.tx as CommitTx); break;
+    default: console.log("Recved unknown type with name: " + tx.type.txName()); break;
+  }
+});
 
 const app = express();
 
@@ -147,25 +158,27 @@ app.get('/Balance', async (req, res) => {
 
 app.get('/sensors', (_req, res) => {
   const returning: {
-    [index: string]: { [index: string]: unknown }
+    [index: string]: SensorRegistrationTx & { hash: string }
   } = {};
-  for (const [key, value] of Object.entries(blockchain.data.SENSOR)) {
-    returning[key] = Object.assign({}, value);
-    returning[key].hash = ChainUtil.hash(SensorRegistration.toHash(value));
-  }
-  res.json(returning);
-  console.log("/Sensors called");
-  console.log(`Returned ${Object.entries(returning).length} sensors`);
+  blockchain.getSensorTxs((key, value) => {
+    returning[key] = Object.assign({
+      hash: ChainUtil.hash(SensorRegistrationTx.toHash(value)),
+    }, value);
+  }).then((_hash) => {
+    res.json(returning);
+    console.log("/Sensors called");
+    console.log(`Returned ${Object.entries(returning).length} sensors`);
+  });
 });
 
 
 //app.get('/ChainServer/sockets', (_req, res) => {
 //  res.json("NYI");
 //});
-//app.post('/ChainServer/connect', (req, res) => {
-//  chainServer.connect(req.body.url);
-//  res.json("Connecting");
-//});
+app.post('/ChainServer/connect', (req, res) => {
+  chainServer.connect(req.body.url);
+  res.json("Connecting");
+});
 
 app.post('/Payment', (req, res) => {
   const addRes = miner.addPayment(req.body);
@@ -280,9 +293,11 @@ app.post('/Commit', (req, res) => {
 //  });
 //});
 
+blockchain.addListener((_newDepth, _commonDepth) => {
+  //console.log(`New depth of ${newDepth} with a commonDepth of ${commonDepth}`);
+});
 
 
-//chainServer = new PropServer("Chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer, newTxCb);
-//chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
+chainServer.start(chainServerPort, minerPublicAddress, chainServerPeers);
 
 app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));

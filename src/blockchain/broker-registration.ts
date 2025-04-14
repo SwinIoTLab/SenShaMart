@@ -21,29 +21,15 @@
 import { ChainUtil, type KeyPair, type ResultFailure, type RdfTriple, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
-const nodeValidator = {
-  s: ChainUtil.validateIRI,
-  p: ChainUtil.validateIRI,
-  o: ChainUtil.validateIRI
-};
-
-const literalValidator = {
-  s: ChainUtil.validateIRI,
-  p: ChainUtil.validateIRI,
-  o: ChainUtil.validateIsString
-};
-
 const metadataValidation = {
   name: ChainUtil.validateIsString,
   endpoint: ChainUtil.validateIsString,
   extraNodes: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(
-      ChainUtil.createValidateObject(
-        nodeValidator))),
+      ChainUtil.validateNodeMetadata)),
   extraLiterals: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(
-      ChainUtil.createValidateObject(
-        literalValidator)))
+      ChainUtil.validateLiteralMetadata))
 }
 
 const baseValidation = {
@@ -153,3 +139,4 @@ class BrokerRegistration implements RepeatableTransaction {
 }
 
 export default BrokerRegistration;
+export { BrokerRegistration };

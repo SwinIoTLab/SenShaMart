@@ -21,18 +21,6 @@
 import { ChainUtil, type KeyPair, type ResultFailure, type RdfTriple, isFailure } from '../util/chain-util.js';
 import { type RepeatableTransaction, type TransactionWrapper } from './transaction_base.js';
 
-const nodeValidator = {
-  s: ChainUtil.validateIRI,
-  p: ChainUtil.validateIRI,
-  o: ChainUtil.validateIRI
-};
-
-const literalValidator = {
-  s: ChainUtil.validateIRI,
-  p: ChainUtil.validateIRI,
-  o: ChainUtil.validateIsString
-};
-
 const metadataValidation = {
   name: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
@@ -41,12 +29,10 @@ const metadataValidation = {
   interval: ChainUtil.createValidateIsEither(ChainUtil.validateIsNull, ChainUtil.createValidateIsIntegerWithMin(1)),
   extraNodes: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(
-      ChainUtil.createValidateObject(
-        nodeValidator))),
+      ChainUtil.validateNodeMetadata)),
   extraLiterals: ChainUtil.createValidateOptional(
     ChainUtil.createValidateArray(
-      ChainUtil.createValidateObject(
-        literalValidator)))
+      ChainUtil.validateLiteralMetadata))
 };
 
 const baseValidation = {
@@ -179,3 +165,4 @@ class SensorRegistration implements RepeatableTransaction {
 }
 
 export default SensorRegistration;
+export { SensorRegistration };

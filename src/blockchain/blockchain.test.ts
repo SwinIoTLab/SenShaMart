@@ -14,19 +14,15 @@ describe('Blockchain', () => {
   const kp = ChainUtil.genKeyPair();
   const kp2 = ChainUtil.genKeyPair();
 
-  it('Genned keys different', async () => {
-    expect(kp.pubSerialized).not.toBe(kp2.pubSerialized);
-  });
-
   it('Internal head changes', async () => {
     const bc = await Blockchain.create(":memory:", null);
     const b1 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {});
 
-    expect(bc.getHeadHash()).toBe(Block.genesis().hash);
+    expect(bc.getHeadInfo().block.hash).toBe(Block.genesis().hash);
 
     expect((await bc.addBlock(b1.block)).result).toBe(true);
 
-    expect(bc.getHeadHash()).toBe(b1.block.hash);
+    expect(bc.getHeadInfo().block.hash).toBe(b1.block.hash);
   });
 
   it('Reward', async () => {
@@ -120,7 +116,11 @@ describe('Blockchain', () => {
       expect((await bc.addBlock(prevBlock.block)).result).toBe(true);
     }
 
-    expect((await bc.getBrokers()).val.size).toBe(brokers.length);
+    let count = 0;
+
+    await bc.getBrokers((_key, _tx) => ++count);
+
+    expect(count).toBe(brokers.length);
   });
 
   it('Invalid broker counter', async () => {
@@ -215,7 +215,7 @@ describe('Blockchain', () => {
 
     const foundRecvAfter = await bc.getWallet(kp2.pubSerialized);
     expect(foundRecvAfter.val.counter).toBe(INITIAL_COUNTER);
-    expect(foundRecvAfter.val.balance).toBe(2 * INITIAL_BALANCE); 
+    expect(foundRecvAfter.val.balance).toBe(2 * INITIAL_BALANCE);
   });
 
   it('Integration add/get', async () => {
@@ -586,9 +586,9 @@ describe('Blockchain', () => {
 
     //we're going to form a fork, and then cull one side
 
-    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2*MINE_RATE);
-    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4*MINE_RATE);
-    const bl21 = Block.debugMine(bl0, kp.pubSerialized, {}, 5*MINE_RATE);
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2 * MINE_RATE);
+    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4 * MINE_RATE);
+    const bl21 = Block.debugMine(bl0, kp.pubSerialized, {}, 5 * MINE_RATE);
 
     expect((await bc.addBlock(bl0.block)).result).toBe(true);
     expect((await bc.addBlock(bl11.block)).result).toBe(true);
@@ -597,9 +597,9 @@ describe('Blockchain', () => {
 
     await bc.manualCull(0);
     //now we check which blocks exist, branch 1 should still be there
-    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl11.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl21.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl11.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl21.block.hash)).toBeNull();
 
     await bc.close();
   });
@@ -616,19 +616,18 @@ describe('Blockchain', () => {
     expect((await bc.addBlock(bl11.block)).result).toBe(true);
     expect((await bc.addBlock(bl21.block)).result).toBe(true);
 
-
     await bc.manualCull(0);
     //now we check which blocks exist, branch 1 should still be there
-    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl11.block.hash)).toBeNull();
-    expect(await bc.getBlock(bl21.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl11.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl21.block.hash)).not.toBeNull();
 
     await bc.close();
   });
   it('Cull double fork', async () => {
     const bc = await Blockchain.create(":memory:", null);
 
-    //we're going to form a fork, and then cull one side
+    //we're going to form 2 fork, and then cull 2 heads
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2 * MINE_RATE);
     const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4 * MINE_RATE);
@@ -649,12 +648,129 @@ describe('Blockchain', () => {
     await bc.manualCull(0);
 
     //now we check which blocks exist, branch 1 should still be there
-    expect(await bc.getBlock(bl0.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl11.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl12.block.hash)).not.toBeNull();
-    expect(await bc.getBlock(bl22.block.hash)).toBeNull();
-    expect(await bc.getBlock(bl31.block.hash)).toBeNull();
-    expect(await bc.getBlock(bl32.block.hash)).toBeNull();
-    expect(await bc.getBlock(bl42.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl11.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl12.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl22.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl31.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl32.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl42.block.hash)).toBeNull();
+  });
+  it('Cull double fork, different insertion order', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    //we're going to form 3 fork, and then cull 3 heads.
+    //This different insertion order causes a 'lower' string to be culled before the 'higher' string that branches off the 'lower' one.
+    //This caused a bug previously, so now we have regression testing!
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {}, 2 * MINE_RATE);
+    const bl11 = Block.debugMine(bl0, kp.pubSerialized, {}, 4 * MINE_RATE);
+    const bl12 = Block.debugMine(bl11, kp.pubSerialized, {}, 6 * MINE_RATE);
+    const bl22 = Block.debugMine(bl11, kp.pubSerialized, {}, 7 * MINE_RATE);
+    const bl31 = Block.debugMine(bl0, kp.pubSerialized, {}, 5 * MINE_RATE);
+    const bl32 = Block.debugMine(bl31, kp.pubSerialized, {}, 7 * MINE_RATE);
+    const bl42 = Block.debugMine(bl31, kp.pubSerialized, {}, 8 * MINE_RATE);
+
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+    expect((await bc.addBlock(bl31.block)).result).toBe(true);
+    expect((await bc.addBlock(bl32.block)).result).toBe(true);
+    expect((await bc.addBlock(bl42.block)).result).toBe(true);
+    expect((await bc.addBlock(bl11.block)).result).toBe(true);
+    expect((await bc.addBlock(bl12.block)).result).toBe(true);
+    expect((await bc.addBlock(bl22.block)).result).toBe(true);
+
+
+    await bc.manualCull(0);
+
+    //now we check which blocks exist, branch 1 should still be there
+    expect(await bc.getBlockByHash(bl0.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl11.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl12.block.hash)).not.toBeNull();
+    expect(await bc.getBlockByHash(bl22.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl31.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl32.block.hash)).toBeNull();
+    expect(await bc.getBlockByHash(bl42.block.hash)).toBeNull();
+  });
+  it('Representative hashes', async () => {
+    const bc = await Blockchain.create(':memory:', null);
+
+    const blocks: DebugMined[] = [];
+
+    for (let i = 0; i < 1000; ++i) {
+      const prev = blocks.length === 0 ? Block.debugGenesis() : blocks[blocks.length - 1];
+      const block = Block.debugMine(prev, kp.pubSerialized, {});
+      expect((await bc.addBlock(block.block)).result).toBe(true);
+      blocks.push(block);
+
+      const repHashes = await bc.getRepresentativeHashes();
+      for (let j = 0; j <= i && j < 10; ++j) {
+        expect(repHashes[j]).toBe(blocks[blocks.length - 1 - j].block.hash);
+      }
+      for (let j = 2; 7 + (1 << j) <= i; ++j) {
+        expect(repHashes[8 + j]).toBe(blocks[blocks.length - 1 - (7 + (1 << j))].block.hash);
+      }
+    }
+  });
+
+  it('Update Listener linear', async () => {
+    let updateEpoch = 0;
+    let updateLength = 0;
+    let updateCommon = 0;
+
+    const bc = await Blockchain.create(":memory:", null);
+    bc.addListener((newDepth, commonDepth) => {
+      updateEpoch++;
+      updateLength = newDepth;
+      updateCommon = commonDepth;
+    });
+
+    expect(updateEpoch).toBe(0);
+    expect(updateLength).toBe(0);
+    expect(updateCommon).toBe(0);
+    const b0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {});
+    expect((await bc.addBlock(b0.block)).result).toBe(true);
+    expect(updateEpoch).toBe(1);
+    expect(updateLength).toBe(1);
+    expect(updateCommon).toBe(0);
+    const b1 = Block.debugMine(b0, kp.pubSerialized, {});
+    expect((await bc.addBlock(b1.block)).result).toBe(true);
+    expect(updateEpoch).toBe(2);
+    expect(updateLength).toBe(2);
+    expect(updateCommon).toBe(1);
+  });
+
+  it('Update Listener branched', async () => {
+    let updateEpoch = 0;
+    let updateLength = 0;
+    let updateCommon = 0;
+
+    const bc = await Blockchain.create(":memory:", null);
+    bc.addListener((newDepth, commonDepth) => {
+      updateEpoch++;
+      updateLength = newDepth;
+      updateCommon = commonDepth;
+    });
+
+    expect(updateEpoch).toBe(0);
+    expect(updateLength).toBe(0);
+    expect(updateCommon).toBe(0);
+    const b0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {});
+    expect((await bc.addBlock(b0.block)).result).toBe(true);
+    expect(updateEpoch).toBe(1);
+    expect(updateLength).toBe(1);
+    expect(updateCommon).toBe(0);
+    const b11 = Block.debugMine(b0, kp.pubSerialized, {});
+    expect((await bc.addBlock(b11.block)).result).toBe(true);
+    expect(updateEpoch).toBe(2);
+    expect(updateLength).toBe(2);
+    expect(updateCommon).toBe(1);
+    const b21 = Block.debugMine(b0, kp2.pubSerialized, {});
+    expect((await bc.addBlock(b21.block)).result).toBe(true);
+    expect(updateEpoch).toBe(2);
+    const b22 = Block.debugMine(b21, kp2.pubSerialized, {});
+    expect((await bc.addBlock(b22.block)).result).toBe(true);
+    expect(updateEpoch).toBe(3);
+    expect(updateLength).toBe(3);
+    expect(updateCommon).toBe(1);
   });
 });

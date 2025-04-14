@@ -63,6 +63,7 @@ interface KeyPair {
 }
 
 type ValidatorI = (v: unknown, fail: ResultFailure) => boolean;
+type ValidatorTypedI<T> = (v: unknown, fail: ResultFailure) => v is T;
 
 //an object to store a bunch of static utility functions
 class ChainUtil {
@@ -291,7 +292,7 @@ class ChainUtil {
 
   static validateIsNumber(t: unknown, fail: ResultFailure): t is number {
     if (t === undefined) {
-      fail.reason = "Is undefined"
+      fail.reason = "Is undefined";
       return false;
     }
     if (typeof t !== 'number') {
@@ -301,15 +302,22 @@ class ChainUtil {
     return true;
   }
 
-  static validateIsInteger(t: unknown, fail: ResultFailure): t is number {
-    if (t === undefined) {
-      fail.reason = "Is undefined";
-      return false;
-    }
-    if (typeof t !== 'number') {
-      fail.reason = "Is not number";
-      return false;
+  static createValidateIsNumberExact(val: number): ValidatorI {
+    return (t, fail) => {
+      if (!ChainUtil.validateIsNumber(t, fail)) {
+        return false;
+      }
+      if (t !== val) {
+        fail.reason = `Value is not equal to ${val}`;
+        return false;
+      }
+      return true;
+    };
+  }
 
+  static validateIsInteger(t: unknown, fail: ResultFailure): t is number {
+    if (!ChainUtil.validateIsNumber(t, fail)) {
+      return false;
     }
     if (!Number.isInteger(t)) {
       fail.reason = "Is not integer";
@@ -319,17 +327,8 @@ class ChainUtil {
   }
 
   //includes minimum
-  static validateIsIntegerWithMin(t: unknown, minimum:number, fail: ResultFailure): t is number {
-    if (t === undefined) {
-      fail.reason= "Is undefined";
-      return false;
-    }
-    if (typeof t !== 'number') {
-      fail.reason = "Is not number";
-      return false;
-    }
-    if (!Number.isInteger(t)) {
-      fail.reason = "Is not integer";
+  static validateIsIntegerWithMin(t: unknown, minimum: number, fail: ResultFailure): t is number {
+    if (!ChainUtil.validateIsInteger(t, fail)) {
       return false;
     }
     if (t < minimum) {
@@ -412,8 +411,12 @@ class ChainUtil {
 
     try {
       ChainUtil.deserializePrivateKey(t as string);
-    } catch (_) {
-      fail.reason = "Is not a serialized private key\n Could not deserialize";
+    } catch (err) {
+      if (err instanceof Error) {
+        fail.reason = "Is not a serialized private key\n Could not deserialize\n" + err.message;
+      } else {
+        fail.reason = "Is not a serialized private key\n Could not deserialize\nError is not of type Error";
+      }
       return false;
     }
     return true;
@@ -444,8 +447,8 @@ class ChainUtil {
   }
 
   //this 'creates' a validator, using the given validator to validate each element of the array
-  static createValidateArray(memberValidator:ValidatorI): ValidatorI {
-    return function (t, fail) {
+  static createValidateArray<T>(memberValidator:ValidatorI): ValidatorTypedI<T[]> {
+    return function (t, fail):  t is T[] {
       return ChainUtil.validateArray(t, memberValidator, fail);
     };
   }
@@ -482,9 +485,9 @@ class ChainUtil {
   }
 
   //this 'creates' a validator, using the given object. For every member of the member validator, a key in t must exist and pass the validator.
-  static createValidateObject(memberValidator: { [index: string]: ValidatorI }): ValidatorI {
-    return function (t, fail) {
-      return ChainUtil.validateObject(t, memberValidator, fail);
+  static createValidateObject<T>(memberValidator: { [index: string]: ValidatorI }): ValidatorTypedI<T> {
+    return function (t, fail): t is T {
+      return ChainUtil.validateObject<T>(t, memberValidator, fail);
     };
   }
 
@@ -513,6 +516,34 @@ class ChainUtil {
       return false;
     }
 
+    return true;
+  }
+
+  static validateNodeMetadata(t: unknown, fail: ResultFailure): t is RdfTriple {
+    return ChainUtil.validateObject<RdfTriple>(t, {
+      s: ChainUtil.validateIRI,
+      p: ChainUtil.validateIRI,
+      o: ChainUtil.validateIRI
+    }, fail);
+  }
+
+  static validateLiteralMetadata(t: unknown, fail: ResultFailure): t is RdfTriple {
+    return ChainUtil.validateObject<RdfTriple>(t, {
+      s: ChainUtil.validateIRI,
+      p: ChainUtil.validateIRI,
+      o: ChainUtil.validateIsString
+    }, fail);
+  }
+
+  static validateBoolean(t: unknown, fail: ResultFailure): t is boolean {
+    if (t === undefined) {
+      fail.reason = "Is undefined";
+      return false;
+    }
+    if (typeof t !== 'boolean') {
+      fail.reason = "Is not boolean";
+      return false;
+    }
     return true;
   }
 }

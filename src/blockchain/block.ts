@@ -17,7 +17,7 @@
 /**
  * @author Anas Dawod e-mail: adawod@swin.edu.au
  */
-import { ChainUtil, type Result, isFailure, type ResultFailure } from '../util/chain-util.js';
+import { ChainUtil, type Result, type ResultFailure } from '../util/chain-util.js';
 import { INITIAL_MINE_DIFFICULTY, MINE_RATE } from '../util/constants.js';
 import { type Transaction } from './transaction_base.js';
 import BrokerRegistration from './broker-registration.js';
@@ -74,7 +74,7 @@ const baseValidation = {
     commits: ChainUtil.createValidateOptional(
       ChainUtil.createValidateArray(Commit.verify))
   })
-}
+};
 
 export class BlockTxs {
   //arrays of txs
@@ -144,9 +144,10 @@ export class Block {
     this.txs = txs;
     this.nonce = nonce;
 
-    const verifyRes = Block.verify(this);
-    if (isFailure(verifyRes)) {
-      throw new Error("Failed to construct block\n" + verifyRes.reason);
+    const fail: ResultFailure = { result: false, reason: "" };
+
+    if (!Block.validate(this, fail)) {
+      throw new Error("Failed to construct block\n" + fail.reason);
     }
   }
 
@@ -245,25 +246,20 @@ export class Block {
   }
 
   //verify an object is a valid block by checking members and hash
-  static verify(block: Block): Result {
-    const fail: ResultFailure = { result: false, reason: "" };
-
-    if (!ChainUtil.validateObject(block, baseValidation, fail)) {
-      return fail;
+  static validate(v: unknown, fail: ResultFailure): boolean {
+    if (!ChainUtil.validateObject<Block>(v, baseValidation, fail)) {
+      fail.reason = "Failed base validation\n" + fail.reason;
+      return false;
     }
 
-    const computedHash = Block.blockHash(block);
+    const computedHash = Block.blockHash(v);
 
-    if (computedHash !== block.hash) {
-      return {
-        result: false,
-        reason: "Computed hash doesn't match stored hash"
-      };
+    if (computedHash !== v.hash) {
+      fail.reason = "Computed hash doesn't match stored hash";
+      return false;
     }
 
-    return {
-      result: true
-    };
+    return true;
   }
 }
 

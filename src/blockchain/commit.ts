@@ -115,3 +115,4 @@ class Commit implements Transaction {
 }
 
 export default Commit;
+export { Commit };
