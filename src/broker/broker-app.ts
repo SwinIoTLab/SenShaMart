@@ -90,6 +90,10 @@ const MQTTPort = config.get({
   key: "broker-MQTT-port",
   default: DEFAULT_PORT_BROKER_MQTT
 });
+const passthrough = config.get({
+  key: "broker-passthrough",
+  default: false
+});
 
 let blockchain: Blockchain = null;
 let chainServer: PropServer = null;
@@ -264,6 +268,21 @@ function onNewPacket(sensor: string, data:string | Buffer) {
 
   console.log(`New packet from ${sensor} with size ${data.length}`);
 
+  if (passthrough) {
+    mqtt.publish({
+      cmd: 'publish',
+      retain: true,
+      dup: false,
+      qos: 2,
+      topic: "out/" + sensor,
+      payload: data
+    }, (err: Error) => {
+      if (err) {
+        console.log(`Error on internal passthrough publish: ${err.message}`);
+      }
+    });
+  }
+
   const foundSensor = ourIntegrations.get(sensor);
 
   //if we aren't brokering this sensor, ignore
@@ -339,6 +358,9 @@ app.get('/MyBalance', (_req, res) => {
 app.get('/Balance', (req, res) => {
   const balance = blockchain.getBalanceCopy(req.body.publicKey);
   res.json(balance);
+});
+app.get('/brokering', (_req, res) => {
+  res.json(Array.from(ourIntegrations.keys()));
 });
 
 //TODO: probably want to move query logic into blockchain
