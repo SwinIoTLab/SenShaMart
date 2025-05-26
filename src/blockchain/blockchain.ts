@@ -48,6 +48,7 @@ import {
 import { default as Persistence} from './persistence.js';
 
 import IRIS from './iris.js';
+import assert from 'assert/strict';
 //import { verify } from 'crypto';
 
 const MAX_FUSEKI_MESSAGE_SIZE = (1 * 1024 * 1024); //1 MB
@@ -141,20 +142,32 @@ const DB_CREATE_QUERY = [
 `CREATE TABLE Integration(
   string INTEGER NOT NULL,
   depth INTEGER NOT NULL,
-  name TEXT NOT NULL,
+  key TEXT NOT NULL,
+  hash TEXT NOT NULL,
   owner TEXT NOT NULL,
+  startTime INTEGER NOT NULL,
   timeoutTime INTEGER NOT NULL,
   uncommittedCount INTEGER NOT NULL,
-  outputsRaw TEXT NOT NULL,
   state INTEGER NOT NULL,
-  PRIMARY KEY(string,depth,name),
+  PRIMARY KEY(string,depth,key),
   FOREIGN KEY(string,depth) REFERENCES Blocks(string,depth) ON UPDATE CASCADE ON DELETE CASCADE);`,
-];
 
-//Make the key into integration datas for an integration
-function makeIntegrationKey(input: string, counter: number) {
-  return input + '/' + String(counter);
-}
+`CREATE TABLE IntegrationOutput(
+  string INTEGER NOT NULL,
+  depth INTEGER NOT NULL,
+  integrationKey TEXT NOT NULL,
+  sensorName TEXT NOT NULL,
+  sensorCostPerMin INTEGER NOT NULL,
+  sensorCostPerKB INTEGER NOT NULL,
+  broker TEXT NOT NULL,
+  brokerOwner TEXT NOT NULL,
+  sensorOwner TEXT NOT NULL,
+  witnessesRaw TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  compensationTotal REAL NOT NULL,
+  PRIMARY KEY(string,depth,integrationKey,sensorName),
+  FOREIGN KEY(string,depth,integrationKey) REFERENCES Integration(string,depth,key) ON UPDATE CASCADE ON DELETE CASCADE);`
+];
 
 //A wallet has the balance and current counter for a wallet
 class Wallet {
@@ -223,7 +236,7 @@ export const INTEGRATION_STATE = {
 export type Integrate_state = typeof INTEGRATION_STATE[keyof typeof INTEGRATION_STATE];
 
 //Extra information that is held about an integration output. A cache to simplify processing
-type IntegrationOutput = {
+export type IntegrationOutput = {
   sensorCostPerMin: number; //cost of the sensor at the time the integration started
   sensorCostPerKB: number; //cost of the sensor at the time the integration started
   broker: string; //name of broker of the sensor at the time the integration started
@@ -238,13 +251,19 @@ type IntegrationOutput = {
 
 //Extra information that is held about integrations. A cache to simplify processing
 class Integration {
+  key: string; //the integration key for this integration
+  hash: string; //the hash of the integration tx this is representing
   owner: string; //the wallet which created this tx
+  startTime: number; //when this integration started
   timeoutTime: number; //when this integration times out
   uncommittedCount: number; //total number of witnesses who are yet to vote to commit
-  outputs: IntegrationOutput[]; //extra information for each output
+  outputs: { [index: string]: IntegrationOutput}; //sensorName -> extra information for each output
   state: Integrate_state; //current state of the integration
-  constructor(owner: string, timeoutTime: number, uncommittedCount: number, outputs: IntegrationOutput[], state: Integrate_state) {
+  constructor(key: string, hash: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number, outputs: { [index: string]: IntegrationOutput }, state: Integrate_state) {
+    this.key = key;
+    this.hash = hash;
     this.owner = owner;
+    this.startTime = startTime;
     this.timeoutTime = timeoutTime;
     this.uncommittedCount = uncommittedCount;
     this.outputs = outputs;
@@ -253,17 +272,23 @@ class Integration {
 
   differs(o: Integration | null): boolean {
     if (o === null
+      || this.key !== o.key
+      || this.hash !== o.hash
       || this.owner !== o.owner
+      || this.startTime !== o.startTime
       || this.timeoutTime !== o.timeoutTime
       || this.uncommittedCount !== o.uncommittedCount
-      || this.outputs.length !== o.outputs.length
+      || Object.keys(this.outputs).length !== Object.keys(o.outputs).length
       || this.state !== o.state) {
       return true;
     }
 
-    for (let i = 0; i < this.outputs.length; ++i) {
-      const our = this.outputs[i];
-      const their = o.outputs[i];
+    for (const sensor in this.outputs) {
+      if (!(sensor in o.outputs)) {
+        return false;
+      }
+      const our = this.outputs[sensor];
+      const their = o.outputs[sensor];
       if (our.sensorCostPerMin !== their.sensorCostPerMin
         || our.sensorCostPerKB !== their.sensorCostPerKB
         || our.broker !== their.broker
@@ -492,6 +517,33 @@ async function getBroker(persistence: Persistence, key: string, path: string): P
   }
 }
 
+type NamedBroker = {
+  name: string;
+  broker: Broker;
+};
+
+async function getRandomBroker(persistence: Persistence, path: string): Promise<NamedBroker | null> {
+  type Raw = { name:string, owner: string, endpoint: string, hash: string };
+  const raw = await persistence.get<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+    SELECT name,owner,MAX(depth),endpoint,hash
+      FROM Broker
+    INNER JOIN path ON Broker.string = path.id AND Broker.depth < path.max
+    GROUP BY name
+    ORDER BY RANDOM()
+    LIMIT 1;`, path);
+
+  if (raw === undefined) {
+    return null;
+  } else {
+    return {
+      name: raw.name,
+      broker: new Broker(raw.owner, raw.endpoint, raw.hash)
+    };
+  }
+}
+
 async function getBrokers(persistence: Persistence, path: string, cb: (key: string, broker: Broker) => void): Promise<void> {
   type Raw = { name: string, owner: string, endpoint: string, hash: string };
   await persistence.each<Raw>(`
@@ -562,6 +614,28 @@ async function getSensors(persistence: Persistence, path: string, cb: (key: stri
   }, path);
 }
 
+type NamedSensor = {
+  name: string;
+  sensor: Sensor
+}
+
+async function getSensorsOwnedBy(persistence: Persistence, path: string, owner: string): Promise<NamedSensor[]> {
+  type Raw = { name: string, hash: string, broker: string, costPerKB: number, costPerMin: number };
+  return (await persistence.all<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
+    SELECT DISTINCT name,MAX(depth),hash,broker,costPerKB,costPerMin
+      FROM Sensor
+    INNER JOIN path ON Sensor.string = path.id AND Sensor.depth < path.max
+    WHERE Sensor.owner = ?
+    GROUP BY name;`, path, owner)).map((raw) => {
+      return {
+        name: raw.name,
+        sensor: new Sensor(owner, raw.hash, raw.broker, raw.costPerKB, raw.costPerMin)
+      };
+  });
+}
+
 async function getSensorTxs(persistence: Persistence, path: string, cb: (key: string, sensor: SensorTx) => void): Promise<void> {
   type Raw = { name: string, raw: string };
   await persistence.each<Raw>(`
@@ -575,54 +649,163 @@ async function getSensorTxs(persistence: Persistence, path: string, cb: (key: st
   }, path);
 }
 
+async function getOutputsAndMakeIntegration(persistence: Persistence, integrationHash: string, integrationKey: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number, state: Integrate_state, string: number, depth: number): Promise<Integration> {
+  type RawOutput = { sensorCostPerMin: number, sensorCostPerKB: number, broker: string, brokerOwner: string, sensorOwner: string, sensorName: string, witnessesRaw: string, amount: number, compensationTotal: number };
+  const outputs = await persistence.all<RawOutput>(`
+      SELECT sensorCostPerMin,sensorCostPerKB,broker,brokerOwner,sensorOwner,sensorName,witnessesRaw,amount,compensationTotal
+        FROM IntegrationOutput
+      WHERE string=? AND depth=? AND integrationKey=?;`, string, depth, integrationKey);
+  const outputsConverted: { [index: string]: IntegrationOutput } = {};
+  for (const value of outputs) {
+    outputsConverted[value.sensorName] = {
+      sensorCostPerMin: value.sensorCostPerMin,
+      sensorCostPerKB: value.sensorCostPerKB,
+      broker: value.broker,
+      brokerOwner: value.brokerOwner,
+      sensorOwner: value.sensorOwner,
+      witnesses: JSON.parse(value.witnessesRaw) as { [index: string]: boolean },
+      amount: value.amount,
+      compensationTotal: value.compensationTotal
+    }
+  }
+  assert(Object.keys(outputsConverted).length > 0);
+  return new Integration(integrationKey, integrationHash, owner, startTime, timeoutTime, uncommittedCount, outputsConverted, state);
+}
+
 async function getIntegration(persistence: Persistence, key: string, path: string): Promise<Integration | null> {
-  type Raw = { owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
+  type Raw = { string: number, depth: number, hash: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number, state: Integrate_state };
   const raw = await persistence.get<Raw>(`
     WITH 
       path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))
-    SELECT owner,timeoutTime,uncommittedCount,outputsRaw,state
+    SELECT string,depth,hash,owner,startTime,timeoutTime,uncommittedCount,state
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
-    WHERE name = ?
+    WHERE key = ?
     ORDER BY depth DESC LIMIT 1;`, path, key);
   if (raw === undefined) {
     return null;
   } else {
-    return new Integration(raw.owner, raw.timeoutTime, raw.uncommittedCount, JSON.parse(raw.outputsRaw) as IntegrationOutput[], raw.state);
+    return await getOutputsAndMakeIntegration(persistence, raw.hash, key, raw.owner, raw.startTime, raw.timeoutTime, raw.uncommittedCount, raw.state, raw.string, raw.depth);
   }
 }
 
-async function getIntegrations(persistence: Persistence, path: string, cb: (key: string, integration: Integration) => void): Promise<void> {
-  type Raw = { name: string, owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
-  await persistence.each<Raw>(`
+async function getIntegrations(persistence: Persistence, path: string): Promise<Integration[]> {
+  type Raw = { string: number, depth: number, hash:string, key: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number, state: Integrate_state };
+  const integrations = await persistence.all<Raw>(`
     WITH 
       path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
-    SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
+    SELECT string,depth,hash,key,MAX(depth),owner,startTime,timeoutTime,uncommittedCount,state
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
-    GROUP BY name;`, (row: Raw) => {
-    cb(row.name, new Integration(row.owner, row.timeoutTime, row.uncommittedCount, JSON.parse(row.outputsRaw) as IntegrationOutput[], row.state));
-  }, path);
+    GROUP BY key;`, path);
+
+  const returning: Integration[] = [];
+
+  for (const integration of integrations) {
+    returning.push(await getOutputsAndMakeIntegration(persistence, integration.hash, integration.key, integration.owner, integration.startTime,integration.timeoutTime, integration.uncommittedCount, integration.state, integration.string, integration.depth));
+  }
+
+  return returning;
 }
 
-async function getRunningIntegrationsOwnedBy(persistence: Persistence, path: string, owner: string, cb: (key: string, integration: Integration) => void): Promise<void> {
-  type Raw = { name: string, owner: string, timeoutTime: number, uncommittedCount: number, outputsRaw: string, state: Integrate_state };
-  await persistence.each<Raw>(`
+async function getRunningIntegrationsOwnedBy(persistence: Persistence, path: string, owner: string): Promise<Integration[]> {
+  type Raw = { string: number, depth: number, hash:string, key: string, startTime: number, timeoutTime: number, uncommittedCount: number, outputsRaw: string };
+  const integrations = await persistence.all<Raw>(`
     WITH 
       path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
-    SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
+    SELECT string,depth,hash,key,MAX(depth),startTime,timeoutTime,uncommittedCount,outputsRaw
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
-    GROUP BY name
-    WHERE Integration.owner = ? AND Integration.state=${INTEGRATION_STATE.RUNNING};`, (row: Raw) => {
-    cb(row.name, new Integration(row.owner, row.timeoutTime, row.uncommittedCount, JSON.parse(row.outputsRaw) as IntegrationOutput[], row.state));
-  }, path, owner);
+    WHERE Integration.owner = ?
+    GROUP BY key
+      HAVING Integration.state=${INTEGRATION_STATE.RUNNING};`, path, owner);
+
+  const returning: Integration[] = [];
+
+  for (const integration of integrations) {
+    returning.push(await getOutputsAndMakeIntegration(persistence, integration.hash, integration.key, owner, integration.startTime, integration.timeoutTime, integration.uncommittedCount, INTEGRATION_STATE.RUNNING, integration.string, integration.depth));
+  }
+
+  return returning;
+}
+
+async function getRunningIntegrationsUsingSensor(persistence: Persistence, path: string, sensor: string): Promise<Integration[]> {
+  type Raw = { string: number, depth: number, hash:string, key: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number };
+  const matchingOutputs = await persistence.all<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
+    SELECT Integration.string,Integration.depth,Integration.hash,Integration.key,MAX(Integration.depth),Integration.owner,Integration.startTime,Integration.timeoutTime,Integration.uncommittedCount
+      FROM Integration
+    INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
+    INNER JOIN IntegrationOutput ON Integration.string = IntegrationOutput.string AND Integration.depth = IntegrationOutput.depth AND Integration.key = IntegrationOutput.integrationKey
+    WHERE IntegrationOutput.sensorName = ?
+    GROUP BY Integration.key
+      HAVING Integration.state=${INTEGRATION_STATE.RUNNING};`, path, sensor);
+
+  const returning: Integration[] = [];
+
+  for (const integration of matchingOutputs) {
+    //state always running since it's a condition of the query
+    returning.push(await getOutputsAndMakeIntegration(persistence, integration.hash, integration.key, integration.owner, integration.startTime,integration.timeoutTime, integration.uncommittedCount, INTEGRATION_STATE.RUNNING, integration.string, integration.depth));
+  }
+
+  return returning;
+}
+
+async function getRunningIntegrationsUsingSensorsOwnedBy(persistence: Persistence, path: string, owner: string): Promise<Integration[]> {
+  type Raw = { string: number, depth: number, hash: string, key: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number };
+  const matchingOutputs = await persistence.all<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
+    SELECT Integration.string,Integration.depth,Integration.hash,Integration.key,MAX(Integration.depth),Integration.owner,Integration.startTime,Integration.timeoutTime,Integration.uncommittedCount
+      FROM Integration
+    INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
+    INNER JOIN IntegrationOutput ON Integration.string = IntegrationOutput.string AND Integration.depth = IntegrationOutput.depth AND Integration.key = IntegrationOutput.integrationKey
+    WHERE IntegrationOutput.sensorOwner = ?
+    GROUP BY Integration.key
+      HAVING Integration.state=${INTEGRATION_STATE.RUNNING};`, path, owner);
+
+  const returning: Integration[] = [];
+
+  for (const integration of matchingOutputs) {
+    //state always running since it's a condition of the query
+    returning.push(await getOutputsAndMakeIntegration(persistence, integration.hash, integration.key, integration.owner, integration.startTime, integration.timeoutTime, integration.uncommittedCount, INTEGRATION_STATE.RUNNING, integration.string, integration.depth));
+  }
+
+  return returning;
+}
+
+async function getRunningIntegrationsUsingBrokersOwnedBy(persistence: Persistence, path: string, owner: string): Promise<Integration[]> {
+  type Raw = { string: number, depth: number, hash: string, key: string, owner: string, startTime: number, timeoutTime: number, uncommittedCount: number };
+  const matchingOutputs = await persistence.all<Raw>(`
+    WITH 
+      path(id,max) AS (SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?))  
+    SELECT Integration.string,Integration.depth,Integration.hash,Integration.key,MAX(Integration.depth),Integration.owner,Integration.startTime,Integration.timeoutTime,Integration.uncommittedCount
+      FROM Integration
+    INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
+    INNER JOIN IntegrationOutput ON Integration.string = IntegrationOutput.string AND Integration.depth = IntegrationOutput.depth AND Integration.key = IntegrationOutput.integrationKey
+    WHERE IntegrationOutput.brokerOwner = ?
+    GROUP BY Integration.key
+      HAVING Integration.state=${INTEGRATION_STATE.RUNNING};`, path, owner);
+
+  const returning: Integration[] = [];
+
+  for (const integration of matchingOutputs) {
+    //state always running since it's a condition of the query
+    returning.push(await getOutputsAndMakeIntegration(persistence, integration.hash, integration.key, integration.owner, integration.startTime, integration.timeoutTime, integration.uncommittedCount, INTEGRATION_STATE.RUNNING, integration.string, integration.depth));
+  }
+
+  return returning;
 }
 
 type Getter<T> = (persistence: Persistence, key: string, path: string) => Promise<T | null>;
 
-type RetrievedValue<T> = {
+export type RetrievedAt = {
   headHash: string;
+  path: string;
+};
+
+type RetrievedValue<T> = RetrievedAt & {
   val: T;
 };
 
@@ -853,9 +1036,14 @@ class Stepper {
     }
     for (const [key, integration] of this.cache.integration.entries()) {
       if (!(integration instanceof Promise) && integration.cur.v !== null && integration.cur.v.differs(integration.orig)) {
-        await this.persistence.run("INSERT INTO Integration(string,depth,name,owner,timeoutTime,uncommittedCount,outputsRaw,state) VALUES (?,?,?,?,?,?,?,?);",
-          newBlockInfo.stringId, this.prevBlockInfo.depth + 1, key, integration.cur.v.owner, integration.cur.v.timeoutTime,
-          integration.cur.v.uncommittedCount, JSON.stringify(integration.cur.v.outputs), integration.cur.v.state);
+        await this.persistence.run("INSERT INTO Integration(string,depth,key,hash,owner,startTime,timeoutTime,uncommittedCount,state) VALUES (?,?,?,?,?,?,?,?,?);",
+          newBlockInfo.stringId, this.prevBlockInfo.depth + 1, key, integration.cur.v.hash, integration.cur.v.owner, integration.cur.v.startTime, integration.cur.v.timeoutTime,
+          integration.cur.v.uncommittedCount, integration.cur.v.state);
+        for (const sensorName in integration.cur.v.outputs) {
+          const output = integration.cur.v.outputs[sensorName];
+          await this.persistence.run("INSERT INTO IntegrationOutput(string,depth,integrationKey,sensorCostPerMin,sensorCostPerKB,broker,brokerOwner,sensorOwner,sensorName,witnessesRaw,amount,compensationTotal) VALUES (?,?,?,?,?,?,?,?,?,?,?,?);",
+            newBlockInfo.stringId, this.prevBlockInfo.depth + 1, key, output.sensorCostPerMin, output.sensorCostPerKB, output.broker, output.brokerOwner, output.sensorOwner, sensorName, JSON.stringify(output.witnesses), output.amount, output.compensationTotal);
+        }
       }
     }
 
@@ -1085,8 +1273,10 @@ class Stepper {
 
   async getOrigBroker(name: string): Promise<RetrievedValue<Broker | null>> {
     const hash = this.prevBlockInfo.hash;
+    const path = this.prevBlockInfo.stringifiedStringPath;
     return {
       headHash: hash,
+      path: path,
       val: (await this.getBrokerImpl(name)).orig
     };
   }
@@ -1301,7 +1491,9 @@ class Stepper {
       };
     }
 
-    const foundIntegration = await this.getIntegration(makeIntegrationKey(tx.input, tx.counter));
+    const key = IntegrationTx.makeKey(tx);
+
+    const foundIntegration = await this.getIntegration(key);
     if (foundIntegration.v !== null) {
       return {
         result: false,
@@ -1329,17 +1521,18 @@ class Stepper {
     }
     inputWallet.balance -= tx.rewardAmount;
 
-    foundIntegration.v = new Integration(tx.input, startTime, 0, [], INTEGRATION_STATE.RUNNING);
+    foundIntegration.v = new Integration(key, ChainUtil.hash(IntegrationTx.toHash(tx)), tx.input, startTime, startTime, 0, {}, INTEGRATION_STATE.RUNNING);
 
     const sensorBrokers = new Set<string>();
 
-    for (const output of tx.outputs) {
-      const foundSensor = await this.getSensor(output.sensorName);
+    for (const sensorName in tx.outputs) {
+      const output = tx.outputs[sensorName];
+      const foundSensor = await this.getSensor(sensorName);
 
       if (foundSensor.v === null) {
         return {
           result: false,
-          reason: `Integration references non-existant sensor: ${output.sensorName}`
+          reason: `Integration references non-existant sensor: ${sensorName}`
         };
       }
       if (foundSensor.v.hash !== output.sensorHash) {
@@ -1388,7 +1581,7 @@ class Stepper {
       sensorBrokers.add(foundBroker.v.owner);
 
       foundIntegration.v.uncommittedCount++;
-      foundIntegration.v.outputs.push(adding);
+      foundIntegration.v.outputs[sensorName] = adding;
 
       const outputTimeoutTime = (adding.amount / (adding.sensorCostPerMin / MINUTE_MS) + startTime) + BROKER_DEAD_BUFFER_TIME_MS;
       if (outputTimeoutTime > foundIntegration.v.timeoutTime) {
@@ -1416,7 +1609,8 @@ class Stepper {
       };
     }
 
-    for (const outputExtra of foundIntegration.v.outputs) {
+    for (const sensorName in foundIntegration.v.outputs) {
+      const outputExtra = foundIntegration.v.outputs[sensorName];
       for (const witness of witnesses.witnesses) {
         outputExtra.witnesses[witness] = false;
         foundIntegration.v.uncommittedCount++;
@@ -1432,16 +1626,12 @@ class Stepper {
 
   private async payoutIntegration(integration: Integration): Promise<void> {
     const integrateeWallet = await this.getWallet(integration.owner);
-
-    for (let i = 0; i < integration.outputs.length; i++) {
-      const output = integration.outputs[i];
+    for (const sensorName of Object.keys(integration.outputs)) {
+      const output = integration.outputs[sensorName];
 
       const compensationRatio = output.compensationTotal / Object.values(output.witnesses).length;
-
       const brokerGettingPaid = output.witnesses[output.brokerOwner];
-
       let amount_left = output.amount;
-
       if (brokerGettingPaid) {
         const brokerWallet = await this.getWallet(output.brokerOwner);
         const paying = BROKER_COMMISION * amount_left
@@ -1468,25 +1658,24 @@ class Stepper {
       };
     }
 
-    const integrationKey = makeIntegrationKey(tx.integration.input, tx.integration.counter);
-
-    const foundIntegration = await this.getIntegration(integrationKey);
+    const foundIntegration = await this.getIntegration(tx.integrationKey);
 
     if (foundIntegration.v === null) {
       return {
         result: false,
-        reason: `Couldn't find integration '${integrationKey}' referenced by commit`
+        reason: `Couldn't find integration '${tx.integrationKey}' referenced by commit`
       };
     }
 
-    for (const output of tx.outputs) {
-      if (output.i >= foundIntegration.v.outputs.length) {
+    for (const sensorName in tx.outputs) {
+      const output = tx.outputs[sensorName];
+      if (!(sensorName in foundIntegration.v.outputs)) {
         return {
           result: false,
           reason: `Commit tx references an output that doesn't exist`
         };
       }
-      const integrationOutput = foundIntegration.v.outputs[output.i];
+      const integrationOutput = foundIntegration.v.outputs[sensorName];
       if (!Object.hasOwn(integrationOutput.witnesses, tx.input)) {
         return {
           result: false,
@@ -1519,48 +1708,49 @@ class Stepper {
   private async checkIntegrationsForTimeout(timestamp: number) {
 
     type IntegrationDbRes = {
-      name: string;
+      hash: string;
+      key: string;
+      string: number;
+      depth: number;
       owner: string;
+      startTime: number;
       timeoutTime: number;
       uncommittedCount: number;
-      outputsRaw: string;
       state: Integrate_state;
     }
 
     //get all running integrations with timeoutTime >= timestamp
-    await this.persistence.each<IntegrationDbRes>(`
+    const integrations = await this.persistence.all<IntegrationDbRes>(`
     WITH path(id,max) AS (
       SELECT json_extract(value, '$.id'),json_extract(value, '$.maxExc') FROM json_each(?)
     )  
-    SELECT name,MAX(depth),owner,timeoutTime,uncommittedCount,outputsRaw,state
+    SELECT hash,key,string,MAX(depth) as depth,owner,startTime,timeoutTime,uncommittedCount,state
       FROM Integration
     INNER JOIN path ON Integration.string = path.id AND Integration.depth < path.max
-    WHERE state = ?
+    WHERE state = ${INTEGRATION_STATE.RUNNING}
       AND timeoutTime <= ?
-    GROUP BY name;`, async (row) => {
-      //check if cache has this, if it does use cached, otherwise add it
-
-      let found = this.cache.integration.get(row.name);
+    GROUP BY key;`, this.prevBlockInfo.stringifiedStringPath, timestamp);
+    for (const integration of integrations) {
+      let found = this.cache.integration.get(integration.key);
       if (found !== undefined) {
         if (found instanceof Promise) {
           found = await found;
         }
       } else {
-        const refined = new Integration(row.owner, row.timeoutTime, row.uncommittedCount, JSON.parse(row.outputsRaw) as IntegrationOutput[], row.state);
+        const refined = await getOutputsAndMakeIntegration(this.persistence, integration.hash, integration.key, integration.owner, integration.startTime, integration.timeoutTime, integration.uncommittedCount, integration.state, integration.string, integration.depth);
         found = {
           cur: { v: refined },
           orig: structuredClone(refined)
         };
         Object.freeze(found.orig);
-        this.cache.integration.set(row.name, found);
+        this.cache.integration.set(integration.key, found);
       }
-
       //check state again in case some weird stuff with cache
       if (found.cur.v !== null && found.cur.v.state === INTEGRATION_STATE.RUNNING) {
         this.payoutIntegration(found.cur.v);
         found.cur.v.state = INTEGRATION_STATE.TIMED_OUT;
       }
-    }, this.prevBlockInfo.stringifiedStringPath, INTEGRATION_STATE.RUNNING, timestamp);
+    }
   }
 
   private async stepTxs(reward: string, timestamp: number, txs: BlockTxs): Promise<Result> {
@@ -2233,97 +2423,183 @@ class Blockchain {
   getHeadInfo(): GetBlockInfo {
     return structuredClone(this.state.currentChain.prevBlockInfo);
   }
+  retrieveAtNow(): RetrievedAt {
+    return {
+      headHash: this.state.currentChain.getPrevBlockHash(),
+      path: this.state.currentChain.getPrevBlockPath()
+    };
+  }
 
-  async getWallet(input: string): Promise<RetrievedValue<Wallet>> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getWallet(input: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Wallet>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     return {
       headHash: hash,
+      path: path,
       val: await getWallet(this.state.persistence, input, path)
     };
   }
-  async getWallets(cb: (key:string,wallet: Wallet)=>void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getWallets(cb: (key:string,wallet: Wallet)=>void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     await getWallets(this.state.persistence, path, cb);
-    return hash;
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
   }
 
-  async getSensor(sensorName: string): Promise<RetrievedValue<Sensor | null>> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getSensor(sensorName: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Sensor | null>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     return {
       headHash: hash,
+      path: path,
       val: await getSensor(this.state.persistence, sensorName, path)
     };
   }
 
-  async getSensors(cb: (key: string, tx: Sensor) => void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getSensors(cb: (key: string, tx: Sensor) => void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     await getSensors(this.state.persistence, path, cb);
-    return hash;
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
   }
 
-  async getSensorTxs(cb: (key: string, tx: SensorTx) => void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
-    await getSensorTxs(this.state.persistence, path, cb);
-    return hash;
-  }
+  async getSensorsOwnedBy(owner: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<NamedSensor[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
 
-  async getBroker(brokerName: string): Promise<RetrievedValue<Broker | null>> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
     return {
       headHash: hash,
+      path: path,
+      val: await getSensorsOwnedBy(this.state.persistence, path, owner)
+    };
+  }
+
+  async getSensorTxs(cb: (key: string, tx: SensorTx) => void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    await getSensorTxs(this.state.persistence, path, cb);
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
+  }
+
+  async getBroker(brokerName: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Broker | null>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
       val: await getBroker(this.state.persistence, brokerName, path)
     };
   }
 
-  async getBrokers(cb: (key: string, tx: Broker) => void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
-    await getBrokers(this.state.persistence, path, cb);
-    return hash;
+  async getRandomBroker(retrievedAt?: RetrievedAt): Promise<RetrievedValue<NamedBroker | null>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
+      val: await getRandomBroker(this.state.persistence, path)
+    };
   }
 
-  async getBrokerTxsOwnedBy(owner: string, cb: (key: string, tx: BrokerTx) => void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getBrokers(cb: (key: string, tx: Broker) => void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    await getBrokers(this.state.persistence, path, cb);
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
+  }
+
+  async getBrokerTxsOwnedBy(owner: string, cb: (key: string, tx: BrokerTx) => void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     await getBrokerTxOwnedBys(this.state.persistence, path, owner, cb);
-    return hash;
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
   }
 
   //returns the head block hash
-  async getBrokerTxs(cb: (key: string, tx: BrokerTx) => void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getBrokerTxs(cb: (key: string, tx: BrokerTx) => void, retrievedAt?: RetrievedAt): Promise<RetrievedAt> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     await getBrokerTxs(this.state.persistence, path, cb);
-    return hash;
+    return retrievedAt === undefined ? {
+      headHash: hash,
+      path: path
+    } : retrievedAt;
   }
 
-  async getIntegration(integrationKey: string): Promise<RetrievedValue<Integration | null>> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
+  async getIntegration(integrationKey: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration | null>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
     return {
       headHash: hash,
+      path: path,
       val: await getIntegration(this.state.persistence, integrationKey, path)
     };
   }
 
-  async getIntegrations(cb: (key:string,tx:Integration)=>void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
-    await getIntegrations(this.state.persistence, path, cb);
-    return hash;
+  async getIntegrations(retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
+      val: await getIntegrations(this.state.persistence, path)
+    };
   }
 
-  async getRunningIntegrationsOwnedBy(owner: string, cb: (key:string,tx:Integration)=>void): Promise<string> {
-    const hash = this.state.currentChain.getPrevBlockHash();
-    const path = this.state.currentChain.getPrevBlockPath();
-    await getRunningIntegrationsOwnedBy(this.state.persistence, path, owner, cb);
-    return hash;
+  async getRunningIntegrationsOwnedBy(owner: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    
+    return {
+      headHash: hash,
+      path: path,
+      val: await getRunningIntegrationsOwnedBy(this.state.persistence, path, owner)
+    };
+  }
+
+  async getRunningIntegrationsUsingSensor(sensor: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
+      val: await getRunningIntegrationsUsingSensor(this.state.persistence, path, sensor)
+    };
+  }
+
+  async getRunningIntegrationsUsingSensorsOwnedBy(owner: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
+      val: await getRunningIntegrationsUsingSensorsOwnedBy(this.state.persistence, path, owner)
+    };
+  }
+
+  async getRunningIntegrationsUsingBrokersOwnedBy(owner: string, retrievedAt?: RetrievedAt): Promise<RetrievedValue<Integration[]>> {
+    const hash = retrievedAt === undefined ? this.state.currentChain.getPrevBlockHash() : retrievedAt.headHash;
+    const path = retrievedAt === undefined ? this.state.currentChain.getPrevBlockPath() : retrievedAt.path;
+    return {
+      headHash: hash,
+      path: path,
+      val: await getRunningIntegrationsUsingBrokersOwnedBy(this.state.persistence, path, owner)
+    };
   }
 
   length() {

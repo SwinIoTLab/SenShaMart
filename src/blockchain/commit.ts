@@ -22,45 +22,57 @@
 import { ChainUtil, type ResultFailure, type KeyPair, isFailure } from '../util/chain-util.js';
 import { type Transaction, type TransactionWrapper } from './transaction_base.js';
 
-const integrationValidation = {
-  input: ChainUtil.validateIsSerializedPublicKey,
-  counter: ChainUtil.createValidateIsIntegerWithMin(1)
-};
-
 const outputValidation = {
-  i: ChainUtil.createValidateIsIntegerWithMin(0),
   commitRatio: ChainUtil.createValidateIsNumberWithMinMax(0, 1)
 };
 
-const baseValidation = {
-  input: ChainUtil.validateIsSerializedPublicKey,
-  integration: ChainUtil.createValidateObject(integrationValidation),
-  outputs: ChainUtil.createValidateArray(ChainUtil.createValidateObject(outputValidation)),
-  signature: ChainUtil.validateIsSignature
+type Output = {
+  commitRatio: number; //the ratio to commit. 0 is a full refund, 1 is a full commit
 };
 
-type Output = {
-  i: number; //the index in the integration outputs this commit is referring to
-  commitRatio: number; //the ratio to commit. 0 is a full refund, 1 is a full commit
+type OutputConstructor = Output & {
+  sensorName: string;
+};
+
+function validateOutputs(t: unknown, fail: ResultFailure): t is { [index: string]: Output } {
+  if (!ChainUtil.validateMap<Output>(t, ChainUtil.createValidateObject(outputValidation), fail)) {
+    fail.reason = "Output failed map validation\n" + fail.reason;
+    return false;
+  }
+
+  if (Object.keys(t).length <= 0) {
+    fail.reason = "Length must be at least 1";
+    return false;
+  }
+
+  return true;
+}
+
+const baseValidation = {
+  input: ChainUtil.validateIsSerializedPublicKey,
+  integrationKey: ChainUtil.validateIsString,
+  outputs: validateOutputs,
+  signature: ChainUtil.validateIsSignature
 };
 
 class Commit implements Transaction {
   input: string;
-  integration: {
-    input: string;
-    counter: number;
-  };
-  outputs: Output[];
+  integrationKey: string;
+  outputs: { [index: string]: Output };
   
   signature: string;
-  constructor(senderKeyPair: KeyPair, integrationInput: string, integrationCounter: number, outputs: Output[]) {
-
+  constructor(senderKeyPair: KeyPair, integrationKey: string, outputs: OutputConstructor[]) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
-    this.integration = {
-      input: integrationInput,
-      counter: integrationCounter
-    };
-    this.outputs = outputs;
+    this.integrationKey = integrationKey;
+    this.outputs = {};
+    for (const output of outputs) {
+      this.outputs[output.sensorName] = {
+        commitRatio: output.commitRatio
+      };
+    }
+    if (Object.keys(this.outputs).length !== outputs.length) {
+      throw new Error("Outputs had non unique sensor names");
+    }
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Commit.toHash(this));
 
     const fail: ResultFailure = { result: false, reason: "" };
@@ -69,9 +81,9 @@ class Commit implements Transaction {
     }
   }
 
-  static createOutput(idx: number, commitRatio: number): Output {
+  static createOutput(sensorName: string, commitRatio: number): OutputConstructor {
     return {
-      i: idx,
+      sensorName: sensorName,
       commitRatio: commitRatio
     };
   }
@@ -79,8 +91,7 @@ class Commit implements Transaction {
   static toHash(transaction: Commit): string {
     return ChainUtil.stableStringify([
       transaction.input,
-      transaction.integration.counter,
-      transaction.integration.input,
+      transaction.integrationKey,
       transaction.outputs]);
   }
 
@@ -115,4 +126,4 @@ class Commit implements Transaction {
 }
 
 export default Commit;
-export { Commit };
+export { Commit, type Output };

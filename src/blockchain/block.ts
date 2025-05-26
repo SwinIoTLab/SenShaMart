@@ -123,7 +123,7 @@ export type DebugMined = {
   A block in the blockchain
 */
 export class Block {
-  //when this block was mined
+  //when this block was mined. From Date.now() (ms since epoch)
   timestamp: number;
   //the hash of the previous block
   lastHash: string;

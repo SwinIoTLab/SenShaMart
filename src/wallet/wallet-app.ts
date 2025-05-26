@@ -21,16 +21,19 @@
  */
 
 //WALLET
+
+'use strict';
+
 import type { RouteParameters } from 'express-serve-static-core';
 import { default as express } from 'express';
 import bodyParser from 'body-parser';
-import { PropServer as BlockchainProp, type SocketConstructor } from '../network/blockchain-prop.js';
+import { PropServer as BlockchainProp } from '../network/blockchain-prop.js';
 
 import Wallet from './wallet.js';
 import Config from '../util/config.js';
-import { ChainUtil, isFailure, type ResultSuccess, type NodeMetadata, type LiteralMetadata, type KeyPair } from '../util/chain-util.js';
+import { ChainUtil, type ResultFailure, type ResultSuccess, type RdfTriple, type KeyPair } from '../util/chain-util.js';
 
-import { Blockchain, type IntegrationExpanded, INTEGRATION_STATE } from '../blockchain/blockchain.js';
+import { Blockchain, type Integration, type Broker, type Sensor } from '../blockchain/blockchain.js';
 //import { Persistence, type Underlying as UnderlyingPersistence } from '../blockchain/persistence.js';
 //import fs from 'fs';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -43,49 +46,45 @@ import {
   DEFAULT_PORT_MINER_CHAIN,
   INITIAL_BALANCE
 } from '../util/constants.js';
-import SensorRegistration from '../blockchain/sensor-registration.js';
-import BrokerRegistration from '../blockchain/broker-registration.js';
-import Integration from '../blockchain/integration.js';
-import { randomInt } from 'crypto';
+import { default as SensorTx } from '../blockchain/sensor-registration.js';
+import { default as BrokerTx } from '../blockchain/broker-registration.js';
+import { default as IntegrationTx } from '../blockchain/integration.js';
 
-'use strict';
 
-const CONFIGS_STORAGE_LOCATION = "./settings.json";
+
+const args = process.argv;
+
+if (args.length > 2 && args[2] === "-h") {
+  console.log(args[0] + ' ' + args[1] + " <optional: location of settings file> <optional: prefix in settings file>");
+  process.exit(0);
+}
+
+const CONFIGS_STORAGE_LOCATION = args.length > 2 ? args[2] : "./settings.json";
+const CONFIG_PREFIX = args.length > 3 ? args[3] : "public-wallet-";
 
 const config = new Config(CONFIGS_STORAGE_LOCATION);
 
 const wallet = new Wallet();
-const apiPort = config.get({
-  key: "public-wallet-api-port",
-  default: DEFAULT_PORT_PUBLIC_WALLET_API
-});
-const persistenceLocation = config.get({
-  key: "public-wallet-blockchain",
-  default: "./public_wallet_blockchain.db"
-});
-const chainServerPort = config.get({
-  key: "public-wallet-chain-server-port",
-  default: DEFAULT_PORT_PUBLIC_WALLET_CHAIN
-});
-const fusekiLocation = config.get({
-  key: "public-wallet-fuseki",
-  default: null
-});
-const chainServerPublicAddress = config.get({
-  key: "public-wallet-chain-server-public-address",
-  default: "-"
-});
-const chainServerPeers = config.get({
-  key: "public-wallet-chain-server-peers",
-  default: ["ws://127.0.0.1:" + DEFAULT_PORT_MINER_CHAIN]
-});
-const uiBaseLocation = config.get({
-  key: "wallet-ui-base",
-  default: DEFAULT_PUBLIC_WALLET_UI_BASE
-});
+const apiPort = config.get(CONFIG_PREFIX + "api-port", DEFAULT_PORT_PUBLIC_WALLET_API, ChainUtil.createValidateIsNumberWithMinMax(1, 655356));
+const persistenceLocation = config.get(CONFIG_PREFIX + "blockchain", "./public_wallet_blockchain.db", ChainUtil.validateIsString);
+const chainServerPort = config.get(CONFIG_PREFIX + "chain-server-port", DEFAULT_PORT_PUBLIC_WALLET_CHAIN, ChainUtil.createValidateIsNumberWithMinMax(1, 655356));
+const fusekiLocation = config.get(CONFIG_PREFIX + "fuseki", null, ChainUtil.createValidateIsEither<string | null>(ChainUtil.validateIsString, ChainUtil.validateIsNull));
+const chainServerPublicAddress = config.get(CONFIG_PREFIX + "chain-server-public-address", "-", ChainUtil.validateIsString);
+const chainServerPeers = config.get(CONFIG_PREFIX + "chain-server-peers", ["ws://127.0.0.1:" + DEFAULT_PORT_MINER_CHAIN], ChainUtil.createValidateArray(ChainUtil.validateIsString));
+const uiBaseLocation = config.get(CONFIG_PREFIX + "ui-base", DEFAULT_PUBLIC_WALLET_UI_BASE, ChainUtil.validateIsString);
 
-let blockchain: null | Blockchain = null;
-let chainServer: null | BlockchainProp = null;
+const blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
+
+const chainServer = new BlockchainProp("Wallet-chain-server", blockchain, {
+  connect(address: string) {
+    return new WebSocket(address);
+  },
+  listen(port: number) {
+    return new WebSocketServer({
+      port: port
+    });
+  }
+});
 const app = express();
 
 app.use(bodyParser.json());
@@ -111,6 +110,24 @@ add_static_file('/brokerList.js', uiBaseLocation + 'brokerList.js', '.js');
 add_static_file('/info.js', uiBaseLocation + 'info.js', '.js');
 add_static_file('/wallet.html', uiBaseLocation + 'public-wallet.html', '.html');
 add_static_file('/n3.js', uiBaseLocation + 'n3.js', '.js');
+
+interface ResponseI {
+  json(data: object): void;
+}
+
+function respondWithError(res: ResponseI, err: unknown) {
+  if (err instanceof Error) {
+    res.json({
+      result: false,
+      reason: err.message
+    });
+  } else {
+    res.json({
+      result: false,
+      reason: "Non Error typed error"
+    });
+  }
+}
 
 
 app.post('/ChainServer/connect', (req, res) => {
@@ -140,10 +157,7 @@ app.post('/PubKeyFor', (req, res) => {
       value: ChainUtil.deserializeKeyPair(req.body.keyPair).pubSerialized
     });
   } catch (err) {
-    res.json({
-     result: false,
-      reason: err.message
-    });
+    respondWithError(res, err);
   }
 });
 
@@ -160,17 +174,16 @@ type BalanceGetRes = ResultSuccess & {
   };
 };
 app.post<string, RouteParameters<string>, BalanceGetRes, PubKeyedBody>('/Balance', (req, res) => {
-  const balance = blockchain.getBalanceCopy(req.body.pubKey);
-
   const returning: BalanceGetRes = {
     result: true,
     default: INITIAL_BALANCE,
     value: {}
   };
 
-  returning.value[req.body.pubKey] = balance;
-
-  res.json(returning);
+  blockchain.getWallet(req.body.pubKey).then((wallet) => {
+    returning.value[req.body.pubKey] = wallet.val.balance;
+    res.json(returning);
+  });
 });
 app.get<string, RouteParameters<string>, BalanceGetRes, PubKeyedBody>('/Balances', (_req, res) => {
   const returning: BalanceGetRes = {
@@ -178,44 +191,37 @@ app.get<string, RouteParameters<string>, BalanceGetRes, PubKeyedBody>('/Balances
     default: INITIAL_BALANCE,
     value: {}
   };
-  for (const [key, amount] of blockchain.data.WALLET) {
-    returning.value[key] = amount.base.balance;
-  }
-  res.json(returning);
+
+  blockchain.getWallets((key, value) => {
+      returning.value[key] = value.balance;
+  }).then((_hash) => {
+    res.json(returning);
+  });
 });
 
-app.post('/Payment/Register', (req, res) => {
+app.post('/Payment/Register', async (req, res) => {
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
     const rewardAmount = req.body.rewardAmount;
     const outputs = req.body.outputs;
 
-    const payment = wallet.createPaymentAsTransaction(
+    const payment = await wallet.createPayment(
       keyPair,
       blockchain,
       rewardAmount,
       outputs);
 
-    chainServer.sendTx(payment);
+    chainServer.sendPaymentTx(payment);
 
     res.json({
       result: true,
-      value: payment.tx
+      value: payment
     });
   } catch (err) {
     console.log(err);
-    res.json({
-      result: false,
-      reason: err.message
-    });
+    respondWithError(res, err);
   }
 });
-
-//const integrationRegisterValidators = {
-//  rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
-//  witnessCount: ChainUtil.createValidateIsIntegerWithMin(0),
-//  outputs: ChainUtil.createValidateObject(
-//};
 
 //Integration
 type IntegrationAllRes = ResultSuccess & {
@@ -223,59 +229,60 @@ type IntegrationAllRes = ResultSuccess & {
     [index: string]: Integration;
   };
 }
-app.get('/Integration/All', (_req, res) => {
+app.get('/Integration/All', async (_req, res) => {
   const returning: IntegrationAllRes = {
     result: true,
     value: {}
   };
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    returning.value[key] = integration.base;
+  const integrations = (await blockchain.getIntegrations()).val;
+  for(const integration of integrations) {
+    returning.value[integration.key] = integration;
   }
+
   res.json(returning);
 });
 
-app.post('/Integration/Register', (req, res) => {
+app.post('/Integration/Register', async (req, res) => {
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
 
-    const integration = wallet.createIntegrationAsTransaction(
+    const integration = await wallet.createIntegration(
       keyPair,
       blockchain,
       req.body.rewardAmount,
       req.body.witnessCount,
       req.body.outputs);
 
-    chainServer.sendTx(integration);
+    chainServer.sendIntegrationTx(integration);
 
     res.json({
       result: true,
-      tx: integration.tx,
-      hash: Integration.mqttTopic(integration.tx)
+      tx: integration,
+      hash: IntegrationTx.mqttTopic(integration)
     });
   } catch (err) {
     console.log(err);
-    res.json({
-      result: false,
-      reason: err.message
-    });
+    respondWithError(res, err);
   }
 });
 
+type IntegrationUsesOwnedByReq = {
+  pubKey: string;
+};
 const integrationUsesOwnedByValidators = {
-  pubKey: ChainUtil.validateIsPublicKey
+  pubKey: ChainUtil.validateIsSerializedPublicKey
 } as const;
 type IntegrationUsesOwnedByRes = ResultSuccess & {
   value: {
-    [index: string]: IntegrationExpanded;
+    [index: string]: Integration;
   };
 }
-app.post('/Integration/UsesOwnedBy', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, integrationUsesOwnedByValidators);
-
-  if (isFailure(validateRes)) {
+app.post('/Integration/UsesOwnedBy', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
+  if (!ChainUtil.validateObject<IntegrationUsesOwnedByReq>(req.body, integrationUsesOwnedByValidators, fail)) {
     res.json({
       result: false,
-      reason: validateRes.reason
+      reason: fail.reason
     });
     return;
   }
@@ -284,71 +291,76 @@ app.post('/Integration/UsesOwnedBy', (req, res) => {
     result: true,
     value: {},
   };
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (const output of integration.base.outputs) {
-      const foundSensor = blockchain.getSensorInfo(output.sensorName);
-      if (foundSensor !== null && foundSensor.input === req.body.pubKey) {
-        returning.value[key] = integration.base;
-        break;
-      }
-    }
+
+  const resultSet = (await blockchain.getRunningIntegrationsUsingSensorsOwnedBy(req.body.pubKey)).val;
+
+  for (const integration of resultSet) {
+    returning.value[integration.key] = integration;
   }
+
   res.json(returning);
 });
 
-app.post('/Integration/OwnedBy', (req, res) => {
+app.post('/Integration/OwnedBy', async (req, res) => {
   const returning: IntegrationUsesOwnedByRes = {
     result: true,
     value: {}
   };
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    if (integration.base.state === INTEGRATION_STATE.RUNNING && integration.base.input === req.body.pubKey) {
-      returning.value[key] = integration.base;
-    }
+  const integrations = (await blockchain.getRunningIntegrationsOwnedBy(req.body.pubKey)).val;
+  for(const integration of integrations) {
+    returning.value[integration.key] = integration;
   }
+
   res.json(returning);
 });
 
-app.get('/Integration/OurBrokersBrokering', (req, res) => {
-
-  const returning: IntegrationUsesOwnedByRes = {
-    result: true,
-    value: {}
-  };
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (const output of integration.base.outputsExtra) {
-      const foundBroker = blockchain.getBrokerInfo(output.broker);
-      if (foundBroker !== null && foundBroker.input === req.body.pubKey) {
-        returning.value[key] = integration.base;
-        break;
-      }
-    }
+app.get('/Integration/OurBrokersBrokering', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
+  if (!ChainUtil.validateObject<IntegrationUsesOwnedByReq>(req.body, integrationUsesOwnedByValidators, fail)) {
+    res.json({
+      result: false,
+      reason: fail.reason
+    });
+    return;
   }
-  res.json(returning);
-});
-
-app.get('/Integration/OurBrokersWitnessing', (req, res) => {
 
   const returning: IntegrationUsesOwnedByRes = {
     result: true,
     value: {}
   };
-  for (const [key, integration] of blockchain.data.INTEGRATION) {
-    for (let i = 0; i < integration.base.outputs.length; i++) {
-      const extra = integration.base.outputsExtra[i];
-      if (Object.hasOwn(extra.witnesses, req.body.pubKey)) {
-        returning.value[key] = integration.base;
-        break;
-      }
-    }
+
+  const resultSet = (await blockchain.getRunningIntegrationsUsingBrokersOwnedBy(req.body.pubKey)).val;
+
+  for (const integration of resultSet) {
+    returning.value[integration.key] = integration;
   }
   res.json(returning);
 });
+
+
+//NYI
+//app.get('/Integration/OurBrokersWitnessing', (req, res) => {
+
+//  const returning: IntegrationUsesOwnedByRes = {
+//    result: true,
+//    value: {}
+//  };
+//  for (const [key, integration] of blockchain.data.INTEGRATION) {
+//    for (let i = 0; i < integration.base.outputs.length; i++) {
+//      const extra = integration.base.outputsExtra[i];
+//      if (Object.hasOwn(extra.witnesses, req.body.pubKey)) {
+//        returning.value[key] = integration.base;
+//        break;
+//      }
+//    }
+//  }
+//  res.json(returning);
+//});
 
 //BrokerRegistration
 type BrokerRegistrationGetRes = ResultSuccess & {
   value: {
-    [index: string]: BrokerRegistration & {
+    [index: string]: BrokerTx & {
       hash: string;
     };
   };
@@ -359,95 +371,105 @@ app.get('/BrokerRegistration/All', (_req, res) => {
     result: true,
     value: {},
   };
-  for (const [key, value] of blockchain.data.BROKER) {
+  blockchain.getBrokerTxs((key, value) => {
     returning.value[key] = Object.assign({
-      hash: ChainUtil.hash(BrokerRegistration.toHash(value.base))
-    }, value.base);
-  }
-  res.json(returning);
+      hash: ChainUtil.hash(BrokerTx.toHash(value))
+    }, value);
+  }).then((_hash) => {
+    res.json(returning);
+  });
 });
 
+type BrokerRegistrationRegisterReq = {
+  keyPair: string,
+  brokerName: string,
+  endpoint: string,
+  rewardAmount: number,
+  extraNodeMetadata?: RdfTriple[],
+  extraLiteralMetadata?: RdfTriple[]
+};
+
 const brokerRegistrationRegisterValidators = {
-  keyPair: ChainUtil.validateIsKeyPair,
+  keyPair: ChainUtil.validateIsSerializedKeyPair,
   brokerName: ChainUtil.validateIsString,
   endpoint: ChainUtil.validateIsString,
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   extraNodeMetadata: ChainUtil.createValidateOptional(
-    ChainUtil.validateIsObject),
+    ChainUtil.createValidateArray(ChainUtil.validateNodeMetadata)),
   extraLiteralMetadata: ChainUtil.createValidateOptional(
-    ChainUtil.validateIsObject)
+    ChainUtil.createValidateArray(ChainUtil.validateNodeMetadata))
 };
 
-app.post('/BrokerRegistration/Register', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, brokerRegistrationRegisterValidators);
+app.post('/BrokerRegistration/Register', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
 
-  if (isFailure(validateRes)) {
-    res.json(validateRes.reason);
+  if (!ChainUtil.validateObject(req.body, brokerRegistrationRegisterValidators, fail)) {
+    res.json(fail.reason);
     return;
   }
 
-  try {
-    const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
+  const body = req.body as BrokerRegistrationRegisterReq;
 
-    const reg = wallet.createBrokerRegistrationAsTransaction(
+  try {
+    const keyPair = ChainUtil.deserializeKeyPair(body.keyPair);
+
+    const reg = await wallet.createBrokerRegistration(
       keyPair,
       blockchain,
-      req.body.rewardAmount,
-      req.body.brokerName,
-      req.body.endpoint,
-      req.body.extraNodeMetadata,
-      req.body.extraLiteralMetadata);
+      body.rewardAmount,
+      body.brokerName,
+      body.endpoint,
+      body.extraNodeMetadata,
+      body.extraLiteralMetadata);
 
-    chainServer.sendTx(reg);
+    chainServer.sendBrokerRegistrationTx(reg);
 
     res.json({
       result: true,
-      tx: reg.tx
+      tx: reg
     });
   } catch (err) {
     console.log(err);
-    res.json({
-      result: false,
-      reason: err.message
-    });
+    respondWithError(res, err);
   }
 });
 
+type BrokerRegistrationOwnedByReq = {
+  pubKey: string
+}
 const brokerRegistrationOwnedByValidators = {
-  pubKey: ChainUtil.validateIsPublicKey
+  pubKey: ChainUtil.validateIsSerializedPublicKey
 } as const;
 app.post('/BrokerRegistration/OwnedBy', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, brokerRegistrationOwnedByValidators);
+  const fail: ResultFailure = { result: false, reason: "" };
 
-  if (isFailure(validateRes)) {
+  if (!ChainUtil.validateObject(req.body, brokerRegistrationOwnedByValidators, fail)) {
     res.json({
       result: false,
-      reason: validateRes.reason
+      reason: fail.reason
     });
     return;
   }
+
+  const body = req.body as BrokerRegistrationOwnedByReq;
 
   const returning: BrokerRegistrationGetRes = {
     result: true,
     value: {}
   };
 
-  for (const [key, value] of blockchain.data.BROKER) {
-    if (value.base.input !== req.body.pubKey) {
-      continue;
-    }
+  blockchain.getBrokerTxsOwnedBy(body.pubKey, (key, value) => {
     returning.value[key] = Object.assign({
-      hash: ChainUtil.hash(BrokerRegistration.toHash(value.base))
-    }, value.base);
-  }
-  res.json(returning);
+      hash: ChainUtil.hash(BrokerTx.toHash(value))
+    }, value);
+  }).then((_hash) => {
+    res.json(returning);
+  });
 });
 //SensorRegistration
 type SensorRegistrationGetRes = ResultSuccess & {
   value: {
-    [index: string]: SensorRegistration & {
-      hash: string;
-    };
+    [index: string]: Sensor;
   };
 }
 app.get('/SensorRegistration/All', (_req, res) => {
@@ -455,18 +477,18 @@ app.get('/SensorRegistration/All', (_req, res) => {
     result: true,
     value: {}
   };
-  for (const [key, value] of blockchain.data.SENSOR) {
-    returning.value[key] = Object.assign({
-      hash: ChainUtil.hash(SensorRegistration.toHash(value.base))
-    }, value.base);
-  }
+  blockchain.getSensors((key, value) => {
+    returning.value[key] = value;
+  }).then((_hash) => {
+    res.json(returning);
+  });
   res.json(returning);
 });
 
-function sensorRegistrationRegister(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number,
-  interval: number, integrationBroker: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): SensorRegistration {
+async function sensorRegistrationRegister(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, sensorName: string, costPerMinute: number, costPerKB: number,
+  interval: number | null, integrationBroker: string, extraNodeMetadata: RdfTriple[] | undefined, extraLiteralMetadata: RdfTriple[] | undefined): Promise<SensorTx> {
 
-  const reg = wallet.createSensorRegistrationAsTransaction(
+  const reg = await wallet.createSensorRegistration(
     keyPair,
     blockchain,
     rewardAmount,
@@ -478,13 +500,24 @@ function sensorRegistrationRegister(keyPair: KeyPair, blockchain: Blockchain, re
     extraNodeMetadata,
     extraLiteralMetadata);
 
-  chainServer.sendTx(reg);
+  chainServer.sendSensorRegistrationTx(reg);
 
-  return reg.tx;
+  return reg;
 }
 
+type SensorRegistrationRegisterReq = {
+  keyPair: string,
+  sensorName: string,
+  costPerMinute: number,
+  costPerKB: number,
+  integrationBroker: string | null,
+  interval: number | null,
+  rewardAmount: number,
+  extraNodeMetadata?: RdfTriple[],
+  extraLiteralMetadata?: RdfTriple[]
+};
 const sensorRegistrationRegisterValidators = {
-  keyPair: ChainUtil.validateIsKeyPair,
+  keyPair: ChainUtil.validateIsSerializedKeyPair,
   sensorName: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
@@ -492,44 +525,54 @@ const sensorRegistrationRegisterValidators = {
   interval: ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull),
   rewardAmount: ChainUtil.createValidateIsIntegerWithMin(0),
   extraNodeMetadata: ChainUtil.createValidateOptional(
-    ChainUtil.validateIsObject),
+    ChainUtil.createValidateArray(
+      ChainUtil.validateNodeMetadata)),
   extraLiteralMetadata: ChainUtil.createValidateOptional(
-    ChainUtil.validateIsObject)
+    ChainUtil.createValidateArray(
+      ChainUtil.validateLiteralMetadata))
 } as const;
-app.post('/SensorRegistration/Register', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationRegisterValidators);
 
-  if (isFailure(validateRes)) {
+app.post('/SensorRegistration/Register', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
+
+  if (!ChainUtil.validateObject<SensorRegistrationRegisterReq>(req.body, sensorRegistrationRegisterValidators,fail)) {
     res.json({
       result: false,
-      reason: validateRes.reason
+      reason: fail.reason
     });
     return;
   }
 
+  const retrieveAt = blockchain.retrieveAtNow();
+
+  let brokerInfo: Broker | null = null;
   if (req.body.integrationBroker === null) {
-    if (blockchain.data.BROKER.size === 0) {
+    const gotBroker = (await blockchain.getRandomBroker(retrieveAt)).val;
+    if (gotBroker === null) {
       res.json({
         result: false,
         reason: "There are no brokers with which to select a default broker with"
       });
       return;
     }
-    const brokers = Array.from(blockchain.data.BROKER.keys());
-    const rand_i = randomInt(0, brokers.length);
-    req.body.integrationBroker = brokers[rand_i];
-  } else if (blockchain.getBrokerInfo(req.body.integrationBroker) === null) {
-    res.json({
-      result: false,
-      reason: "Couldn't find the named broker"
-    });
-    return;
+    req.body.integrationBroker = gotBroker.name;
+    brokerInfo = gotBroker.broker;
+  } else {
+    const gotBroker = (await blockchain.getBroker(req.body.integrationBroker, retrieveAt)).val
+    if(gotBroker === null) {
+      res.json({
+        result: false,
+        reason: "Couldn't find the named broker"
+      });
+      return;
+    }
+    brokerInfo = gotBroker;
   }
 
   try {
     const keyPair = ChainUtil.deserializeKeyPair(req.body.keyPair);
 
-    const tx = sensorRegistrationRegister(keyPair, blockchain,
+    const tx = await sensorRegistrationRegister(keyPair, blockchain,
       req.body.rewardAmount,
       req.body.sensorName,
       req.body.costPerMinute,
@@ -542,27 +585,55 @@ app.post('/SensorRegistration/Register', (req, res) => {
     res.json({
       result: true,
       tx: tx,
-      brokerIp: blockchain.getBrokerInfo((tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
+      brokerIp: brokerInfo.endpoint
     });
   } catch (err) {
-    console.log(err);
-    res.json({
-      result: false,
-      reason: err.message
-    });
+    if (err instanceof Error) {
+      res.json({
+        result: false,
+        reason: err.message
+      });
+    } else {
+      console.log(`throw with non Error type: ${err}`);
+      res.json({
+        result: false,
+        reason: "Non error type thrown"
+      });
+    }
   }
 });
 
+type SensorRegistrationRegisterSimpleReq = {
+  keyPair: string;
+  sensorName: string;
+  costPerMinute: number;
+  costPerKB: number;
+  integrationBroker: undefined | string | null;
+  interval: undefined | number | null;
+  rewardAmount: undefined | number;
+  lat: undefined | string;
+  long: undefined | string;
+  measures: undefined | string;
+  sensorType: undefined | string;
+  sensorPlatform: undefined | string;
+  sensorSystemHardware: undefined | string;
+  sensorSystemSoftware: undefined | string;
+  gmapsLocation: undefined | string;
+  sensorSystemProtocol: undefined | string;
+  extraMetadata: undefined | string;
+  machineProtocolDesc: undefined | string;
+  humanProtocolDesc: undefined | string;
+};
 const sensorRegistrationRegisterSimpleValidators = {
-  keyPair: ChainUtil.validateIsKeyPair,
+  keyPair: ChainUtil.validateIsSerializedKeyPair,
   sensorName: ChainUtil.validateIsString,
   costPerMinute: ChainUtil.createValidateIsIntegerWithMin(0),
   costPerKB: ChainUtil.createValidateIsIntegerWithMin(0),
   integrationBroker: ChainUtil.createValidateOptional(ChainUtil.createValidateIsEither(ChainUtil.validateIsString, ChainUtil.validateIsNull)),
   interval: ChainUtil.createValidateOptional(ChainUtil.createValidateIsEither(ChainUtil.createValidateIsIntegerWithMin(1), ChainUtil.validateIsNull)),
   rewardAmount: ChainUtil.createValidateOptional(ChainUtil.createValidateIsIntegerWithMin(0)),
-  lat: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
-  long: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
+  lat: ChainUtil.createValidateIsEither<undefined | string>(ChainUtil.validateIsUndefined, ChainUtil.validateIsString),
+  long: ChainUtil.createValidateIsEither<undefined | string>(ChainUtil.validateIsUndefined, ChainUtil.validateIsString),
   measures: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
   sensorType: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
   sensorPlatform: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
@@ -574,33 +645,39 @@ const sensorRegistrationRegisterSimpleValidators = {
   machineProtocolDesc: ChainUtil.createValidateOptional(ChainUtil.validateIsString),
   humanProtocolDesc: ChainUtil.createValidateOptional(ChainUtil.validateIsString)
 } as const;
-app.post('/SensorRegistration/Register/Simple', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationRegisterSimpleValidators);
+app.post('/SensorRegistration/Register/Simple', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
 
-  if (isFailure(validateRes)) {
-    res.json({
-      result: false,
-      reason: validateRes.reason
-    });
+  if (!ChainUtil.validateObject<SensorRegistrationRegisterSimpleReq>(req.body, sensorRegistrationRegisterSimpleValidators, fail)) {
+    fail.reason = "Failed request body validation\n" + fail.reason;
+    res.json(fail);
     return
   }
 
+  const retrieveAt = blockchain.retrieveAtNow();
+
+  let brokerInfo: Broker | null = null;
   if (req.body.integrationBroker === undefined || req.body.integrationBroker === null) {
-    if (blockchain.data.BROKER.size === 0) {
+    const gotBroker = (await blockchain.getRandomBroker(retrieveAt)).val;
+    if (gotBroker === null) {
       res.json({
         result: false,
         reason: "There are no brokers with which to select a default broker with"
       });
+      return;
     }
-    const brokers = Array.from(blockchain.data.BROKER.keys());
-    const rand_i = randomInt(0, brokers.length);
-    req.body.integrationBroker = brokers[rand_i];
-  } else if (blockchain.getBrokerInfo(req.body.integrationBroker) === null) {
-    res.json({
-      result: false,
-      reason: "Couldn't find the named broker"
-    });
-    return;
+    req.body.integrationBroker = gotBroker.name;
+    brokerInfo = gotBroker.broker;
+  } else {
+    const gotBroker = (await blockchain.getBroker(req.body.integrationBroker, retrieveAt)).val
+    if (gotBroker === null) {
+      res.json({
+        result: false,
+        reason: "Couldn't find the named broker"
+      });
+      return;
+    }
+    brokerInfo = gotBroker;
   }
   if (req.body.rewardAmount === undefined) {
     req.body.rewardAmount = 0;
@@ -609,8 +686,8 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
     req.body.interval = null;
   }
 
-  const nodeMetadata: NodeMetadata[] = [];
-  const literalMetadata: LiteralMetadata[] = [];
+  const nodeMetadata: RdfTriple[] = [];
+  const literalMetadata: RdfTriple[] = [];
 
   nodeMetadata.push({
     s: "SSMS://",
@@ -663,7 +740,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
       literalMetadata.push({
         s: "SSMS://#location",
         p: "http://www.w3.org/2003/01/geo/wgs84_pos#lat",
-        o: parsed
+        o: req.body.lat
       });
     }
     if (req.body.long !== undefined && req.body.long !== "") {
@@ -685,7 +762,7 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
       literalMetadata.push({
         s: "SSMS://#location",
         p: "http://www.w3.org/2003/01/geo/wgs84_pos#long",
-        o: parsed
+        o: req.body.long
       });
     }
     if (req.body.gmapsLocation !== undefined && req.body.gmapsLocation !== "") {
@@ -779,28 +856,33 @@ app.post('/SensorRegistration/Register/Simple', (req, res) => {
     res.json({
       result: true,
       tx: tx,
-      brokerIp: blockchain.getBrokerInfo((tx as SensorRegistration).metadata.integrationBroker).metadata.endpoint
+      brokerIp: brokerInfo.endpoint
     });
   } catch (err) {
-    console.log(err);
-    res.json({
-      result: false,
-      reason: err.message
-    });
+    if (err instanceof Error) {
+      res.json({
+        result: false,
+        reason: err.message
+      });
+    } else {
+      console.log(`throw with non Error type: ${err}`);
+      res.json({
+        result: false,
+        reason: "Non error type thrown"
+      });
+    }
   }
 });
-
+type SensorRegistrationOwnerByReq = {
+  pubKey: string
+};
 const sensorRegistrationOwnedByValidators = {
-  pubKey: ChainUtil.validateIsPublicKey
+  pubKey: ChainUtil.validateIsSerializedPublicKey
 } as const;
-app.post('/SensorRegistration/OwnedBy', (req, res) => {
-  const validateRes = ChainUtil.validateObject(req.body, sensorRegistrationOwnedByValidators);
-
-  if (isFailure(validateRes)) {
-    res.json({
-      result: false,
-      reason: validateRes.reason
-    });
+app.post('/SensorRegistration/OwnedBy', async (req, res) => {
+  const fail: ResultFailure = { result: false, reason: "" };
+  if(!ChainUtil.validateObject<SensorRegistrationOwnerByReq>(req.body, sensorRegistrationOwnedByValidators, fail)) {
+    res.json(fail);
     return;
   }
 
@@ -809,13 +891,10 @@ app.post('/SensorRegistration/OwnedBy', (req, res) => {
     value: {}
   };
 
-  for (const [key, value] of blockchain.data.SENSOR) {
-    if (value.base.input !== req.body.pubKey) {
-      continue;
-    }
-    returning.value[key] = Object.assign({
-      hash: ChainUtil.hash(SensorRegistration.toHash(value.base))
-    }, value.base);
+  const sensors = (await blockchain.getSensorsOwnedBy(req.body.pubKey)).val;
+
+  for (const sensor of sensors) {
+    returning.value[sensor.name] = sensor.sensor;
   }
   res.json(returning);
 });
@@ -842,7 +921,7 @@ interface QueryResult extends ResultSuccess {
 }
 
 app.post('/sparql', (req, res) => {
-  if (blockchain.fuseki_location === null) {
+  if (fusekiLocation === null) {
     res.json({
       result: false,
       reason: "We aren't connected to an RDF DB instance"
@@ -850,15 +929,15 @@ app.post('/sparql', (req, res) => {
     return;
   }
 
-  if (isFailure(ChainUtil.validateIsString(req.body.query))) {
-    res.json({
-      result: false,
-      reason: "Body missing a query field that is a string"
-    });
+  const fail: ResultFailure = { result: false, reason: "" };
+
+  if (!ChainUtil.validateIsString(req.body.query, fail)) {
+    fail.reason = "Request body failed string validation\n" + fail.reason;
+    res.json(fail);
     return;
   }
 
-  fetch(blockchain.fuseki_location + "/query", {
+  fetch(fusekiLocation + "/query", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
@@ -886,7 +965,7 @@ app.post('/sparql', (req, res) => {
       values: []
     };
 
-    for (const row of Object.values(fusekiRes.results.bindings)) {
+    for (const row of fusekiRes.results.bindings) {
       const adding = [];
       for (const k of returning.headers) {
         adding.push(row[k].value);
@@ -903,9 +982,6 @@ app.post('/sparql', (req, res) => {
   });
 });
 
-blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
-
-chainServer = new BlockchainProp("Wallet-chain-server", blockchain, WebSocket as unknown as SocketConstructor, WebSocketServer);
 chainServer.start(chainServerPort, chainServerPublicAddress, chainServerPeers); 
 
 app.listen(apiPort, () => console.log(`Listening on port ${apiPort}`));

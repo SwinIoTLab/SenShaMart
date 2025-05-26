@@ -63,7 +63,7 @@ interface KeyPair {
 }
 
 type ValidatorI = (v: unknown, fail: ResultFailure) => boolean;
-type ValidatorTypedI<T> = (v: unknown, fail: ResultFailure) => v is T;
+export type ValidatorTypedI<T> = (v: unknown, fail: ResultFailure) => v is T;
 
 //an object to store a bunch of static utility functions
 class ChainUtil {
@@ -234,7 +234,7 @@ class ChainUtil {
     return true;
   }
 
-  static validateIsEither(t: unknown, fail: ResultFailure, validators: ValidatorI[]): boolean {
+  static validateIsEither<T = unknown>(t: unknown, fail: ResultFailure, validators: ValidatorI[]): t is T {
     let failString = "Failed all validators:";
     for (const v of validators) {
       if (v(t, fail)) {
@@ -247,8 +247,8 @@ class ChainUtil {
     return false;
   }
 
-  static createValidateIsEither(...validators: ValidatorI[]): ValidatorI {
-    return (t: unknown, fail: ResultFailure): boolean => {
+  static createValidateIsEither<T = unknown>(...validators: ValidatorI[]): ValidatorTypedI<T> {
+    return (t: unknown, fail: ResultFailure): t is T => {
       return ChainUtil.validateIsEither(t, fail, validators);
     };
   }
@@ -302,8 +302,8 @@ class ChainUtil {
     return true;
   }
 
-  static createValidateIsNumberExact(val: number): ValidatorI {
-    return (t, fail) => {
+  static createValidateIsNumberExact(val: number): ValidatorTypedI<number> {
+    return (t, fail): t is number => {
       if (!ChainUtil.validateIsNumber(t, fail)) {
         return false;
       }
@@ -339,8 +339,8 @@ class ChainUtil {
   }
 
   //includes minimum
-  static createValidateIsIntegerWithMin(minimum: number): ValidatorI {
-    return (t,fail) => {
+  static createValidateIsIntegerWithMin(minimum: number): ValidatorTypedI<number> {
+    return (t,fail): t is number => {
       return ChainUtil.validateIsIntegerWithMin(t, minimum, fail);
     };
   }
@@ -367,8 +367,8 @@ class ChainUtil {
   }
 
   //includes minimum and maximum
-  static createValidateIsNumberWithMinMax(minimum: number, maximum: number): ValidatorI {
-    return (t, fail) => {
+  static createValidateIsNumberWithMinMax(minimum: number, maximum: number): ValidatorTypedI<number> {
+    return (t, fail): t is number => {
       return ChainUtil.validateIsNumberWithMinMax(t, minimum, maximum, fail);
     };
   }
@@ -447,15 +447,14 @@ class ChainUtil {
   }
 
   //this 'creates' a validator, using the given validator to validate each element of the array
-  static createValidateArray<T>(memberValidator:ValidatorI): ValidatorTypedI<T[]> {
+  static createValidateArray<T>(memberValidator: ValidatorTypedI<T> | ValidatorI): ValidatorTypedI<T[]> {
     return function (t, fail):  t is T[] {
       return ChainUtil.validateArray(t, memberValidator, fail);
     };
   }
 
   static validateObject<T>(t: unknown, memberValidator: { [index: string]: ValidatorI }, fail: ResultFailure): t is T {
-    if (t === undefined) {
-      fail.reason = "Is undefined";
+    if (!ChainUtil.validateExists(t, fail)) {
       return false;
     }
     if (!(t instanceof Object)) {
@@ -469,7 +468,7 @@ class ChainUtil {
       const validator = memberValidator[key];
 
       if (!validator(t_obj[key], fail)) {
-        fail.reason = `Member '${key}' failed validation\n`;
+        fail.reason = `Member '${key}' failed validation\n` + fail.reason;
         return false;
       }
     }
@@ -491,15 +490,47 @@ class ChainUtil {
     };
   }
 
-  //this 'creates' a validator, using the given validator. The thing tested may be undefined, or pass the given validator
-  static createValidateOptional(validator: ValidatorI): ValidatorI {
-    return function (t, fail) {
-      if (t === undefined) {
-        return true;
-      }
+  static validateMap<V>(t: unknown, memberValidator: ValidatorTypedI<V>, fail: ResultFailure, keyValidator?: ValidatorTypedI<string>): t is { [key: string]: V } {
+    if (!ChainUtil.validateExists(t, fail)) {
+      return false;
+    }
 
-      return validator(t, fail);
-    };
+    if (!(t instanceof Object)) {
+      fail.reason = "Is not an object";
+      return false;
+    }
+
+    const t_obj = t as { [index: string]: unknown };
+
+    for (const key in t_obj) {
+      if (keyValidator !== undefined && !keyValidator(key, fail)) {
+        fail.reason = "Key failed validation\n" + fail.reason;
+        return false;
+      }
+      if (!memberValidator(t_obj[key], fail)) {
+        fail.reason = `Value with key: '${key}' failed validation\n` + fail.reason;
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  static createValidateMap<V>(memberValidator: ValidatorTypedI<V>, keyValidator?: ValidatorTypedI<string>): ValidatorTypedI<{ [key: string]: V }> {
+    return (t: unknown, fail: ResultFailure): t is { [key: string]: V } => ChainUtil.validateMap(t, memberValidator, fail, keyValidator);
+  }
+
+  static validateIsUndefined(t: unknown, fail: ResultFailure): t is undefined {
+    if (t !== undefined) {
+      fail.reason = "Is not undefined";
+      return false;
+    }
+    return true;
+  }
+
+  //this 'creates' a validator, using the given validator. The thing tested may be undefined, or pass the given validator
+  static createValidateOptional<T>(validator: ValidatorTypedI<T> | ValidatorI): ValidatorTypedI<T | undefined> {
+    return ChainUtil.createValidateIsEither<T | undefined>(ChainUtil.validateIsUndefined, validator);
   }
 
   //validates RDF terms

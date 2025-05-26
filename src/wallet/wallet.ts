@@ -21,14 +21,14 @@
  */
 
 import { Payment, type Output as PaymentOutput }  from '../blockchain/payment.js';
-import { Integration, type Output as IntegrationOutput } from '../blockchain/integration.js';
+import { Integration, type OutputConstructor as IntegrationOutputConstructor } from '../blockchain/integration.js';
 import SensorRegistration from '../blockchain/sensor-registration.js';
 import BrokerRegistration from '../blockchain/broker-registration.js';
 import { type Blockchain } from '../blockchain/blockchain.js';
-import { ChainUtil, type KeyPair, type LiteralMetadata, type NodeMetadata } from '../util/chain-util.js';
-import type { TransactionWrapper } from '../blockchain/transaction_base.js';
+import { ChainUtil, type KeyPair, type RdfTriple } from '../util/chain-util.js';
 
 //TODO: keep track of issued transactions, so we don't accidently try and double spend
+//TODO: since creating is now async, some kind of mutex/queue might be needed to stop a race
 class Wallet {
   counter: Map<string,number>
   constructor() {
@@ -40,20 +40,21 @@ class Wallet {
   }
 
   getCounter(keyPair: KeyPair): number {
-    if (this.counter.has(keyPair.pubSerialized)) {
-      return this.counter.get(keyPair.pubSerialized);
+    const found = this.counter.get(keyPair.pubSerialized);
+    if (found !== undefined) {
+      return found;
     } else {
       return 0;
     }
   }
 
-  //TODO: API for multiple outputs
   //returns Transaction
-  createPayment(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, outputs: PaymentOutput[]) {
+  async createPayment(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, outputs: PaymentOutput[]): Promise<Payment> {
     console.log(`${outputs}`);
     console.log(`${rewardAmount}`);
 
-    let counter = blockchain.getCounterCopy(keyPair.pubSerialized);
+    const wallet = await blockchain.getWallet(keyPair.pubSerialized);
+    let counter = wallet.val.counter;
     const gotCounter = this.getCounter(keyPair);
     if (gotCounter > counter) {
       counter = gotCounter;
@@ -67,7 +68,7 @@ class Wallet {
       totalAmount += output.amount;
     }
 
-    const balance = blockchain.getBalanceCopy(keyPair.pubSerialized);
+    const balance = wallet.val.balance;
 
     if (totalAmount + rewardAmount > balance) {
       throw new Error(`Total amount: ${totalAmount} + reward amount: ${rewardAmount} exceeds current balance: ${balance}`);
@@ -76,19 +77,11 @@ class Wallet {
     return new Payment(keyPair, counter, outputs, rewardAmount);
   }
 
-  createPaymentAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, outputs: PaymentOutput[]): TransactionWrapper<Payment> {
-    return {
-      tx: this.createPayment(keyPair, blockchain, rewardAmount, outputs),
-      type: Payment
-    };
-  }
-
-  //TODO: API for multiple sensors
   //returns Transaction
-  createIntegration(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, witnessCount: number, outputs: IntegrationOutput[]) {
-    const balance = blockchain.getBalanceCopy(keyPair.pubSerialized);
+  async createIntegration(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, witnessCount: number, outputs: IntegrationOutputConstructor[]): Promise<Integration> {
+    const wallet = (await blockchain.getWallet(keyPair.pubSerialized)).val;
 
-    let counter = blockchain.getCounterCopy(keyPair.pubSerialized);
+    let counter = wallet.counter;
     const gotCounter = this.getCounter(keyPair);
     if (gotCounter > counter) {
       counter = gotCounter;
@@ -102,25 +95,18 @@ class Wallet {
       totalAmount += output.amount;
     }
 
-    if (totalAmount + rewardAmount > balance) {
-      throw new Error(`Total amount: ${totalAmount} + reward amount: ${rewardAmount} exceeds current known balance: ${balance}`);
+    if (totalAmount + rewardAmount > wallet.balance) {
+      throw new Error(`Total amount: ${totalAmount} + reward amount: ${rewardAmount} exceeds current known balance: ${wallet.balance}`);
     }
 
     return new Integration(keyPair, counter, outputs, witnessCount, rewardAmount);
   }
 
-  createIntegrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, witnessCount: number, outputs: IntegrationOutput[]): TransactionWrapper<Integration> {
-    return {
-      tx: this.createIntegration(keyPair, blockchain, rewardAmount, witnessCount, outputs),
-      type: Integration
-    };
-  }
-
   //returns Transaction
-  createBrokerRegistration(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, brokerName: string, endpoint: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]) {
-    const balance = blockchain.getBalanceCopy(keyPair.pubSerialized);
+  async createBrokerRegistration(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, brokerName: string, endpoint: string, extraNodeMetadata?: RdfTriple[], extraLiteralMetadata?: RdfTriple[]): Promise<BrokerRegistration> {
+    const wallet = (await blockchain.getWallet(keyPair.pubSerialized)).val;
 
-    let counter = blockchain.getCounterCopy(keyPair.pubSerialized);
+    let counter = wallet.counter;
     const gotCounter = this.getCounter(keyPair);
     if (gotCounter > counter) {
       counter = gotCounter;
@@ -129,8 +115,8 @@ class Wallet {
     counter++;
     this.counter.set(keyPair.pubSerialized, counter);
 
-    if (rewardAmount > balance) {
-      throw new Error(`Reward amount: ${rewardAmount} exceeds current balance: ${balance}`);
+    if (rewardAmount > wallet.balance) {
+      throw new Error(`Reward amount: ${rewardAmount} exceeds current balance: ${wallet.balance}`);
     }
 
     return new BrokerRegistration(
@@ -143,15 +129,8 @@ class Wallet {
       extraLiteralMetadata);
   }
 
-  createBrokerRegistrationAsTransaction(keyPair: KeyPair, blockchain: Blockchain, rewardAmount: number, brokerName: string, endpoint: string, extraNodeMetadata: NodeMetadata[], extraLiteralMetadata: LiteralMetadata[]): TransactionWrapper<BrokerRegistration> {
-    return {
-      tx: this.createBrokerRegistration(keyPair, blockchain, rewardAmount, brokerName, endpoint, extraNodeMetadata, extraLiteralMetadata),
-      type: BrokerRegistration
-    };
-  }
-
   //return Transaction
-  createSensorRegistration(
+  async createSensorRegistration(
     keyPair: KeyPair,
     blockchain: Blockchain,
     rewardAmount: number,
@@ -160,12 +139,12 @@ class Wallet {
     costPerKB: number,
     interval: number | null,
     integrationBroker: string,
-    extraNodeMetadata: NodeMetadata[],
-    extraLiteralMetadata: LiteralMetadata[]) {
+    extraNodeMetadata: RdfTriple[] | undefined,
+    extraLiteralMetadata: RdfTriple[] | undefined): Promise<SensorRegistration> {
 
-    const balance = blockchain.getBalanceCopy(keyPair.pubSerialized);
+    const wallet = (await blockchain.getWallet(keyPair.pubSerialized)).val;
 
-    let counter = blockchain.getCounterCopy(keyPair.pubSerialized);
+    let counter = wallet.counter;
     const gotCounter = this.getCounter(keyPair);
     if (gotCounter > counter) {
       counter = gotCounter;
@@ -174,8 +153,8 @@ class Wallet {
     counter++;
     this.counter.set(keyPair.pubSerialized, counter);
 
-    if (rewardAmount > balance) {
-      throw new Error(`Reward amount: ${rewardAmount} exceeds current balance: ${balance}`);
+    if (rewardAmount > wallet.balance) {
+      throw new Error(`Reward amount: ${rewardAmount} exceeds current balance: ${wallet.balance}`);
     }
 
     return new SensorRegistration(
@@ -189,23 +168,6 @@ class Wallet {
       rewardAmount,
       extraNodeMetadata,
       extraLiteralMetadata);
-  }
-
-  createSensorRegistrationAsTransaction(
-    keyPair: KeyPair,
-    blockchain: Blockchain,
-    rewardAmount: number,
-    sensorName: string,
-    costPerMinute: number,
-    costPerKB: number,
-    interval: number | null,
-    integrationBroker: string,
-    extraNodeMetadata: NodeMetadata[],
-    extraLiteralMetadata: LiteralMetadata[]): TransactionWrapper<SensorRegistration> {
-    return {
-      tx: this.createSensorRegistration(keyPair, blockchain, rewardAmount, sensorName, costPerMinute, costPerKB, interval, integrationBroker, extraNodeMetadata, extraLiteralMetadata),
-      type: SensorRegistration
-    };
   }
 }
 

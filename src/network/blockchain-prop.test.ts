@@ -550,7 +550,9 @@ describe('Blockchain-propagation', () => {
 
     let recved: (v: boolean) => void | null;
 
-    const sendingTx = new CommitTx(kp, kp2.pubSerialized, 5, [CommitTx.createOutput(0, 0.2), CommitTx.createOutput(1,0.6)]);
+    const i0 = new IntegrationTx(kp, 5, [IntegrationTx.createOutput(10, "s1", "abcd", "efgh"), IntegrationTx.createOutput(15, "s2", "ijkl", "mnop")], 0, 0);
+
+    const sendingTx = new CommitTx(kp, IntegrationTx.makeKey(i0), [CommitTx.createOutput("sensor1", 0.2), CommitTx.createOutput("sensor2", 0.6)]);
 
     const prop1 = new PropServer("prop0", bc1, host1, undefined, 0);
     const prop2 = new PropServer("prop1", bc2, host2, (tx) => {

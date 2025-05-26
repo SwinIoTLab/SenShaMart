@@ -62,6 +62,22 @@ describe('Integration', () => {
   it("Construct an integration with 1 witness", () => {
     createDummyIntegration(keyPair, 1);
   });
+  it("Construct an integration with unique output sensors", () => {
+    new Integration(
+      keyPair,
+      1,
+      [Integration.createOutput(1, 'a', 'b', 'c'), Integration.createOutput(2,'d','e','f')],
+      0,
+      0);
+  });
+  it("Construct an integration with non-unique output sensors", () => {
+    expect(() => new Integration(
+      keyPair,
+      1,
+      [Integration.createOutput(1, 'a', 'b', 'c'), Integration.createOutput(2, 'a', 'b', 'c')],
+      0,
+      0)).toThrow();
+  });
   it("Changing input fails verify", () => {
     const changing = createDummyIntegration(keyPair, 0);
 

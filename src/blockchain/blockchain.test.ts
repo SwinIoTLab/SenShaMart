@@ -5,9 +5,10 @@ import { randomInt } from 'crypto';
 import Payment from './payment.js';
 import BrokerRegistration from './broker-registration.js';
 import SensorRegistration from './sensor-registration.js';
-import Integration from './integration.js';
+import { default as IntegrationTx } from './integration.js';
 import Commit from './commit.js';
 import { BROKER_COMMISION, INITIAL_BALANCE, INITIAL_COUNTER, MINING_REWARD, MINE_RATE } from '../util/constants.js';
+import assert from 'assert/strict'
 
 describe('Blockchain', () => {
 
@@ -123,6 +124,28 @@ describe('Blockchain', () => {
     expect(count).toBe(brokers.length);
   });
 
+  //doesn't actually test if it's random, but at least check it returns something
+  it('getRandomBroker', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+    const brokers = [
+      new BrokerRegistration(kp, 1, "1", "", 0),
+      new BrokerRegistration(kp, 2, "2", "", 0),
+      new BrokerRegistration(kp, 3, "3", "", 0)];
+
+    let prevBlock = Block.debugGenesis();
+
+    for (const broker of brokers) {
+      prevBlock = Block.debugMine(prevBlock, kp.pubSerialized, {
+        brokerRegistrations: [broker]
+      });
+      expect((await bc.addBlock(prevBlock.block)).result).toBe(true);
+    }
+
+    const got = await bc.getRandomBroker();
+
+    expect(got.val).not.toBe(null);
+  });
+
   it('Invalid broker counter', async () => {
     const bc = await Blockchain.create(":memory:", null);
     const brokerB0 = new BrokerRegistration(kp, 1, "broker", "10.0.0.2", 0);
@@ -223,7 +246,7 @@ describe('Blockchain', () => {
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp, 3, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -245,21 +268,251 @@ describe('Blockchain', () => {
     expect(found.val).not.toBeNull();
     if (found.val !== null) {
       expect(found.val.owner).toBe(kp.pubSerialized);
-      expect(found.val.outputs.length).toBe(1);
-      expect(found.val.outputs[0].amount).toBe(10);
-      expect(found.val.outputs[0].broker).toBe("broker");
-      expect(found.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(found.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(found.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(found.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.val.outputs).length).toBe(1);
+      expect(found.val.outputs["sensor"]).not.toBeUndefined();
+      expect(found.val.outputs["sensor"].amount).toBe(10);
+      expect(found.val.outputs["sensor"].broker).toBe("broker");
+      expect(found.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
     }
+  });
+  it('Integrations add/get', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
+    const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
+      brokerRegistrations: [br0]
+    });
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+
+    const bl1 = Block.debugMine(bl0, kp.pubSerialized, {
+      sensorRegistrations: [s0]
+    });
+    expect((await bc.addBlock(bl1.block)).result).toBe(true);
+
+    const bl2 = Block.debugMine(bl1, kp.pubSerialized, {
+      integrations: [i0]
+    });
+    expect((await bc.addBlock(bl2.block)).result).toBe(true);
+
+    const founds = (await bc.getIntegrations()).val;
+
+    expect(founds.length).toBe(1);
+    if (founds.length === 1) {
+      const found = founds[0];
+      expect(found.owner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.outputs).length).toBe(1);
+      expect(found.outputs["sensor"]).not.toBeUndefined();
+      expect(found.outputs["sensor"].amount).toBe(10);
+      expect(found.outputs["sensor"].broker).toBe("broker");
+      expect(found.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+    }
+  });
+  it('getintegrations', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
+    const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
+      brokerRegistrations: [br0]
+    });
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+
+    const bl1 = Block.debugMine(bl0, kp.pubSerialized, {
+      sensorRegistrations: [s0]
+    });
+    expect((await bc.addBlock(bl1.block)).result).toBe(true);
+
+    const bl2 = Block.debugMine(bl1, kp.pubSerialized, {
+      integrations: [i0]
+    });
+    expect((await bc.addBlock(bl2.block)).result).toBe(true);
+
+    const founds = (await bc.getIntegrations()).val;
+
+    expect(founds.length).toBe(1);
+    if (founds.length === 1) {
+      const found = founds[0];
+      expect(found.owner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.outputs).length).toBe(1);
+      expect(found.outputs["sensor"]).not.toBeUndefined();
+      expect(found.outputs["sensor"].amount).toBe(10);
+      expect(found.outputs["sensor"].broker).toBe("broker");
+      expect(found.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+    }
+  });
+  it('runningIntegrationsUsingSensor', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
+    const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
+      brokerRegistrations: [br0]
+    });
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+
+    const bl1 = Block.debugMine(bl0, kp.pubSerialized, {
+      sensorRegistrations: [s0]
+    });
+    expect((await bc.addBlock(bl1.block)).result).toBe(true);
+
+    const bl2 = Block.debugMine(bl1, kp.pubSerialized, {
+      integrations: [i0]
+    });
+    expect((await bc.addBlock(bl2.block)).result).toBe(true);
+
+    const foundsNone = (await bc.getRunningIntegrationsUsingSensor("none")).val;
+
+    expect(foundsNone.length).toBe(0);
+
+    const founds = (await bc.getRunningIntegrationsUsingSensor(s0.metadata.name)).val;
+
+    expect(founds.length).toBe(1);
+    if (founds.length === 1) {
+      const found = founds[0];
+      expect(found.owner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.outputs).length).toBe(1);
+      expect(found.outputs["sensor"]).not.toBeUndefined();
+      expect(found.outputs["sensor"].amount).toBe(10);
+      expect(found.outputs["sensor"].broker).toBe("broker");
+      expect(found.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+    }
+  });
+  it('runningIntegrationsUsingSensor post commit', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
+    const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
+    const i0 = new IntegrationTx(kp, 20, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const c0 = new Commit(kp, IntegrationTx.makeKey(i0), [Commit.createOutput("sensor", 1)]);
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
+      brokerRegistrations: [br0]
+    });
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+
+    const bl1 = Block.debugMine(bl0, kp.pubSerialized, {
+      sensorRegistrations: [s0]
+    });
+    expect((await bc.addBlock(bl1.block)).result).toBe(true);
+
+    const bl2 = Block.debugMine(bl1, kp.pubSerialized, {
+      integrations: [i0]
+    });
+    expect((await bc.addBlock(bl2.block)).result).toBe(true);
+
+    const foundsNone = (await bc.getRunningIntegrationsUsingSensor("none")).val;
+
+    expect(foundsNone.length).toBe(0);
+
+    const founds = (await bc.getRunningIntegrationsUsingSensor(s0.metadata.name)).val;
+
+    expect(founds.length).toBe(1);
+    if (founds.length === 1) {
+      const found = founds[0];
+      expect(found.owner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.outputs).length).toBe(1);
+      expect(found.outputs["sensor"]).not.toBeUndefined();
+      expect(found.outputs["sensor"].amount).toBe(10);
+      expect(found.outputs["sensor"].broker).toBe("broker");
+      expect(found.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+    }
+
+    const bl3 = Block.debugMine(bl2, kp.pubSerialized, {
+      commits: [c0]
+    });
+    expect((await bc.addBlock(bl3.block)).result).toBe(true);
+
+    const foundIntegration = await bc.getIntegration(IntegrationTx.makeKey(i0));
+    expect(foundIntegration.val).not.toBeNull();
+    assert(foundIntegration.val !== null);
+    expect(foundIntegration.val.state).toBe(INTEGRATION_STATE.COMMITTED);
+
+    const foundPost = (await bc.getRunningIntegrationsUsingSensor(s0.metadata.name)).val;
+
+    expect(foundPost.length).toBe(0);
+  });
+  it('runningIntegrationsUsingSensor post timeout', async () => {
+    const bc = await Blockchain.create(":memory:", null);
+
+    const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
+    const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
+    const i0 = new IntegrationTx(kp, 20, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+
+    const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
+      brokerRegistrations: [br0]
+    });
+    expect((await bc.addBlock(bl0.block)).result).toBe(true);
+
+    const bl1 = Block.debugMine(bl0, kp.pubSerialized, {
+      sensorRegistrations: [s0]
+    });
+    expect((await bc.addBlock(bl1.block)).result).toBe(true);
+
+    const bl2 = Block.debugMine(bl1, kp.pubSerialized, {
+      integrations: [i0]
+    });
+    expect((await bc.addBlock(bl2.block)).result).toBe(true);
+
+    const foundsNone = (await bc.getRunningIntegrationsUsingSensor("none")).val;
+
+    expect(foundsNone.length).toBe(0);
+
+    const founds = (await bc.getRunningIntegrationsUsingSensor(s0.metadata.name)).val;
+
+    expect(founds.length).toBe(1);
+    if (founds.length === 1) {
+      const found = founds[0];
+      expect(found.owner).toBe(kp.pubSerialized);
+      expect(Object.keys(found.outputs).length).toBe(1);
+      expect(found.outputs["sensor"]).not.toBeUndefined();
+      expect(found.outputs["sensor"].amount).toBe(10);
+      expect(found.outputs["sensor"].broker).toBe("broker");
+      expect(found.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(found.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(found.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(found.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+    }
+
+    const bl3 = Block.debugMine(bl2, kp.pubSerialized, {}, founds[0].timeoutTime + 1);
+    expect((await bc.addBlock(bl3.block)).result).toBe(true);
+
+    const foundIntegration = await bc.getIntegration(IntegrationTx.makeKey(i0));
+    expect(foundIntegration.val).not.toBeNull();
+    assert(foundIntegration.val !== null);
+    expect(foundIntegration.val.state).toBe(INTEGRATION_STATE.TIMED_OUT);
+
+    const foundPost = (await bc.getRunningIntegrationsUsingSensor(s0.metadata.name)).val;
+
+    expect(foundPost.length).toBe(0);
   });
   it('Integration invalid counter', async () => {
     const bc = await Blockchain.create(":memory:", null);
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp, 2, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const i0 = new IntegrationTx(kp, 2, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -281,7 +534,7 @@ describe('Blockchain', () => {
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp, 3, [Integration.createOutput(10, "fake sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "fake sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -304,7 +557,7 @@ describe('Blockchain', () => {
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
     const fake_sensor = new SensorRegistration(kp, 2, "fake sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp, 3, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(fake_sensor)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(fake_sensor)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -327,7 +580,7 @@ describe('Blockchain', () => {
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const fake_broker = new BrokerRegistration(kp, 1, "fake broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp, 3, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(fake_broker)))], 0, 0);
+    const i0 = new IntegrationTx(kp, 3, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(fake_broker)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -349,8 +602,8 @@ describe('Blockchain', () => {
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp2, 1, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
-    const c0 = new Commit(kp, i0.input, i0.counter, [Commit.createOutput(0, 0)]);
+    const i0 = new IntegrationTx(kp2, 1, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const c0 = new Commit(kp, IntegrationTx.makeKey(i0), [Commit.createOutput("sensor", 0)]);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -382,17 +635,18 @@ describe('Blockchain', () => {
     expect(foundBefore.val).not.toBeNull();
     if (foundBefore.val !== null) {
       expect(foundBefore.val.owner).toBe(kp2.pubSerialized);
-      expect(foundBefore.val.outputs.length).toBe(1);
+      expect(Object.keys(foundBefore.val.outputs).length).toBe(1);
       expect(foundBefore.val.state).toBe(INTEGRATION_STATE.RUNNING);
       expect(foundBefore.val.uncommittedCount).toBe(1);
-      expect(foundBefore.val.outputs[0].amount).toBe(10);
-      expect(foundBefore.val.outputs[0].broker).toBe("broker");
-      expect(foundBefore.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundBefore.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundBefore.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].compensationTotal).toBe(0);
-      expect(foundBefore.val.outputs[0].witnesses[kp.pubSerialized]).toBe(false);
+      expect(foundBefore.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundBefore.val.outputs["sensor"].amount).toBe(10);
+      expect(foundBefore.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundBefore.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundBefore.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].compensationTotal).toBe(0);
+      expect(foundBefore.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(false);
     }
 
     const bl3 = Block.debugMine(bl2, kp.pubSerialized, {
@@ -410,17 +664,18 @@ describe('Blockchain', () => {
     expect(foundAfter.val).not.toBeNull();
     if (foundAfter.val !== null) {
       expect(foundAfter.val.owner).toBe(kp2.pubSerialized);
-      expect(foundAfter.val.outputs.length).toBe(1);
+      expect(Object.keys(foundAfter.val.outputs).length).toBe(1);
       expect(foundAfter.val.state).toBe(INTEGRATION_STATE.COMMITTED);
       expect(foundAfter.val.uncommittedCount).toBe(0);
-      expect(foundAfter.val.outputs[0].amount).toBe(10);
-      expect(foundAfter.val.outputs[0].broker).toBe("broker");
-      expect(foundAfter.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundAfter.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundAfter.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].compensationTotal).toBe(0);
-      expect(foundAfter.val.outputs[0].witnesses[kp.pubSerialized]).toBe(true);
+      expect(foundAfter.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundAfter.val.outputs["sensor"].amount).toBe(10);
+      expect(foundAfter.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundAfter.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundAfter.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].compensationTotal).toBe(0);
+      expect(foundAfter.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(true);
     }
   });
   it('Commit add/get 1 full commit', async () => {
@@ -428,8 +683,8 @@ describe('Blockchain', () => {
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp2, 1, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
-    const c0 = new Commit(kp, i0.input, i0.counter, [Commit.createOutput(0, 1)]);
+    const i0 = new IntegrationTx(kp2, 1, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const c0 = new Commit(kp, IntegrationTx.makeKey(i0), [Commit.createOutput("sensor", 1)]);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -461,17 +716,18 @@ describe('Blockchain', () => {
     expect(foundBefore.val).not.toBeNull();
     if (foundBefore.val !== null) {
       expect(foundBefore.val.owner).toBe(kp2.pubSerialized);
-      expect(foundBefore.val.outputs.length).toBe(1);
+      expect(Object.keys(foundBefore.val.outputs).length).toBe(1);
       expect(foundBefore.val.state).toBe(INTEGRATION_STATE.RUNNING);
       expect(foundBefore.val.uncommittedCount).toBe(1);
-      expect(foundBefore.val.outputs[0].amount).toBe(10);
-      expect(foundBefore.val.outputs[0].broker).toBe("broker");
-      expect(foundBefore.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundBefore.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundBefore.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].compensationTotal).toBe(0);
-      expect(foundBefore.val.outputs[0].witnesses[kp.pubSerialized]).toBe(false);
+      expect(foundBefore.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundBefore.val.outputs["sensor"].amount).toBe(10);
+      expect(foundBefore.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundBefore.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundBefore.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].compensationTotal).toBe(0);
+      expect(foundBefore.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(false);
     }
 
     const bl3 = Block.debugMine(bl2, kp.pubSerialized, {
@@ -489,17 +745,18 @@ describe('Blockchain', () => {
     expect(foundAfter.val).not.toBeNull();
     if (foundAfter.val !== null) {
       expect(foundAfter.val.owner).toBe(kp2.pubSerialized);
-      expect(foundAfter.val.outputs.length).toBe(1);
+      expect(Object.keys(foundAfter.val.outputs).length).toBe(1);
       expect(foundAfter.val.state).toBe(INTEGRATION_STATE.COMMITTED);
       expect(foundAfter.val.uncommittedCount).toBe(0);
-      expect(foundAfter.val.outputs[0].amount).toBe(10);
-      expect(foundAfter.val.outputs[0].broker).toBe("broker");
-      expect(foundAfter.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundAfter.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundAfter.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].compensationTotal).toBe(1);
-      expect(foundAfter.val.outputs[0].witnesses[kp.pubSerialized]).toBe(true);
+      expect(foundAfter.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundAfter.val.outputs["sensor"].amount).toBe(10);
+      expect(foundAfter.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundAfter.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundAfter.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].compensationTotal).toBe(1);
+      expect(foundAfter.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(true);
     }
   });
   it('Integration timeout', async () => {
@@ -507,7 +764,7 @@ describe('Blockchain', () => {
 
     const br0 = new BrokerRegistration(kp, 1, "broker", "", 0);
     const s0 = new SensorRegistration(kp, 2, "sensor", 1, 2, "broker", null, 0);
-    const i0 = new Integration(kp2, 1, [Integration.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
+    const i0 = new IntegrationTx(kp2, 1, [IntegrationTx.createOutput(10, "sensor", ChainUtil.hash(SensorRegistration.toHash(s0)), ChainUtil.hash(BrokerRegistration.toHash(br0)))], 0, 0);
 
     const bl0 = Block.debugMine(Block.debugGenesis(), kp.pubSerialized, {
       brokerRegistrations: [br0]
@@ -534,22 +791,23 @@ describe('Blockchain', () => {
     const afterIntegrationKp2Wallet = await bc.getWallet(kp2.pubSerialized);
     expect(afterIntegrationKp2Wallet.val.balance).toBe(INITIAL_BALANCE - 10);
 
-    const foundBefore = await bc.getIntegration(kp2.pubSerialized + '/' + String(i0.counter));
+    const foundBefore = await bc.getIntegration(IntegrationTx.makeKey(i0));
 
     expect(foundBefore.val).not.toBeNull();
     if (foundBefore.val !== null) {
       expect(foundBefore.val.owner).toBe(kp2.pubSerialized);
-      expect(foundBefore.val.outputs.length).toBe(1);
+      expect(Object.keys(foundBefore.val.outputs).length).toBe(1);
       expect(foundBefore.val.state).toBe(INTEGRATION_STATE.RUNNING);
       expect(foundBefore.val.uncommittedCount).toBe(1);
-      expect(foundBefore.val.outputs[0].amount).toBe(10);
-      expect(foundBefore.val.outputs[0].broker).toBe("broker");
-      expect(foundBefore.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundBefore.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundBefore.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundBefore.val.outputs[0].compensationTotal).toBe(0);
-      expect(foundBefore.val.outputs[0].witnesses[kp.pubSerialized]).toBe(false);
+      expect(foundBefore.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundBefore.val.outputs["sensor"].amount).toBe(10);
+      expect(foundBefore.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundBefore.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundBefore.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundBefore.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundBefore.val.outputs["sensor"].compensationTotal).toBe(0);
+      expect(foundBefore.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(false);
     } else {
       return;
     }
@@ -562,22 +820,23 @@ describe('Blockchain', () => {
     const afterCommitKp2Wallet = await bc.getWallet(kp2.pubSerialized);
     expect(afterCommitKp2Wallet.val.balance).toBe(INITIAL_BALANCE);
 
-    const foundAfter = await bc.getIntegration(kp2.pubSerialized + '/' + String(i0.counter));
+    const foundAfter = await bc.getIntegration(IntegrationTx.makeKey(i0));
 
     expect(foundAfter.val).not.toBeNull();
     if (foundAfter.val !== null) {
       expect(foundAfter.val.owner).toBe(kp2.pubSerialized);
-      expect(foundAfter.val.outputs.length).toBe(1);
+      expect(Object.keys(foundAfter.val.outputs).length).toBe(1);
       expect(foundAfter.val.state).toBe(INTEGRATION_STATE.TIMED_OUT);
       expect(foundAfter.val.uncommittedCount).toBe(1);
-      expect(foundAfter.val.outputs[0].amount).toBe(10);
-      expect(foundAfter.val.outputs[0].broker).toBe("broker");
-      expect(foundAfter.val.outputs[0].brokerOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].sensorCostPerKB).toBe(2);
-      expect(foundAfter.val.outputs[0].sensorCostPerMin).toBe(1);
-      expect(foundAfter.val.outputs[0].sensorOwner).toBe(kp.pubSerialized);
-      expect(foundAfter.val.outputs[0].compensationTotal).toBe(0);
-      expect(foundAfter.val.outputs[0].witnesses[kp.pubSerialized]).toBe(false);
+      expect(foundAfter.val.outputs["sensor"]).not.toBeUndefined();
+      expect(foundAfter.val.outputs["sensor"].amount).toBe(10);
+      expect(foundAfter.val.outputs["sensor"].broker).toBe("broker");
+      expect(foundAfter.val.outputs["sensor"].brokerOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerKB).toBe(2);
+      expect(foundAfter.val.outputs["sensor"].sensorCostPerMin).toBe(1);
+      expect(foundAfter.val.outputs["sensor"].sensorOwner).toBe(kp.pubSerialized);
+      expect(foundAfter.val.outputs["sensor"].compensationTotal).toBe(0);
+      expect(foundAfter.val.outputs["sensor"].witnesses[kp.pubSerialized]).toBe(false);
     }
   });
 

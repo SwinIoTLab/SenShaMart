@@ -82,34 +82,13 @@ const CONFIG_PREFIX = args.length > 3 ? args[3] : "miner-";
 
 const config = new Config(CONFIGS_STORAGE_LOCATION);
 
-const minerPublicKey = config.get({
-  key: CONFIG_PREFIX + "public-key",
-  default: ""
-});
-const persistenceLocation = config.get({
-  key: CONFIG_PREFIX + "blockchain",
-  default: "./miner_blockchain.db"
-});
-const fusekiLocation = config.get({
-  key: CONFIG_PREFIX + "fuseki",
-  default: null
-});
-const chainServerPort = config.get({
-  key: CONFIG_PREFIX + "chain-server-port",
-  default: DEFAULT_PORT_MINER_CHAIN
-});
-const chainServerPeers = config.get({
-  key: CONFIG_PREFIX + "chain-server-peers",
-  default: []
-});
-const minerPublicAddress = config.get({
-  key: CONFIG_PREFIX + "public-address",
-  default: "-"
-});
-const apiPort = config.get({
-  key: CONFIG_PREFIX + "api-port",
-  default: DEFAULT_PORT_MINER_API
-});
+const minerPublicKey = config.get(CONFIG_PREFIX + "public-key", "", ChainUtil.validateIsSerializedPublicKey);
+const persistenceLocation = config.get(CONFIG_PREFIX + "blockchain", "./miner_blockchain.db", ChainUtil.validateIsString);
+const fusekiLocation = config.get(CONFIG_PREFIX + "fuseki", null, ChainUtil.createValidateIsEither<null | string>(ChainUtil.validateIsString, ChainUtil.validateIsNull));
+const chainServerPort = config.get(CONFIG_PREFIX + "chain-server-port", DEFAULT_PORT_MINER_CHAIN, ChainUtil.validateIsNumber);
+const chainServerPeers = config.get(CONFIG_PREFIX + "chain-server-peers", [], ChainUtil.createValidateArray<string>(ChainUtil.validateIsString));
+const minerPublicAddress = config.get(CONFIG_PREFIX + "public-address", "-", ChainUtil.validateIsString);
+const apiPort = config.get(CONFIG_PREFIX + "api-port", DEFAULT_PORT_MINER_API, ChainUtil.validateIsNumber);
 
 const blockchain = await Blockchain.create(persistenceLocation, fusekiLocation);
 const miner: Miner = new Miner(blockchain, minerPublicKey);

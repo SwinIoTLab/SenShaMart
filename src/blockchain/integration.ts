@@ -24,7 +24,6 @@ import { type RepeatableTransaction, type TransactionWrapper } from './transacti
 import SeedRandom from 'seedrandom';
 
 const outputValidation = {
-  sensorName: ChainUtil.validateIsString,
   amount: ChainUtil.createValidateIsIntegerWithMin(1),
   sensorHash: ChainUtil.validateIsString,
   brokerHash: ChainUtil.validateIsString
@@ -32,17 +31,16 @@ const outputValidation = {
 
 type Output = {
   amount: number,
-  sensorName: string,
   sensorHash: string,
   brokerHash: string
 }
 
-function validateOutputs(t: unknown, fail: ResultFailure): t is Output[] {
-  if (!ChainUtil.validateArray<Output>(t, (output, fail) => { return ChainUtil.validateObject(output, outputValidation, fail); }, fail)) {
+function validateOutputs(t: unknown, fail: ResultFailure): t is { [index: string]: Output } {
+  if (!ChainUtil.validateMap<Output>(t, ChainUtil.createValidateObject(outputValidation), fail)) {
     return false;
   }
 
-  if (t.length <= 0) {
+  if (Object.keys(t).length <= 0) {
     fail.reason = "Length must be at least 1";
     return false;
   }
@@ -64,18 +62,32 @@ type ResultWitnesses = {
   witnesses: string[];
 }
 
+type OutputConstructor = Output & {
+  sensorName: string;
+}
+
 class Integration implements RepeatableTransaction {
   input: string;
   counter: number;
   rewardAmount: number;
-  outputs: Output[];
+  outputs: { [index: string]: Output };
   witnessCount: number;
   signature: string;
-  constructor(senderKeyPair: KeyPair, counter: number, outputs: Output[], witnessCount: number, rewardAmount: number) {
+  constructor(senderKeyPair: KeyPair, counter: number, outputs: OutputConstructor[], witnessCount: number, rewardAmount: number) {
     this.input = ChainUtil.serializePublicKey(senderKeyPair.pub);
     this.counter = counter;
     this.rewardAmount = rewardAmount;
-    this.outputs = outputs;
+    this.outputs = {};
+    for (const output of outputs) {
+      this.outputs[output.sensorName] = {
+        amount: output.amount,
+        sensorHash: output.sensorHash,
+        brokerHash: output.brokerHash
+      };
+    }
+    if (Object.keys(this.outputs).length !== outputs.length) {
+      throw new Error("Outputs had non unique sensor names");
+    }
     this.witnessCount = witnessCount;
 
     this.signature = ChainUtil.createSignature(senderKeyPair.priv, Integration.toHash(this));
@@ -86,7 +98,7 @@ class Integration implements RepeatableTransaction {
     }
   }
 
-  static createOutput(amount: number, sensorName: string, sensorRegistrationHash: string, brokerRegistrationHash: string): Output {
+  static createOutput(amount: number, sensorName: string, sensorRegistrationHash: string, brokerRegistrationHash: string): OutputConstructor {
     return {
       amount: amount,
       sensorName: sensorName,
@@ -171,9 +183,13 @@ class Integration implements RepeatableTransaction {
     };
   }
 
+  static makeKey(tx: Integration) {
+    return tx.input + '/' + String(tx.counter);
+  }
+
   static txName(): string {
     return "Integration";
   }
 }
-export { Integration, type Output };
+export { Integration, type Output, type OutputConstructor };
 export default Integration;
